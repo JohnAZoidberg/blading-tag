@@ -45,6 +45,9 @@ should last for many sessions.
 | [`android/`](android/) | Android app that records the skate session |
 | [`host/`](host/) | Laptop tools: Bluetooth recorder, live plot, analysis |
 
+The parts talk to each other through the Bluetooth protocol and session file
+format in [PROTOCOL.md](PROTOCOL.md).
+
 ## Building and updating the firmware (planned)
 
 You only need podman or docker. The nRF Connect SDK toolchain runs in a

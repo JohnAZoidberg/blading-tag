@@ -87,31 +87,19 @@ them later with a PPK2 (cut SB1, measure across TP6/TP7).
 The factory firmware is not power-optimised. Take the coin cell out between
 uses until our firmware is on the tag.
 
-## BLE protocol (draft)
+## Interfaces
 
-A custom 128-bit service with three characteristics:
+Firmware and software are developed separately. They only meet at two
+interfaces, both specified in [PROTOCOL.md](PROTOCOL.md):
 
-| Characteristic | Properties | Contents |
-|---|---|---|
-| Control | write | `start(rate)`, `stop`, `identify` (blink LED) |
-| Status | read, notify | state, battery mV, tag uptime, dropped-sample count |
-| Data | notify | batched IMU samples |
+1. **BLE protocol** (tag ↔ Android app / laptop recorder): advertising,
+   the Blading GATT service (Info, Control, Status, Data), states, commands,
+   the IMU packet format, time sync and link-loss behaviour.
+2. **Session file format** (recorders ↔ analysis): `session.json`, raw
+   notification logs per tag, `gps.csv`.
 
-Data packet, with MTU 247 and 2M PHY:
-
-```
-u16  packet seq
-u32  index of the first sample (monotonic since start)
-u32  tag timestamp of the first sample (µs, GRTC)
-u8   sample count (n)
-n × { i16 ax, ay, az, gx, gy, gz }   12 B per sample, ~19 per packet
-```
-
-At 200 Hz that is ~10.5 packets/s (~2.4 KB/s per tag). A ring buffer on the
-tag covers short link drops. The phone detects gaps from `seq` and the sample
-index. Sensor ranges are ±16 g and ±2000 °/s.
-
-The SMP DFU service stays in every image so updates always work over BLE.
+Changes to either one go into PROTOCOL.md first, following its versioning
+rules. Then the two sides are updated.
 
 ## Build and flash
 
@@ -153,6 +141,7 @@ android/      Kotlin app: connects to the tag(s), records IMU + GPS (phase 5)
 host/         Laptop Python tools: BLE recorder, live plot, analysis (bleak, numpy, pandas)
 Makefile      container build, OTA, J-Link flash
 README.md     short overview and how to use it
+PROTOCOL.md   BLE protocol + session file format (the contract between the parts)
 PLAN.md       this file
 ```
 
