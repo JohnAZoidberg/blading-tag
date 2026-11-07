@@ -1,0 +1,108 @@
+package app.bladingtag
+
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+import java.nio.file.Files
+
+/** The hex vectors from PROTOCOL.md. */
+class ProtocolTest {
+
+    private fun hex(s: String) = s.replace(Regex("\\s"), "").chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+    @Test fun uuids() {
+        assertEquals("b1ad0001-0e83-479a-bb08-19dab75f76db", Protocol.SERVICE.toString())
+        assertEquals("b1ad0005-0e83-479a-bb08-19dab75f76db", Protocol.DATA.toString())
+    }
+
+    @Test fun startDefaults() {
+        assertArrayEquals(hex("01 c8 00 10 d0 07"), Protocol.start())
+    }
+
+    @Test fun status() {
+        val s = Protocol.parseStatus(hex(
+            "01 00 86 0b 03 00 c8 00 10 00 d0 07 70 17 00 00 00 00 00 00 26 00 00 00 78 0a e3 05 00 00 00 00"))!!
+        assertEquals(Protocol.STATE_RECORDING, s.state)
+        assertEquals(0, s.flags)
+        assertEquals(2950, s.batteryMv)
+        assertEquals(3, s.sessionId)
+        assertEquals(200, s.odrHz)
+        assertEquals(16, s.accelRangeG)
+        assertEquals(0, s.position)
+        assertEquals(2000, s.gyroRangeDps)
+        assertEquals(6000L, s.samplesRecorded)
+        assertEquals(0L, s.samplesDropped)
+        assertEquals(38L, s.bufferFill)
+        assertEquals(98_765_432L, s.tagTimeUs)
+    }
+
+    @Test fun statusTooShortOrLonger() {
+        assertNull(Protocol.parseStatus(ByteArray(31)))
+        // Compatible changes append fields; they must be ignored.
+        assertEquals(0, Protocol.parseStatus(ByteArray(40))!!.state)
+    }
+
+    private val dataExample = hex("""
+        01 02 05 00 e8 03 00 00 4e 61 bc 00 00 00 00 00
+        00 00 00 00 00 08 00 00 00 00 00 00
+        64 00 9c ff 00 08 10 00 f0 ff 00 00""")
+
+    @Test fun data() {
+        val h = Protocol.parseDataHeader(dataExample)!!
+        assertEquals(Protocol.PACKET_IMU6, h.type)
+        assertEquals(2, h.n)
+        assertEquals(5, h.seq)
+        assertEquals(1000L, h.sampleIndex)
+        assertEquals(12_345_678L, h.timestampUs)
+        assertArrayEquals(intArrayOf(0, 0, 2048, 0, 0, 0), Protocol.imu6Sample(dataExample, 0))
+        assertArrayEquals(intArrayOf(100, -100, 2048, 16, -16, 0), Protocol.imu6Sample(dataExample, 1))
+    }
+
+    @Test fun info() {
+        val raw = hex("01000100 3f000f1f 401f0000")
+        val i = Protocol.parseInfo(raw)!!
+        assertEquals(1, i.version)
+        assertEquals("0.1.0", i.firmware)
+        assertEquals(0x3f, i.odrMask)
+        assertEquals(0x0f, i.accelRangeMask)
+        assertEquals(0x1f, i.gyroRangeMask)
+        assertEquals(8000L, i.bufferCapacity)
+        assertEquals("01000100 3f000f1f 401f0000", Protocol.hexGroups(raw))
+    }
+
+    @Test fun adv() {
+        // After the 0xFFFF company id: version 1, READY, left, 2950 mV.
+        val a = Protocol.parseAdv(hex("01 00 01 86 0b"))!!
+        assertEquals(Protocol.Adv(1, Protocol.STATE_READY, 1, 2950), a)
+    }
+
+    @Test fun tagLogRecord() {
+        val dir = Files.createTempDirectory("bt").toFile()
+        val f = File(dir, TagLog.fileName("C0:BB:4A:A7:0D:57"))
+        assertEquals("tag-C0BB4AA70D57.bin", f.name)
+        TagLog(f).apply { append(123456789012L, TagLog.KIND_DATA, dataExample); close() }
+        val bytes = f.readBytes()
+        assertArrayEquals(hex("14 1a 99 be 1c 00 00 00 01 28 00"), bytes.copyOfRange(0, 11))
+        assertArrayEquals(dataExample, bytes.copyOfRange(11, bytes.size))
+        dir.deleteRecursively()
+    }
+
+    @Test fun sessionJson() {
+        val t = TagMeta("C0:BB:4A:A7:0D:57").apply {
+            position = "left"; infoHex = "01000100 3f000f1f 401f0000"
+            sessionId = 3; odrHz = 200; accelRangeG = 16; gyroRangeDps = 2000
+        }
+        val m = SessionMeta("0.1.0", 1_794_061_530_123L, 123456789012L, listOf(t))
+        m.endElapsedNs = 130656789012L
+        val j = m.toJson()
+        assertTrue(j, j.contains("\"start_utc\": \"2026-11-07T14:25:30.123Z\""))
+        assertTrue(j, j.contains("\"end_elapsed_ns\": 130656789012"))
+        assertTrue(j, j.contains("\"file\": \"tag-C0BB4AA70D57.bin\""))
+        assertTrue(j, j.contains("\"session_id\": 3"))
+        assertEquals("session-20261107-142530", SessionMeta.folderName(1_794_061_530_123L))
+        assertEquals("\"a\\\"b\\n\"", SessionMeta.q("a\"b\n"))
+    }
+}
