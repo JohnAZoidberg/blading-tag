@@ -41,6 +41,33 @@ should last for many sessions.
    adb with `make -C android pull`) and run the analysis in `host/` on a
    laptop. The app doesn't show results itself yet.
 
+## The button
+
+The firmware uses one button on the tag (`sw0`). The board file lists a
+second one, but it's disabled there and the firmware doesn't use it.
+
+| Do this | What happens | LED |
+|---|---|---|
+| **Short press** while not recording | Starts recording with the default settings (200 Hz, ±16 g, ±2000 °/s), no phone needed | Green flash; red flash if it can't start (sensor fault, or still finishing the last recording) |
+| **Short press** while recording | Stops recording, whether the app or the button started it | Red flash |
+| **Hold 2 s**, then let go | Goes to sleep (System OFF). Bluetooth turns off and recording stops | Long red flash at 2 s, then 3 short red blinks |
+| **Press** while asleep | Wakes the tag. It restarts and advertises again. This press doesn't start a recording | Short green flash at startup |
+
+Some details:
+
+- Sleep only starts when you **let go**. A button that's still held down
+  would wake the tag right away again.
+- A recording started with the button works like one started from the app.
+  The tag keeps the last ~41 s in its buffer until the app connects and picks
+  the session up. Without a connection it stops by itself after 5 minutes.
+- **Sleep doesn't fully work yet**: the tag sometimes wakes up again by itself
+  after a few seconds, and waking on motion isn't working. See
+  [firmware/README.md](firmware/README.md#power-states-status).
+
+The other LED patterns: a green blip every 2 s means recording and connected,
+a yellow blip every 1 s means recording without a connection (into the
+buffer), and blue blinking means the app asked the tag to identify itself.
+
 ## Repo layout
 
 | Folder | What's in it |
