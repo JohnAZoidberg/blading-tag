@@ -173,7 +173,7 @@ class MainActivity : Activity() {
 
         val adapter = getSystemService(BluetoothManager::class.java).adapter
         when {
-            !hasPermissions() -> notice("Bluetooth, location and notification permissions are needed.",
+            !hasPermissions() -> notice("Bluetooth and notification permissions are needed.",
                 "Grant permissions") { openAppSettings() }
             adapter == null || !adapter.isEnabled -> notice("Bluetooth is off.", "Turn on Bluetooth") {
                 startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
@@ -468,11 +468,12 @@ class MainActivity : Activity() {
 
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_SHORT).show()
 
-    private fun hasPermissions() = PERMISSIONS.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+    /** Only the permissions the app can't work without; location is optional (no gps.csv without it). */
+    private fun hasPermissions() = REQUIRED.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
     private fun openAppSettings() {
-        if (PERMISSIONS.any { shouldShowRequestPermissionRationale(it) } ||
-            PERMISSIONS.none { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
+        if (REQUIRED.any { shouldShowRequestPermissionRationale(it) } ||
+            REQUIRED.none { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
             requestPermissions(PERMISSIONS, REQ_PERMISSIONS)
         } else {
             startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -483,11 +484,12 @@ class MainActivity : Activity() {
     companion object {
         private const val REQ_PERMISSIONS = 1
         private const val COLOR_BAD = 0xFFC62828.toInt()
-        private val PERMISSIONS = arrayOf(
+        private val REQUIRED = arrayOf(
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.POST_NOTIFICATIONS,
         )
+        /** Asked for together with REQUIRED; recording works without it, just no GPS track. */
+        private val PERMISSIONS = REQUIRED + Manifest.permission.ACCESS_FINE_LOCATION
     }
 }
