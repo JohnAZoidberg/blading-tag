@@ -49,6 +49,7 @@ class MainActivity : Activity() {
     private val found = LinkedHashMap<String, Found>()
     private val selected = LinkedHashSet<String>()
     private val rowText = HashMap<String, TextView>()
+    private val sleepButtons = HashMap<String, Button>()
     private var scanning = false
     private var shownRecording: RecorderService.Recording? = null
 
@@ -261,13 +262,18 @@ class MainActivity : Activity() {
         if (rowText.keys != found.keys) {
             tagList.removeAllViews()
             rowText.clear()
+            sleepButtons.clear()
             if (found.isEmpty()) tagList.addView(TextView(this).apply {
                 text = if (scanning) "Searching…" else "Not searching."
                 textSize = 15f
             })
             for (f in found.values) tagList.addView(tagRow(f))
         }
-        for (f in found.values) rowText[f.address]?.text = rowDescription(f)
+        for (f in found.values) {
+            rowText[f.address]?.text = rowDescription(f)
+            // The tag refuses SLEEP while recording (BAD_STATE); stop it first.
+            sleepButtons[f.address]?.isEnabled = f.adv?.state != Protocol.STATE_RECORDING
+        }
         startButton.isEnabled = selected.isNotEmpty() && hasPermissions()
     }
 
@@ -309,21 +315,35 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dp(28), 0, 0, 0)
             }
-            fun b(label: String, cmd: ByteArray, done: String) = buttons.addView(Button(this).apply {
-                text = label
-                isAllCaps = false
-                setOnClickListener { oneShot(f.address, cmd, done) }
-            })
-            b("Blink", Protocol.identify(5), "Blinking")
-            b("Left foot", Protocol.setPosition(1), "Set to left")
-            b("Right foot", Protocol.setPosition(2), "Set to right")
+            fun b(into: LinearLayout, label: String, cmd: ByteArray, done: String, onOk: () -> Unit = {}) =
+                Button(this).apply {
+                    text = label
+                    isAllCaps = false
+                    setOnClickListener { oneShot(f.address, cmd, done, onOk) }
+                    into.addView(this)
+                }
+            b(buttons, "Blink", Protocol.identify(5), "Blinking")
+            b(buttons, "Left foot", Protocol.setPosition(1), "Set to left")
+            b(buttons, "Right foot", Protocol.setPosition(2), "Set to right")
             row.addView(buttons)
+            // Own line: a 4th button doesn't fit, and it keeps the one that
+            // takes the tag away apart from the harmless ones.
+            val power = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(dp(28), 0, 0, 0)
+            }
+            // System OFF: the tag stops advertising, so drop it from the list
+            // now rather than after the 30 s timeout. Only its button (or,
+            // once it works, motion) wakes it again.
+            sleepButtons[f.address] = b(power, "Sleep", Protocol.sleep(),
+                "Asleep. Press its button to wake it") { found.remove(f.address) }
+            row.addView(power)
         }
         return row
     }
 
     /** Connect just long enough to send one Control command. */
-    private fun oneShot(address: String, cmd: ByteArray, okText: String) {
+    private fun oneShot(address: String, cmd: ByteArray, okText: String, onOk: () -> Unit = {}) {
         if (!hasPermissions()) return
         toast("Connecting…")
         stopScan() // scanning slows connection setup on many phones
@@ -334,6 +354,7 @@ class MainActivity : Activity() {
         GattTag(this, address, quiet, oneShot = cmd, onOneShotDone = { err ->
             ui.post {
                 toast(err?.let { "Failed: $it" } ?: okText)
+                if (err == null) onOk()
                 // The tag readvertises with the new state/position.
                 if (!isFinishing) refresh()
             }
