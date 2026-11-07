@@ -26,4 +26,10 @@ int motion_prepare_sysoff(void);
  */
 void motion_arm_wake(void);
 
+/* Undo motion_prepare_sysoff() when the tag stays awake after all. */
+void motion_cancel_sysoff(void);
+
+/* The nRF pin number of INT1, to tell what woke the tag. */
+uint32_t motion_int1_pin(void);
+
 #endif /* BLADING_MOTION_H_ */

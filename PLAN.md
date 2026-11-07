@@ -113,8 +113,8 @@ them later with a PPK2 (cut SB1, measure across TP6/TP7).
 TX power is +7 dBm, the most the tag's QFN48 nRF54L15 can do, for range from
 the ankle to a phone on the body. Against 0 dBm that adds roughly 5 mA while
 the radio transmits: ~+60 µA while recording (~1.4 % TX duty) and ~+5 µA
-while advertising in READY. That's cheap as long as the tag sleeps when idle
-(`BLADING_IDLE_SLEEP_S`, still off). The ~10 mA TX peaks are harder on an
+while advertising in READY. That's cheap because the tag sleeps after 10 min
+idle (`BLADING_IDLE_SLEEP_S`). The ~10 mA TX peaks are harder on an
 old or cold coin cell.
 
 The factory firmware is not power-optimised. Take the coin cell out between
@@ -207,11 +207,9 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
       thresholds on a real session.*
 - [ ] **7. Power states**: ADXL367 wake-on-motion, System OFF, ready-mode
       advertising, then measure.
-      *In firmware v1: 1 s ready advertising, ADXL367 activity wake-up,
-      System OFF from SLEEP or a 2 s button hold. Still to do: the GRTC wakes
-      the tag right back up from System OFF, and ADXL367 INT1 stays high (see
-      firmware/README.md, "Power states: status"). Then turn the 10 min idle
-      sleep back on and measure with a PPK2.*
+      *Working on the tag: 1 s ready advertising, System OFF from SLEEP, a
+      2 s button hold or 10 min idle, woken by ADXL367 motion or the button.
+      Still to do: measure with a PPK2.*
 - [ ] **8. Second tag**: one per foot, clock sync, left/right metrics.
 - [ ] **9. Technique**: orientation fusion (Madgwick), edge angle, push
       direction, crossovers.

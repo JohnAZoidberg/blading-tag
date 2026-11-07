@@ -16,12 +16,11 @@ config BLADING_LINK_LOSS_STOP_S
 
 config BLADING_IDLE_SLEEP_S
 	int "Go to System OFF after this long idle (s), 0 = never"
-	default 0
+	default 600
 	help
 	  Idle means READY, not connected and no motion. Only applies when the
-	  ADXL367 works, since motion is what wakes the tag again.
-	  Off by default until System OFF and wake-on-motion are verified on
-	  the tag (see firmware/README.md); the plan is 600.
+	  ADXL367 works and can be armed as a wake-up source, since motion is
+	  what wakes the tag again.
 
 config BLADING_MOTION_THRESHOLD_MG
 	int "Wake-on-motion threshold (mg)"

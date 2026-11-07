@@ -607,9 +607,53 @@ static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios)
 	NRF_GPIO_PIN_MAP(DT_PROP(DT_GPIO_CTLR(DT_ALIAS(sw0), gpios), port),                       \
 			 DT_GPIO_PIN(DT_ALIAS(sw0), gpios))
 
+/* Set by the idle timeout before it schedules sleep_work. */
+static bool sleep_on_idle;
+
 static void sleep_work_fn(struct k_work *work)
 {
-	LOG_INF("going to sleep");
+	bool idle = sleep_on_idle;
+
+	sleep_on_idle = false;
+
+	if (!idle) {
+		/* Feedback, and time for the hand to leave the tag before the
+		 * motion sensor takes its resting reference.
+		 */
+		led_set_mode(LED_MODE_OFF);
+		for (int i = 0; i < 3; i++) {
+			led_flash(LED_RED, 80);
+			k_msleep(250);
+		}
+	}
+
+	int motion_err = motion_prepare_sysoff();
+
+	if (idle) {
+		/*
+		 * Only sleep on our own if motion can wake us again, and if
+		 * nothing happened in the meantime. Otherwise try again later.
+		 */
+		k_mutex_lock(&app_lock, K_FOREVER);
+		bool still_idle = motion_err == 0 && app.state == PROTO_STATE_READY &&
+				  !app.stopping && !app.connected;
+
+		if (!still_idle) {
+			touch_active();
+		}
+		k_mutex_unlock(&app_lock);
+		if (!still_idle) {
+			LOG_INF("idle sleep: %s, staying awake",
+				motion_err ? "no motion wake-up" : "not idle any more");
+			motion_cancel_sysoff();
+			k_work_reschedule(&idle_work, IDLE_CHECK);
+			return;
+		}
+	} else if (motion_err) {
+		LOG_WRN("no motion wake-up, only the button wakes the tag");
+	}
+
+	LOG_INF("going to sleep%s", idle ? " (idle)" : "");
 	nrf_power_gpregret_set(NRF_POWER, SLEEP_MARK_REG, SLEEP_MARK_STARTED);
 
 	k_mutex_lock(&app_lock, K_FOREVER);
@@ -624,14 +668,6 @@ static void sleep_work_fn(struct k_work *work)
 	ble_shutdown();
 
 	led_set_mode(LED_MODE_OFF);
-	for (int i = 0; i < 3; i++) {
-		led_flash(LED_RED, 80);
-		k_msleep(250);
-	}
-
-	if (motion_prepare_sysoff() != 0) {
-		LOG_WRN("no motion wake-up, only the button wakes the tag");
-	}
 	gpio_pin_interrupt_configure_dt(&button, GPIO_INT_DISABLE);
 
 	LOG_INF("powering off");
@@ -698,6 +734,7 @@ static void idle_work_fn(struct k_work *work)
 
 	if (sleep) {
 		LOG_INF("idle for %d s", CONFIG_BLADING_IDLE_SLEEP_S);
+		sleep_on_idle = true;
 		k_work_reschedule(&sleep_work, K_NO_WAIT);
 	} else {
 		k_work_reschedule(&idle_work, IDLE_CHECK);
@@ -814,6 +851,16 @@ int app_init(void)
 		mark == SLEEP_MARK_STARTED ? "started, didn't finish" : "-");
 	nrf_power_gpregret_set(NRF_POWER, SLEEP_MARK_REG, 0);
 	nrfx_reset_reason_clear(reas);
+	if (reas & NRFX_RESET_REASON_OFF_MASK) {
+		/* GPIO DETECT woke us from System OFF; LATCH says which pin. */
+		bool by_button = nrf_gpio_pin_latch_get(BUTTON_NRF_PIN);
+		bool by_motion = nrf_gpio_pin_latch_get(motion_int1_pin());
+
+		LOG_INF("woken by %s", by_button ? (by_motion ? "button and motion" : "button")
+						 : by_motion ? "motion" : "an unknown pin");
+		nrf_gpio_pin_latch_clear(BUTTON_NRF_PIN);
+		nrf_gpio_pin_latch_clear(motion_int1_pin());
+	}
 
 	sb_init(&sb, sb_samples, BUF_SAMPLES, sb_anchors, BUF_ANCHORS);
 

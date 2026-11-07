@@ -51,7 +51,7 @@ second one, but it's disabled there and the firmware doesn't use it.
 | **Short press** while not recording | Starts recording with the default settings (200 Hz, ±16 g, ±2000 °/s), no phone needed | Green flash; red flash if it can't start (sensor fault, or still finishing the last recording) |
 | **Short press** while recording | Stops recording, whether the app or the button started it | Red flash |
 | **Hold 2 s**, then let go | Goes to sleep (System OFF). Bluetooth turns off and recording stops | Long red flash at 2 s, then 3 short red blinks |
-| **Press** while asleep | Wakes the tag. It restarts and advertises again. This press doesn't start a recording | Short green flash at startup |
+| **Press** (or move the tag) while asleep | Wakes the tag. It restarts and advertises again. This press doesn't start a recording | Short green flash at startup |
 
 Some details:
 
@@ -63,9 +63,9 @@ Some details:
   the running recording, gets the buffer, and then streams live. With no
   connection for 5 minutes the tag stops and throws the buffer away. The tag
   has no flash storage for sessions, so the phone is what actually records.
-- **Sleep doesn't fully work yet**: the tag sometimes wakes up again by itself
-  after a few seconds, and waking on motion isn't working. See
-  [firmware/README.md](firmware/README.md#power-states-status).
+- The tag also goes to sleep **by itself** after 10 minutes without motion,
+  recording or a connection, without any LED. Asleep it doesn't advertise,
+  so the app won't find it until you move it or press the button.
 
 The other LED patterns: a green blip every 2 s means recording and connected,
 a yellow blip every 1 s means recording without a connection (into the

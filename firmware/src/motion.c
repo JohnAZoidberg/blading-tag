@@ -185,3 +185,18 @@ void motion_arm_wake(void)
 		nrf_gpio_cfg_sense_set(INT1_NRF_PIN, NRF_GPIO_PIN_SENSE_HIGH);
 	}
 }
+
+void motion_cancel_sysoff(void)
+{
+	wake_armed = false;
+	if (!present) {
+		return;
+	}
+	arm();
+	gpio_pin_interrupt_configure_dt(&int1, GPIO_INT_EDGE_TO_ACTIVE);
+}
+
+uint32_t motion_int1_pin(void)
+{
+	return INT1_NRF_PIN;
+}

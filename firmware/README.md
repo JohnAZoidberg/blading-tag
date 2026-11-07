@@ -63,39 +63,30 @@ and MCUboot reverts to the previous image.
 ## Power states: status
 
 Tested on the tag (2026-11-07): streaming, STOP flush, link loss (rejoining a
-running session, buffer overflow counted as dropped), SET_POSITION, IDENTIFY,
-OTA from this firmware (0.1.0 -> 0.2.0). Not working yet: **SLEEP / System
-OFF**. What we know:
+running session, buffer overflow counted as dropped, no packets lost at a
+drop, see the hardware tests), SET_POSITION, IDENTIFY, OTA from this firmware,
+and sleep:
 
-1. **Fixed: interrupt storm.** The wake-up pins used to be armed as Zephyr
-   level interrupts before power-off. The ADXL367 INT1 (P0.03) was high, so
-   the level interrupt fired endlessly and the tag livelocked before reaching
-   System OFF (seen with gdb). Now SENSE is set directly on the pins with
-   interrupts locked, right before `sys_poweroff()`, and the ADXL367 is only
-   used as a wake source if INT1 is low after re-arming.
-2. **Open: the GRTC wakes the tag from System OFF** within seconds
-   (RESETREAS = `0x800`, GRTC). A retained marker (`GPREGRET[1]`, logged at
-   boot as "last sleep reached System OFF") confirms it really was off. At
-   `z_sys_poweroff()` a debugger showed every GRTC `CC[n].CCEN` = 0 and no
-   compare events pending, so it isn't an armed compare. The current code also
-   stops the GRTC (`TASKS_STOP`) before power-off, with interrupts masked via
-   PRIMASK so MPSL's zero-latency IRQs can't re-arm it. That build is flashed
-   but not cleanly tested yet. One SLEEP did stay asleep until a GPIO wake
-   (RESETREAS `0x140`), but it's unclear which build was running.
-3. **Open: why ADXL367 INT1 is high** on a tag lying still. It may be the
-   referenced activity setup in wake-up mode (`motion.c`), or the threshold.
-   `motion_prepare_sysoff()` now logs STATUS, the INT1 level and the
-   interrupt count.
+- **SLEEP and idle sleep reach System OFF and stay there.** Lying still,
+  the tag goes to sleep 10 min after the last activity
+  (`CONFIG_BLADING_IDLE_SLEEP_S`) and stops advertising. Moving it wakes it
+  (boot log: `reset reason 0x00000100, last sleep reached System OFF`,
+  `woken by motion`), and so does the button (`woken by button`).
+- **Idle sleep only happens if motion can wake the tag.** If the ADXL367 INT1
+  is still active after re-referencing (the tag moved, or the threshold is
+  too low), the tag stays awake and tries again 10 min later. SLEEP and the
+  long press go to sleep anyway, with only the button as a wake-up.
+- **The GRTC must be stopped before System OFF.** Even with every compare
+  channel disabled, a running GRTC woke the tag from System OFF within
+  seconds (RESETREAS `0x800`). `sleep_work_fn()` stops it under PRIMASK, so
+  MPSL's zero-latency IRQs can't re-arm it; Zephyr starts it again at boot.
+- **Wake-up pins use GPIO SENSE, set with interrupts masked** right before
+  `sys_poweroff()`. As Zephyr level interrupts, an active ADXL367 INT1 fired
+  endlessly and the tag never got to System OFF.
+- The boot log reads the GPIO LATCH register to say which pin woke the tag.
 
-Next steps:
-
-- Run one clean SLEEP test (no debugger attached): SLEEP, wait 2 min, connect.
-  Then read the boot log line `reset reason ..., last sleep ...`.
-- If the GRTC still wakes it: compare with Nordic's
-  `nrf/samples/bluetooth/peripheral_power_profiling` on this board, and check
-  the nRF54L15 errata and GRTC docs about System OFF.
-- Fix INT1, then test wake-on-motion. Then set `CONFIG_BLADING_IDLE_SLEEP_S`
-  back to 600 and measure the current with a PPK2.
+Still to do: measure the currents with a PPK2 (Ready, Asleep, Recording at
++7 dBm).
 
 Debugging notes:
 
