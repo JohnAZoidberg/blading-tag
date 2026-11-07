@@ -201,8 +201,10 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
 - [ ] **7. Power states**: ADXL367 wake-on-motion, System OFF, ready-mode
       advertising, then measure.
       *In firmware v1: 1 s ready advertising, ADXL367 activity wake-up,
-      System OFF from SLEEP, a 2 s button hold or 10 min idle. Still to do:
-      check wake-up from System OFF on the tag, and measure with a PPK2.*
+      System OFF from SLEEP or a 2 s button hold. Still to do: the GRTC wakes
+      the tag right back up from System OFF, and ADXL367 INT1 stays high (see
+      firmware/README.md, "Power states: status"). Then turn the 10 min idle
+      sleep back on and measure with a PPK2.*
 - [ ] **8. Second tag**: one per foot, clock sync, left/right metrics.
 - [ ] **9. Technique**: orientation fusion (Madgwick), edge angle, push
       direction, crossovers.

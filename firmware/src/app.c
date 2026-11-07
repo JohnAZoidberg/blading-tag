@@ -1,6 +1,10 @@
 #include "app.h"
 
 #include <app_version.h>
+#include <hal/nrf_gpio.h>
+#include <hal/nrf_grtc.h>
+#include <hal/nrf_power.h>
+#include <helpers/nrfx_reset_reason.h>
 #include <string.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
@@ -521,9 +525,22 @@ int app_control(const uint8_t *buf, size_t len)
 
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
 
+/*
+ * GPREGRET[1] (retained in System OFF) records how far the last sleep got,
+ * so the next boot can tell a real wake-up from System OFF from a reset.
+ */
+#define SLEEP_MARK_REG     1
+#define SLEEP_MARK_STARTED 0x5A
+#define SLEEP_MARK_OFF     0xA5
+/* The button is active low (pull-up). */
+#define BUTTON_NRF_PIN                                                                             \
+	NRF_GPIO_PIN_MAP(DT_PROP(DT_GPIO_CTLR(DT_ALIAS(sw0), gpios), port),                       \
+			 DT_GPIO_PIN(DT_ALIAS(sw0), gpios))
+
 static void sleep_work_fn(struct k_work *work)
 {
 	LOG_INF("going to sleep");
+	nrf_power_gpregret_set(NRF_POWER, SLEEP_MARK_REG, SLEEP_MARK_STARTED);
 
 	k_mutex_lock(&app_lock, K_FOREVER);
 	if (app.state == PROTO_STATE_RECORDING) {
@@ -545,9 +562,50 @@ static void sleep_work_fn(struct k_work *work)
 	if (motion_prepare_sysoff() != 0) {
 		LOG_WRN("no motion wake-up, only the button wakes the tag");
 	}
-	gpio_pin_interrupt_configure_dt(&button, GPIO_INT_LEVEL_ACTIVE);
+	gpio_pin_interrupt_configure_dt(&button, GPIO_INT_DISABLE);
 
+	LOG_INF("powering off");
 	LOG_PANIC();
+
+	/* PRIMASK, not irq_lock(): MPSL's zero-latency IRQs must not re-arm the GRTC. */
+	__disable_irq();
+
+	/*
+	 * Wake-up sources: GPIO SENSE on the button and the ADXL367 INT1. Set
+	 * here, with interrupts locked, rather than as level interrupts: a line
+	 * that is already active would otherwise interrupt endlessly. If one is
+	 * active, System OFF is left again right away, which is what we want.
+	 */
+	nrf_gpio_cfg_sense_set(BUTTON_NRF_PIN, NRF_GPIO_PIN_SENSE_LOW);
+	motion_arm_wake();
+
+	/*
+	 * The GRTC keeps counting in System OFF, and an armed compare channel
+	 * (kernel timeout, Bluetooth controller) can wake the chip. Disarm all
+	 * of them at the register level, as z_nrf_grtc_wakeup_prepare() does
+	 * for the channels it knows about, so only GPIO wakes us.
+	 */
+	for (uint8_t ch = 0; ch < NRF_GRTC_SYSCOUNTER_CC_COUNT; ch++) {
+		nrf_grtc_sys_counter_compare_event_disable(NRF_GRTC, ch);
+		nrf_grtc_event_clear(NRF_GRTC, nrf_grtc_sys_counter_compare_event_get(ch));
+	}
+	/*
+	 * CC writes take effect once latched into the GRTC's low-frequency
+	 * domain; wait for that as z_nrf_grtc_wakeup_prepare() does (TIMEOUT
+	 * LFCLK cycles + 77 us), or the old compare still wakes us.
+	 */
+	k_busy_wait(nrf_grtc_timeout_get(NRF_GRTC) * USEC_PER_SEC / 32768 + 100);
+
+	/*
+	 * Even with no compare armed (checked with a debugger at this point),
+	 * a running GRTC still woke the tag from System OFF right away, with
+	 * RESETREAS = GRTC. So stop it as well; Zephyr starts it again at boot,
+	 * as after a power-on reset. NOT YET VERIFIED that this is enough.
+	 */
+	nrf_grtc_task_trigger(NRF_GRTC, NRF_GRTC_TASK_STOP);
+	k_busy_wait(nrf_grtc_timeout_get(NRF_GRTC) * USEC_PER_SEC / 32768 + 100);
+
+	nrf_power_gpregret_set(NRF_POWER, SLEEP_MARK_REG, SLEEP_MARK_OFF);
 	sys_poweroff();
 }
 
@@ -673,6 +731,15 @@ static void battery_work_fn(struct k_work *work)
 
 int app_init(void)
 {
+	uint32_t reas = nrfx_reset_reason_get();
+	uint8_t mark = nrf_power_gpregret_get(NRF_POWER, SLEEP_MARK_REG);
+
+	LOG_INF("reset reason 0x%08x, last sleep %s", reas,
+		mark == SLEEP_MARK_OFF ? "reached System OFF" :
+		mark == SLEEP_MARK_STARTED ? "started, didn't finish" : "-");
+	nrf_power_gpregret_set(NRF_POWER, SLEEP_MARK_REG, 0);
+	nrfx_reset_reason_clear(reas);
+
 	sb_init(&sb, sb_samples, BUF_SAMPLES, sb_anchors, BUF_ANCHORS);
 
 	led_init();

@@ -13,6 +13,7 @@
  */
 #include "motion.h"
 
+#include <hal/nrf_gpio.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/kernel.h>
@@ -49,8 +50,14 @@ static const struct i2c_dt_spec i2c = I2C_DT_SPEC_GET(DT_NODELABEL(adxl367));
 static const struct gpio_dt_spec int1 = GPIO_DT_SPEC_GET(DT_NODELABEL(adxl367), int1_gpios);
 static struct gpio_callback int1_cb;
 
+#define INT1_NRF_PIN                                                                               \
+	NRF_GPIO_PIN_MAP(DT_PROP(DT_GPIO_CTLR(DT_NODELABEL(adxl367), int1_gpios), port),          \
+			 DT_GPIO_PIN(DT_NODELABEL(adxl367), int1_gpios))
+
 static bool present;
+static bool wake_armed;
 static atomic_t last_motion_s;
+static atomic_t isr_count;
 
 static void rearm_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(rearm_work, rearm_fn);
@@ -83,6 +90,7 @@ static void rearm_fn(struct k_work *work)
 static void int1_isr(const struct device *port, struct gpio_callback *cb, uint32_t pins)
 {
 	atomic_set(&last_motion_s, (atomic_val_t)k_uptime_seconds());
+	atomic_inc(&isr_count);
 	/* Rate-limit: re-arm (and so allow the next interrupt) a second later. */
 	k_work_reschedule(&rearm_work, K_SECONDS(1));
 }
@@ -142,6 +150,8 @@ uint32_t motion_last_s(void)
 
 int motion_prepare_sysoff(void)
 {
+	uint8_t status = 0;
+
 	if (!present) {
 		return -ENODEV;
 	}
@@ -153,7 +163,25 @@ int motion_prepare_sysoff(void)
 	arm();
 	k_msleep(400);
 	arm();
+	k_msleep(400);
 
-	/* Level-sensitive interrupt = GPIO SENSE, which wakes from System OFF. */
-	return gpio_pin_interrupt_configure_dt(&int1, GPIO_INT_LEVEL_ACTIVE);
+	i2c_reg_read_byte_dt(&i2c, REG_STATUS, &status);
+	int level = gpio_pin_get_dt(&int1);
+
+	LOG_INF("sleep: ADXL367 STATUS 0x%02x, INT1 %d, %u interrupts since boot", status, level,
+		(unsigned int)atomic_get(&isr_count));
+	if (level != 0) {
+		/* Would wake us right away (or keep waking us): button only. */
+		LOG_WRN("INT1 still active, not using motion wake-up");
+		return -EBUSY;
+	}
+	wake_armed = true;
+	return 0;
+}
+
+void motion_arm_wake(void)
+{
+	if (wake_armed) {
+		nrf_gpio_cfg_sense_set(INT1_NRF_PIN, NRF_GPIO_PIN_SENSE_HIGH);
+	}
 }

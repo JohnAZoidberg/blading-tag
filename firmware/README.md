@@ -16,13 +16,12 @@ What it does:
 - Advertises state, position and battery. Advertising is every 1 s in READY,
   and every ~100 ms while recording without a link, so the app reconnects
   quickly.
-- Goes to System OFF on SLEEP, a 2 s button hold, or after 10 min in READY
-  with no link and no motion. ADXL367 motion or the button wakes it.
+- Goes to System OFF on SLEEP or a 2 s button hold. ADXL367 motion or the
+  button is meant to wake it. **This is still being debugged**, see
+  [Power states: status](#power-states-status). The 10 min idle sleep is off
+  (`CONFIG_BLADING_IDLE_SLEEP_S=0`) until it works.
 - Accepts firmware updates over BLE (MCUboot + mcumgr/SMP), and confirms its
   image once Bluetooth is up.
-
-Wake-up from System OFF and the power draw have not been checked on a tag yet
-(phase 7).
 
 Build, OTA and flash run from the repo root via the `Makefile`.
 
@@ -57,6 +56,60 @@ and MCUboot reverts to the previous image.
 | Blue blinking | IDENTIFY |
 | Short press | Start recording (green flash) or stop (red flash) |
 | Hold 2 s (red flash), release | System OFF |
+
+## Power states: status
+
+Tested on the tag (2026-11-07): streaming, STOP flush, link loss (rejoining a
+running session, buffer overflow counted as dropped), SET_POSITION, IDENTIFY,
+OTA from this firmware (0.1.0 -> 0.2.0). Not working yet: **SLEEP / System
+OFF**. What we know:
+
+1. **Fixed: interrupt storm.** The wake-up pins used to be armed as Zephyr
+   level interrupts before power-off. The ADXL367 INT1 (P0.03) was high, so
+   the level interrupt fired endlessly and the tag livelocked before reaching
+   System OFF (seen with gdb). Now SENSE is set directly on the pins with
+   interrupts locked, right before `sys_poweroff()`, and the ADXL367 is only
+   used as a wake source if INT1 is low after re-arming.
+2. **Open: the GRTC wakes the tag from System OFF** within seconds
+   (RESETREAS = `0x800`, GRTC). A retained marker (`GPREGRET[1]`, logged at
+   boot as "last sleep reached System OFF") confirms it really was off. At
+   `z_sys_poweroff()` a debugger showed every GRTC `CC[n].CCEN` = 0 and no
+   compare events pending, so it isn't an armed compare. The current code also
+   stops the GRTC (`TASKS_STOP`) before power-off, with interrupts masked via
+   PRIMASK so MPSL's zero-latency IRQs can't re-arm it. That build is flashed
+   but not cleanly tested yet. One SLEEP did stay asleep until a GPIO wake
+   (RESETREAS `0x140`), but it's unclear which build was running.
+3. **Open: why ADXL367 INT1 is high** on a tag lying still. It may be the
+   referenced activity setup in wake-up mode (`motion.c`), or the threshold.
+   `motion_prepare_sysoff()` now logs STATUS, the INT1 level and the
+   interrupt count.
+
+Next steps:
+
+- Run one clean SLEEP test (no debugger attached): SLEEP, wait 2 min, connect.
+  Then read the boot log line `reset reason ..., last sleep ...`.
+- If the GRTC still wakes it: compare with Nordic's
+  `nrf/samples/bluetooth/peripheral_power_profiling` on this board, and check
+  the nRF54L15 errata and GRTC docs about System OFF.
+- Fix INT1, then test wake-on-motion. Then set `CONFIG_BLADING_IDLE_SLEEP_S`
+  back to 600 and measure the current with a PPK2.
+
+Debugging notes:
+
+- The app's RTT control block is `_SEGGER_RTT` (see `nm zephyr.elf`).
+  MCUboot's log fills much of the buffer before the app starts. Nothing reads
+  it unless a host is attached, and when it's full new lines are dropped. The
+  most reliable read is a memory dump of `_acUpBuffer` with `JLinkExe
+  savebin`.
+- gdb in the toolchain container works against `JLinkGDBServer` on the host
+  (`podman run --network host ...`). Without `CONFIG_DEBUG_THREAD_INFO` there
+  is no thread awareness; run `maintenance flush register-cache` after
+  `monitor halt`.
+- A tag that is confirmed but doesn't advertise can't be updated over BLE.
+  Flash the app over J-Link instead:
+  `nrfutil device program --firmware .../zephyr.signed.hex --options
+  chip_erase_mode=ERASE_RANGES_TOUCHED_BY_FIRMWARE`.
+  This keeps MCUboot and settings.
 
 ## Unit tests
 
