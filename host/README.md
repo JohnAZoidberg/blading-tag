@@ -63,6 +63,7 @@ contains:
 bladetag explore SESSION                       # summary + zoomable overview window
 bladetag explore SESSION --start 300 --end 900 # only part of the session
 bladetag explore SESSION --psd 0:5:standing --psd 120:180:walking --psd 400:460:skating
+bladetag explore SESSION --html overview.html   # same overview as a page for any browser
 bladetag explore SESSION --png overview.png --export samples.csv
 ```
 
@@ -77,6 +78,13 @@ acceleration spectrogram, a cadence track (autocorrelation of the gyro in
 8 s windows, coloured by how repetitive it is), and GPS speed. Rest periods
 are shaded grey and gaps red. `--psd` compares the spectra of time ranges,
 e.g. walking vs. skating, smooth vs. rough road, frame vs. cuff mount.
+
+`--html` writes the same overview as one self-contained page (samples
+embedded, no network or matplotlib needed; about 4 MB for 20 minutes), so it
+can be opened on a phone or sent to someone. Scroll to zoom, drag to pan,
+shift-drag to zoom to a range, double-click for the whole session; the
+legend buttons hide axes, hovering reads out the values, and the URL keeps
+the zoomed range (`overview.html#t=230-360`).
 
 Note down what you did and when (stand still, 10 easy strides, 10 hard
 strides, ...), so the ranges can be found again afterwards. Times are

@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<!-- Written by `bladetag explore --html` (host/src/bladetag/explore_html.py). Self-contained: no network access. -->
+<style>
+:root {
+  --bg: #ffffff; --fg: #1b1b1b; --muted: #6b6b6b; --grid: #e8e8e8; --frame: #b8b8b8;
+  --still: rgba(0, 0, 0, 0.075); --gap: rgba(220, 40, 40, 0.22);
+  --cursor: rgba(0, 0, 0, 0.55); --sel: rgba(40, 110, 220, 0.16); --gps: #e8710a;
+  --c0: #1f77b4; --c1: #ff7f0e; --c2: #2ca02c;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141414; --fg: #e6e6e6; --muted: #9a9a9a; --grid: #2a2a2a; --frame: #555;
+    --still: rgba(255, 255, 255, 0.08); --gap: rgba(240, 70, 70, 0.3);
+    --cursor: rgba(255, 255, 255, 0.6); --sel: rgba(90, 150, 255, 0.22); --gps: #ff9a3c;
+    --c0: #4c9be0; --c1: #ff9a3c; --c2: #4cc24c;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 3; background: var(--bg); padding: 8px 16px 6px; border-bottom: 1px solid var(--grid); }
+h1 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; color: var(--muted); }
+.bar label { display: inline-flex; align-items: center; gap: 4px; }
+.bar input { width: 6.5em; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--frame); border-radius: 4px; padding: 1px 4px; }
+.bar button, .legend button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--frame); border-radius: 4px; padding: 1px 8px; cursor: pointer; }
+#readout { margin-top: 4px; font: 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace; min-height: 1.4em; white-space: pre; overflow-x: auto; }
+main { padding: 6px 16px 24px; }
+.panel { position: relative; margin-bottom: 2px; }
+.panel canvas { display: block; width: 100%; }
+.panel canvas.overlay { position: absolute; left: 0; top: 0; touch-action: none; cursor: crosshair; }
+.legend { position: absolute; top: 4px; right: 14px; z-index: 2; display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.legend button { padding: 0 6px; display: inline-flex; align-items: center; gap: 4px; }
+.legend button.off { opacity: 0.4; }
+.legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; }
+.legend > span { background: var(--bg); color: var(--muted); padding: 0 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; }
+.legend .ramp { width: 60px; height: 8px; border-radius: 2px; }
+details { margin: 6px 0 0; }
+summary { cursor: pointer; color: var(--muted); }
+details pre { margin: 4px 0 0; font: 12px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace; overflow-x: auto; }
+#status { padding: 24px 16px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>__TITLE__</h1>
+  <div class="bar">
+    <span>scroll: zoom · drag: pan · shift-drag: zoom to range · double-click: whole session · ← → + −</span>
+    <label>from <input id="from" type="number" step="any"></label>
+    <label>to <input id="to" type="number" step="any"> s</label>
+    <button id="reset" type="button">Whole session</button>
+    <span><span style="background:var(--still);padding:0 6px">grey</span> at rest ·
+      <span style="background:var(--gap);padding:0 6px">red</span> gap</span>
+  </div>
+  <div id="readout"></div>
+  <details id="summary-box"><summary>Summary</summary><pre id="summary"></pre></details>
+</header>
+<main id="panels"><div id="status">Loading samples…</div></main>
+
+<script type="application/json" id="meta">/*__META__*/</script>
+<script type="text/plain" id="blob">__BLOB__</script>
+<script>
+"use strict";
+const meta = JSON.parse(document.getElementById("meta").textContent);
+const $ = (id) => document.getElementById(id);
+
+const MAGMA = ["#000004", "#1d1147", "#51127c", "#832681", "#b73779", "#e75263", "#fc8961", "#fec488", "#fcfdbf"];
+const VIRIDIS = ["#440154", "#472d7b", "#3b528b", "#2c728e", "#21918c", "#28ae80", "#5ec962", "#addc30", "#fde725"];
+
+function lut(stops) {
+  const rgb = stops.map((h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)));
+  const out = new Uint8Array(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const x = (i / 255) * (rgb.length - 1), k = Math.min(rgb.length - 2, Math.floor(x)), f = x - k;
+    for (let c = 0; c < 3; c++) out[i * 3 + c] = Math.round(rgb[k][c] * (1 - f) + rgb[k + 1][c] * f);
+  }
+  return out;
+}
+const MAGMA_LUT = lut(MAGMA), VIRIDIS_LUT = lut(VIRIDIS);
+const viridis = (v) => {
+  const i = Math.max(0, Math.min(255, Math.round(v * 255))) * 3;
+  return `rgb(${VIRIDIS_LUT[i]},${VIRIDIS_LUT[i + 1]},${VIRIDIS_LUT[i + 2]})`;
+};
+
+async function inflate(b64) {
+  const bin = atob(b64.trim());
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  const stream = new Blob([u8]).stream().pipeThrough(new DecompressionStream("deflate"));
+  return new Response(stream).arrayBuffer();
+}
+
+const CTORS = { "<f4": Float32Array, "<i4": Int32Array, "<i2": Int16Array, "|u1": Uint8Array };
+
+function lowerBound(arr, x) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < x) lo = m + 1; else hi = m; }
+  return lo;
+}
+
+function niceStep(span, target) {
+  const raw = span / Math.max(1, target), p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
+function ticks(a, b, target) {
+  const s = niceStep(b - a, target), out = [];
+  for (let v = Math.ceil(a / s) * s; v <= b + 1e-9 * Math.abs(s); v += s) out.push(v);
+  return { values: out, dec: Math.max(0, -Math.floor(Math.log10(s) + 1e-9)) };
+}
+
+let css = {};
+function readCss() {
+  const st = getComputedStyle(document.documentElement);
+  for (const k of ["fg", "muted", "grid", "frame", "still", "gap", "cursor", "sel", "gps", "c0", "c1", "c2"])
+    css[k] = st.getPropertyValue("--" + k).trim();
+}
+
+// --- data -------------------------------------------------------------------
+
+let D, t, n, brk, T0, T1;
+const view = { x0: 0, x1: 1 };
+const L = 62, R = 26, TOP = 6;
+let dpr = window.devicePixelRatio || 1;
+const panels = [];
+
+function visibleRange() {
+  const i0 = Math.max(0, lowerBound(t, view.x0) - 1);
+  const i1 = Math.min(n, lowerBound(t, view.x1) + 1);
+  return [i0, i1];
+}
+
+// --- panel kinds ------------------------------------------------------------
+
+function linesPanel(id, label, unit, arr, scale, cols) {
+  return {
+    id, label: `${label} (${unit})`, h: 210, unit, cols, arr, scale, visible: cols.map(() => true),
+    legend(p, box) {
+      cols.forEach((c, k) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.innerHTML = `<i style="background:var(--c${k})"></i>${c}`;
+        b.onclick = () => { p.visible[k] = !p.visible[k]; b.classList.toggle("off", !p.visible[k]); drawAll(); };
+        box.appendChild(b);
+      });
+    },
+    range(p) {
+      const [i0, i1] = visibleRange();
+      let mn = Infinity, mx = -Infinity;
+      for (let c = 0; c < 3; c++) {
+        if (!p.visible[c]) continue;
+        for (let i = i0; i < i1; i++) { const v = arr[i * 3 + c]; if (v < mn) mn = v; if (v > mx) mx = v; }
+      }
+      if (mn > mx) return [-1, 1];
+      mn *= scale; mx *= scale;
+      const pad = 0.06 * (mx - mn || 1);
+      return [mn - pad, mx + pad];
+    },
+    plot(p, ctx, xOf, yOf, pw) {
+      const [i0, i1] = visibleRange();
+      const count = i1 - i0;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.9;
+      for (let c = 0; c < 3; c++) {
+        if (!p.visible[c]) continue;
+        ctx.strokeStyle = css["c" + c];
+        ctx.beginPath();
+        if (count <= 2 * pw) {
+          // Raw samples, broken at gaps.
+          for (let i = i0; i < i1; i++) {
+            const x = xOf(t[i]), y = yOf(arr[i * 3 + c] * scale);
+            if (i === i0 || brk[i]) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+          if (count < pw / 5) {
+            ctx.fillStyle = css["c" + c];
+            for (let i = i0; i < i1; i++) ctx.fillRect(xOf(t[i]) - 1.5, yOf(arr[i * 3 + c] * scale) - 1.5, 3, 3);
+          }
+        } else {
+          // Min/max envelope per pixel column, so zoomed out nothing is lost.
+          let col = null, mn = 0, mx = 0, first = true;
+          const flush = () => {
+            if (col === null) return;
+            const y0 = yOf(mn * scale), y1 = yOf(mx * scale);
+            if (first) { ctx.moveTo(col + 0.5, y0); first = false; } else ctx.lineTo(col + 0.5, y0);
+            ctx.lineTo(col + 0.5, y1);
+          };
+          for (let i = i0; i < i1; i++) {
+            const v = arr[i * 3 + c], cx = Math.floor(xOf(t[i]));
+            if (brk[i]) { flush(); col = null; first = true; }
+            if (cx !== col) { flush(); col = cx; mn = mx = v; } else { if (v < mn) mn = v; if (v > mx) mx = v; }
+          }
+          flush();
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+    },
+    read(p, i) {
+      return `${p.id} ` + cols.map((c, k) => (arr[i * 3 + k] * scale).toFixed(p.unit === "g" ? 2 : 0).padStart(p.unit === "g" ? 6 : 5)).join(" ") + ` ${p.unit}`;
+    },
+  };
+}
+
+function specPanel() {
+  const specs = meta.spec || [];
+  for (const s of specs) {
+    const a = D[s.array], cv = document.createElement("canvas");
+    cv.width = s.cols; cv.height = s.rows;
+    const g = cv.getContext("2d"), img = g.createImageData(s.cols, s.rows);
+    for (let c = 0; c < s.cols; c++) {
+      for (let r = 0; r < s.rows; r++) {
+        const v = a[c * s.rows + r] * 3, o = ((s.rows - 1 - r) * s.cols + c) * 4;
+        img.data[o] = MAGMA_LUT[v]; img.data[o + 1] = MAGMA_LUT[v + 1]; img.data[o + 2] = MAGMA_LUT[v + 2]; img.data[o + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    s.img = cv;
+  }
+  const fMax = specs.length ? specs[0].f_max : meta.fs / 2;
+  return {
+    id: "spec", label: "accel spectrum (Hz)", h: 170,
+    legend(p, box) {
+      if (!meta.spec_db) return;
+      const span = document.createElement("span");
+      span.innerHTML = `${meta.spec_db[0].toFixed(0)} dB <i class="ramp" style="background:linear-gradient(90deg,${MAGMA.join(",")})"></i> ${meta.spec_db[1].toFixed(0)} dB`;
+      box.appendChild(span);
+    },
+    range: () => [0, fMax],
+    plot(p, ctx, xOf, yOf) {
+      ctx.imageSmoothingEnabled = false;
+      for (const s of specs) {
+        const df = s.f_max / (s.rows - 1), left = s.t0 - s.dt / 2;
+        const c0 = Math.max(0, Math.floor((view.x0 - left) / s.dt));
+        const c1 = Math.min(s.cols, Math.ceil((view.x1 - left) / s.dt));
+        if (c1 <= c0) continue;
+        const xa = xOf(left + c0 * s.dt), xb = xOf(left + c1 * s.dt);
+        const ya = yOf(s.f_max + df / 2), yb = yOf(-df / 2);
+        ctx.drawImage(s.img, c0, 0, c1 - c0, s.rows, xa, ya, xb - xa, yb - ya);
+      }
+      ctx.strokeStyle = "rgba(255,255,255,0.8)";
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      const y = Math.round(yOf(meta.vib_hp_hz)) + 0.5;
+      ctx.moveTo(0, y); ctx.lineTo(ctx.canvas.width, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    },
+  };
+}
+
+function nearest(ts, x, maxDist) {
+  if (!ts.length) return -1;
+  let i = lowerBound(ts, x);
+  if (i > 0 && (i === ts.length || x - ts[i - 1] < ts[i] - x)) i--;
+  return Math.abs(ts[i] - x) <= maxDist ? i : -1;
+}
+
+function cadencePanel() {
+  const c = meta.cadence;
+  const vis = () => {
+    const a = lowerBound(c.t, view.x0), b = lowerBound(c.t, view.x1 + 1e-9);
+    return [a, b];
+  };
+  return {
+    id: "cadence", label: "cycles/min", h: 130,
+    legend(p, box) {
+      const span = document.createElement("span");
+      span.innerHTML = `repetitive 0 <i class="ramp" style="background:linear-gradient(90deg,${VIRIDIS.join(",")})"></i> 1`;
+      box.appendChild(span);
+    },
+    range() {
+      const [a, b] = vis();
+      // Scale to the windows that are clearly periodic; weak outliers are
+      // drawn as triangles on the edge instead of squashing the rest.
+      let mn = Infinity, mx = -Infinity;
+      for (const strong of [true, false]) {
+        for (let i = a; i < b; i++) {
+          if (strong && c.strength[i] < 0.3) continue;
+          mn = Math.min(mn, c.cpm[i]); mx = Math.max(mx, c.cpm[i]);
+        }
+        if (mn <= mx) break;
+      }
+      if (mn > mx) return [0, 100];
+      const pad = Math.max(3, 0.1 * (mx - mn));
+      return [Math.max(0, mn - pad), mx + pad];
+    },
+    plot(p, ctx, xOf, yOf) {
+      const [a, b] = vis();
+      const [y0, y1] = p.yr;
+      for (let i = a; i < b; i++) {
+        const x = xOf(c.t[i]), v = c.cpm[i];
+        ctx.fillStyle = viridis(c.strength[i]);
+        ctx.beginPath();
+        if (v > y1 || v < y0) {
+          const y = yOf(v > y1 ? y1 : y0), d = v > y1 ? 1 : -1;
+          ctx.moveTo(x - 3, y + 5 * d); ctx.lineTo(x + 3, y + 5 * d); ctx.lineTo(x, y);
+        } else {
+          ctx.arc(x, yOf(v), 2.4, 0, 2 * Math.PI);
+        }
+        ctx.fill();
+      }
+    },
+    read(p, tc) {
+      const i = nearest(c.t, tc, 1.5);
+      return i < 0 ? "" : `cadence ${c.cpm[i].toFixed(1)}/min (both feet ${(2 * c.cpm[i]).toFixed(0)}/min) repetitive ${c.strength[i].toFixed(2)}`;
+    },
+  };
+}
+
+function gpsPanel() {
+  const g = meta.gps;
+  const vis = () => [Math.max(0, lowerBound(g.t, view.x0) - 1), Math.min(g.t.length, lowerBound(g.t, view.x1) + 1)];
+  return {
+    id: "gps", label: "GPS speed (km/h)", h: 120,
+    range() {
+      const [a, b] = vis();
+      let mx = 1;
+      for (let i = a; i < b; i++) mx = Math.max(mx, g.kmh[i]);
+      return [0, mx * 1.1];
+    },
+    plot(p, ctx, xOf, yOf) {
+      const [a, b] = vis();
+      ctx.strokeStyle = ctx.fillStyle = css.gps;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = a; i < b; i++) {
+        // No fix for a while (indoors, tunnel): break the line rather than
+        // drawing a straight one across.
+        const x = xOf(g.t[i]), y = yOf(g.kmh[i]);
+        if (i === a || g.t[i] - g.t[i - 1] > 10) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      for (let i = a; i < b; i++) ctx.fillRect(xOf(g.t[i]) - 1.5, yOf(g.kmh[i]) - 1.5, 3, 3);
+    },
+    read(p, tc) {
+      const i = nearest(g.t, tc, 3);
+      return i < 0 ? "" : `GPS ${g.kmh[i].toFixed(1)} km/h`;
+    },
+  };
+}
+
+// --- drawing ----------------------------------------------------------------
+
+function drawPanel(p, last) {
+  const ctx = p.ctx, W = p.w, H = p.h + (last ? 34 : 4);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const pw = W - L - R, ph = p.h - TOP, bottom = TOP + ph;
+  const span = view.x1 - view.x0;
+  const xOf = (x) => L + ((x - view.x0) / span) * pw;
+  p.yr = p.kind.range(p);
+  const [y0, y1] = p.yr;
+  const yOf = (y) => bottom - ((y - y0) / (y1 - y0)) * ph;
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(L, TOP, pw, ph); ctx.clip();
+  for (const [list, color] of [[meta.still, css.still], [meta.gaps, css.gap]]) {
+    ctx.fillStyle = color;
+    for (const [a, b] of list) {
+      if (b < view.x0 || a > view.x1) continue;
+      const xa = xOf(a), xb = xOf(b);
+      ctx.fillRect(xa, TOP, Math.max(1, xb - xa), ph);
+    }
+  }
+  const xt = ticks(view.x0, view.x1, pw / 90), yt = ticks(y0, y1, ph / 34);
+  ctx.strokeStyle = css.grid; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const v of xt.values) { const x = Math.round(xOf(v)) + 0.5; ctx.moveTo(x, TOP); ctx.lineTo(x, bottom); }
+  if (p.kind.id !== "spec") for (const v of yt.values) { const y = Math.round(yOf(v)) + 0.5; ctx.moveTo(L, y); ctx.lineTo(L + pw, y); }
+  ctx.stroke();
+  p.kind.plot(p, ctx, xOf, yOf, pw);
+  ctx.restore();
+
+  ctx.strokeStyle = css.frame;
+  ctx.strokeRect(L + 0.5, TOP + 0.5, pw - 1, ph - 1);
+  ctx.fillStyle = css.muted;
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const v of yt.values) ctx.fillText(v.toFixed(yt.dec), L - 5, yOf(v));
+  ctx.save();
+  ctx.translate(12, TOP + ph / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = "center"; ctx.fillStyle = css.fg; ctx.font = "12px system-ui, sans-serif";
+  ctx.fillText(p.kind.label, 0, 0);
+  ctx.restore();
+  if (last) {
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const v of xt.values) ctx.fillText(v.toFixed(xt.dec), xOf(v), bottom + 4);
+    ctx.fillStyle = css.fg;
+    ctx.fillText("time since session start (s)", L + pw / 2, bottom + 19);
+  }
+  p.xOf = xOf; p.pw = pw; p.ph = ph;
+}
+
+let cursorT = null, selection = null, pending = false;
+function drawAll() {
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => {
+    pending = false;
+    panels.forEach((p, k) => drawPanel(p, k === panels.length - 1));
+    drawOverlays();
+  });
+}
+
+function drawOverlays() {
+  for (const p of panels) {
+    const ctx = p.octx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, p.w, p.ocanvas.height / dpr);
+    if (!p.xOf) continue;
+    if (selection) {
+      const a = p.xOf(Math.min(selection[0], selection[1])), b = p.xOf(Math.max(selection[0], selection[1]));
+      ctx.fillStyle = css.sel;
+      ctx.fillRect(a, TOP, b - a, p.ph);
+    }
+    if (cursorT !== null && cursorT >= view.x0 && cursorT <= view.x1) {
+      const x = Math.round(p.xOf(cursorT)) + 0.5;
+      ctx.strokeStyle = css.cursor; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, TOP); ctx.lineTo(x, TOP + p.ph); ctx.stroke();
+    }
+  }
+}
+
+function updateReadout() {
+  if (cursorT === null) { $("readout").textContent = ""; return; }
+  const parts = [`t ${cursorT.toFixed(3).padStart(9)} s`];
+  const i = nearest(t, cursorT, 2 / meta.fs);
+  if (i < 0) parts.push("(no samples: gap)");
+  for (const p of panels) {
+    if (!p.kind.read) continue;
+    if (p.kind.cols) { if (i >= 0) parts.push(p.kind.read(p.kind, i)); }
+    else { const s = p.kind.read(p.kind, cursorT); if (s) parts.push(s); }
+  }
+  $("readout").textContent = parts.join("   ");
+}
+
+// --- view & interaction -------------------------------------------------------
+
+let hashTimer = null;
+function setView(a, b) {
+  const full = T1 - T0, minSpan = Math.min(full, 20 / meta.fs);
+  let span = Math.max(minSpan, Math.min(full, b - a));
+  let x0 = (a + b) / 2 - span / 2;
+  x0 = Math.max(T0, Math.min(T1 - span, x0));
+  view.x0 = x0; view.x1 = x0 + span;
+  for (const [id, v] of [["from", view.x0], ["to", view.x1]])
+    if (document.activeElement !== $(id)) $(id).value = v.toFixed(span < 10 ? 3 : 1);
+  clearTimeout(hashTimer);
+  hashTimer = setTimeout(() => {
+    const whole = view.x0 <= T0 && view.x1 >= T1;
+    history.replaceState(null, "", whole ? location.pathname + location.search : `#t=${view.x0.toFixed(3)}-${view.x1.toFixed(3)}`);
+  }, 300);
+  drawAll();
+}
+
+function zoomAt(tc, factor) {
+  setView(tc - (tc - view.x0) * factor, tc + (view.x1 - tc) * factor);
+}
+
+function attach(p) {
+  const cv = p.ocanvas;
+  const tOf = (px) => view.x0 + ((px - L) / p.pw) * (view.x1 - view.x0);
+  const pointers = new Map();
+  let drag = null, pinch = null;
+
+  cv.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      const dt = (e.deltaX * unit / p.pw) * (view.x1 - view.x0);
+      setView(view.x0 + dt, view.x1 + dt);
+    } else {
+      zoomAt(tOf(e.offsetX), Math.exp(e.deltaY * unit * 0.0015));
+    }
+  }, { passive: false });
+
+  cv.addEventListener("pointerdown", (e) => {
+    cv.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, e.offsetX);
+    if (pointers.size === 1) {
+      drag = { mode: e.shiftKey ? "select" : "pan", x: e.offsetX, x0: view.x0, x1: view.x1, t: tOf(e.offsetX) };
+      if (drag.mode === "pan") cv.style.cursor = "grabbing";
+    } else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = { d: Math.max(10, Math.abs(a - b)), t: tOf((a + b) / 2), span: view.x1 - view.x0 };
+      drag = null; selection = null;
+    }
+  });
+
+  cv.addEventListener("pointermove", (e) => {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, e.offsetX);
+    if (pinch && pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const span = pinch.span * pinch.d / Math.max(10, Math.abs(a - b));
+      const x0 = pinch.t - (((a + b) / 2 - L) / p.pw) * span;
+      setView(x0, x0 + span);
+    } else if (drag && drag.mode === "pan") {
+      const dt = -((e.offsetX - drag.x) / p.pw) * (drag.x1 - drag.x0);
+      setView(drag.x0 + dt, drag.x1 + dt);
+    } else if (drag && drag.mode === "select") {
+      selection = [drag.t, tOf(e.offsetX)];
+    }
+    if (e.pointerType === "mouse" || drag) { cursorT = tOf(e.offsetX); updateReadout(); }
+    drawOverlays();
+  });
+
+  const end = (e) => {
+    pointers.delete(e.pointerId);
+    if (drag && drag.mode === "select" && Math.abs(e.offsetX - drag.x) > 3) {
+      const a = Math.min(drag.t, tOf(e.offsetX)), b = Math.max(drag.t, tOf(e.offsetX));
+      setView(a, b);
+    }
+    selection = null;
+    if (pointers.size < 2) pinch = null;
+    if (pointers.size === 1) {
+      const x = [...pointers.values()][0];
+      drag = { mode: "pan", x, x0: view.x0, x1: view.x1, t: tOf(x) };
+    } else if (pointers.size === 0) drag = null;
+    cv.style.cursor = "";
+    drawOverlays();
+  };
+  cv.addEventListener("pointerup", end);
+  cv.addEventListener("pointercancel", end);
+  cv.addEventListener("pointerleave", (e) => {
+    if (e.pointerType === "mouse" && !drag) { cursorT = null; updateReadout(); drawOverlays(); }
+  });
+  cv.addEventListener("dblclick", () => setView(T0, T1));
+}
+
+function layout() {
+  dpr = window.devicePixelRatio || 1;
+  panels.forEach((p, k) => {
+    const H = p.h + (k === panels.length - 1 ? 34 : 4);
+    p.w = p.canvas.clientWidth;
+    for (const cv of [p.canvas, p.ocanvas]) {
+      cv.width = Math.round(p.w * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + "px";
+    }
+  });
+  drawAll();
+}
+
+function build() {
+  const kinds = [
+    linesPanel("accel", "accel", "g", D.accel, meta.accel_scale, meta.accel_cols),
+    linesPanel("gyro", "gyro", "dps", D.gyro, meta.gyro_scale, meta.gyro_cols),
+    specPanel(),
+    cadencePanel(),
+  ];
+  if (meta.gps && meta.gps.t.length) kinds.push(gpsPanel());
+  const main = $("panels");
+  main.innerHTML = "";
+  for (const kind of kinds) {
+    const div = document.createElement("div");
+    div.className = "panel";
+    const canvas = document.createElement("canvas"), ocanvas = document.createElement("canvas");
+    ocanvas.className = "overlay";
+    const legend = document.createElement("div");
+    legend.className = "legend";
+    div.append(canvas, ocanvas, legend);
+    main.appendChild(div);
+    const p = { kind, h: kind.h, canvas, ocanvas, ctx: canvas.getContext("2d"), octx: ocanvas.getContext("2d") };
+    kind.visible && (p.visible = kind.visible);
+    if (kind.legend) kind.legend(kind, legend);
+    panels.push(p);
+    attach(p);
+  }
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement || !panels.length) return;
+  const span = view.x1 - view.x0;
+  if (e.key === "ArrowLeft") setView(view.x0 - 0.25 * span, view.x1 - 0.25 * span);
+  else if (e.key === "ArrowRight") setView(view.x0 + 0.25 * span, view.x1 + 0.25 * span);
+  else if (e.key === "+" || e.key === "=") zoomAt((view.x0 + view.x1) / 2, 0.6);
+  else if (e.key === "-" || e.key === "_") zoomAt((view.x0 + view.x1) / 2, 1 / 0.6);
+  else if (e.key === "0" || e.key === "Home") setView(T0, T1);
+  else return;
+  e.preventDefault();
+});
+
+function rangeFromInputs() {
+  const a = parseFloat($("from").value), b = parseFloat($("to").value);
+  if (isFinite(a) && isFinite(b) && b > a) setView(a, b);
+}
+
+async function main() {
+  readCss();
+  $("summary").textContent = meta.summary.join("\n");
+  if (!meta.summary.length) $("summary-box").hidden = true;
+  if (typeof DecompressionStream === "undefined") {
+    $("status").textContent = "This browser can't decompress the embedded samples (needs DecompressionStream: Firefox 113+, Chrome 80+, Safari 16.4+).";
+    return;
+  }
+  const buf = await inflate($("blob").textContent);
+  D = {};
+  for (const [k, a] of Object.entries(meta.arrays)) D[k] = new CTORS[a.dtype](buf.slice(a.offset, a.offset + a.bytes));
+  t = D.t; n = t.length;
+  brk = new Uint8Array(n);
+  for (const i of D.seg_start) brk[i] = 1;
+  T0 = t[0]; T1 = t[n - 1];
+  build();
+  for (const id of ["from", "to"]) {
+    $(id).addEventListener("change", rangeFromInputs);
+    $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") rangeFromInputs(); });
+  }
+  $("reset").onclick = () => setView(T0, T1);
+  const m = /t=([\d.eE+-]+)-([\d.eE+-]+)/.exec(location.hash);
+  view.x0 = T0; view.x1 = T1;
+  setView(m ? +m[1] : T0, m ? +m[2] : T1);
+  layout();
+  new ResizeObserver(layout).observe($("panels"));
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readCss(); drawAll(); });
+  // For the browser console (and tests): bladetag.D.accel etc. are the samples.
+  window.bladetag = { meta, D, view, panels, setView };
+  document.body.dataset.ready = "1";
+}
+main().catch((e) => { $("status").textContent = "Couldn't load the samples: " + e; });
+</script>
+</body>
+</html>

@@ -99,3 +99,29 @@ def test_parse_range():
     assert ex.parse_range("10:20:rough asphalt") == (10.0, 20.0, "rough asphalt")
     with pytest.raises(ValueError):
         ex.parse_range("10")
+
+
+def test_cli_writes_html(session, tmp_path, capsys):
+    from bladetag.explore_html import decode
+
+    path, _ = session
+    out = tmp_path / "o.html"
+    main(["explore", str(path), "--html", str(out), "--start", "10", "--end", "200"])
+    assert "cadence" in capsys.readouterr().out
+    html = out.read_text()
+    assert "<title>" in html and "__BLOB__" not in html and "/*__META__*/" not in html
+    meta, blob = decode(html)
+    df = ex.crop(ex.load(path)[0], 10, 200)
+    arr = {k: np.frombuffer(blob, a["dtype"], a["bytes"] // np.dtype(a["dtype"]).itemsize, a["offset"])
+           for k, a in meta["arrays"].items()}
+    assert meta["n"] == len(df) == len(arr["t"])
+    np.testing.assert_allclose(arr["t"], df["t_s"], atol=1e-3)
+    acc = arr["accel"].reshape(-1, 3) * meta["accel_scale"]
+    np.testing.assert_allclose(acc, df[ex.ACCEL], atol=meta["accel_scale"])
+    gyr = arr["gyro"].reshape(-1, 3) * meta["gyro_scale"]
+    np.testing.assert_allclose(gyr, df[ex.GYRO], atol=meta["gyro_scale"])
+    assert len(arr["seg_start"]) == len(meta["gaps"]) == 1   # the 40 s link drop
+    assert meta["still"] and meta["cadence"]["t"] and meta["gps"]["t"] and meta["spec"]
+    for s in meta["spec"]:
+        assert len(arr[s["array"]]) == s["cols"] * s["rows"]
+    assert meta["summary"] and "cadence" in "\n".join(meta["summary"])
