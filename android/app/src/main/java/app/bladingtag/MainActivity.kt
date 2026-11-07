@@ -49,7 +49,8 @@ class MainActivity : Activity() {
     private val found = LinkedHashMap<String, Found>()
     private val selected = LinkedHashSet<String>()
     private val rowText = HashMap<String, TextView>()
-    private val sleepButtons = HashMap<String, Button>()
+    /** Per tag: the Stop and Sleep buttons, enabled by advertised state. */
+    private val powerButtons = HashMap<String, Pair<Button, Button>>()
     private var scanning = false
     private var shownRecording: RecorderService.Recording? = null
 
@@ -262,7 +263,7 @@ class MainActivity : Activity() {
         if (rowText.keys != found.keys) {
             tagList.removeAllViews()
             rowText.clear()
-            sleepButtons.clear()
+            powerButtons.clear()
             if (found.isEmpty()) tagList.addView(TextView(this).apply {
                 text = if (scanning) "Searching…" else "Not searching."
                 textSize = 15f
@@ -271,8 +272,14 @@ class MainActivity : Activity() {
         }
         for (f in found.values) {
             rowText[f.address]?.text = rowDescription(f)
-            // The tag refuses SLEEP while recording (BAD_STATE); stop it first.
-            sleepButtons[f.address]?.isEnabled = f.adv?.state != Protocol.STATE_RECORDING
+            // This app's own recordings hide the list, so a RECORDING tag here
+            // was started elsewhere (another phone/laptop, or its button).
+            // The tag refuses SLEEP while recording (BAD_STATE): Stop first.
+            val recording = f.adv?.state == Protocol.STATE_RECORDING
+            powerButtons[f.address]?.let { (stop, sleep) ->
+                stop.isEnabled = recording
+                sleep.isEnabled = !recording
+            }
         }
         startButton.isEnabled = selected.isNotEmpty() && hasPermissions()
     }
@@ -326,17 +333,22 @@ class MainActivity : Activity() {
             b(buttons, "Left foot", Protocol.setPosition(1), "Set to left")
             b(buttons, "Right foot", Protocol.setPosition(2), "Set to right")
             row.addView(buttons)
-            // Own line: a 4th button doesn't fit, and it keeps the one that
-            // takes the tag away apart from the harmless ones.
+            // Own line: more buttons don't fit, and it keeps the ones that
+            // end something apart from the harmless ones.
             val power = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dp(28), 0, 0, 0)
             }
+            // Without Data notifications the tag drops what it still has
+            // buffered and goes READY at once (whoever started it loses
+            // that tail).
+            val stop = b(power, "Stop", Protocol.stop(), "Stopped")
             // System OFF: the tag stops advertising, so drop it from the list
             // now rather than after the 30 s timeout. Only its button (or,
             // once it works, motion) wakes it again.
-            sleepButtons[f.address] = b(power, "Sleep", Protocol.sleep(),
+            val sleep = b(power, "Sleep", Protocol.sleep(),
                 "Asleep. Press its button to wake it") { found.remove(f.address) }
+            powerButtons[f.address] = stop to sleep
             row.addView(power)
         }
         return row

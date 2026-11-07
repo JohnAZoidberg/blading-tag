@@ -12,6 +12,8 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
 1. Wake the tag by moving the skate. It shows up under **Tags** with its
    state, foot and battery. **Blink** flashes its LED so you can tell two tags
    apart, and **Left foot** / **Right foot** store the position on the tag.
+   **Stop** ends a recording that something else started (another phone,
+   the laptop, or the tag's button) and drops what the tag still buffers.
    **Sleep** puts a tag that isn't recording into System OFF. It stops
    advertising and drops off the list until its button wakes it (later also
    motion; see [../firmware/README.md](../firmware/README.md#power-states-status)).
