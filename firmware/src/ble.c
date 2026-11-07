@@ -210,6 +210,16 @@ static const struct bt_le_adv_param adv_slow =
 static const struct bt_le_adv_param adv_fast =
 	BT_LE_ADV_PARAM_INIT(BT_LE_ADV_OPT_CONN, 160, 240, NULL); /* 100-150 ms */
 
+/* Whether we started advertising, and with which interval. Cleared on connect. */
+static atomic_t adv_on;
+static bool adv_on_fast;
+
+/*
+ * Runs on the system workqueue only. Stopping connectable advertising frees
+ * its pending connection object, which calls recycled() -> ble_adv_refresh()
+ * again. So only stop when the interval changes; otherwise update the data in
+ * place, or this loops forever.
+ */
 static void adv_work_fn(struct k_work *work)
 {
 	uint8_t state, position;
@@ -224,12 +234,26 @@ static void adv_work_fn(struct k_work *work)
 	app_adv_fields(&state, &position, &battery, &fast);
 	proto_encode_adv_mfg(mfg, state, position, battery);
 
-	bt_le_adv_stop();
+	if (atomic_get(&adv_on)) {
+		if (fast == adv_on_fast &&
+		    bt_le_adv_update_data(ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd)) == 0) {
+			return;
+		}
+		bt_le_adv_stop();
+		atomic_set(&adv_on, 0);
+	}
+
 	err = bt_le_adv_start(fast ? &adv_fast : &adv_slow, ad, ARRAY_SIZE(ad), sd,
 			      ARRAY_SIZE(sd));
-	if (err && err != -EALREADY) {
-		/* -ENOMEM while the old connection object isn't recycled yet. */
+	if (err == 0) {
+		atomic_set(&adv_on, 1);
+		adv_on_fast = fast;
+		LOG_INF("advertising (%s)", fast ? "fast" : "slow");
+	} else if (err == -ENOMEM) {
+		/* The old connection object isn't recycled yet; recycled() retries. */
 		LOG_DBG("adv start: %d", err);
+	} else {
+		LOG_WRN("adv start failed: %d", err);
 	}
 }
 
@@ -267,6 +291,8 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	cur_conn = bt_conn_ref(conn);
 	k_spin_unlock(&conn_lock, key);
 
+	/* The controller stops advertising when a connection is made. */
+	atomic_set(&adv_on, 0);
 	reset_credits();
 	LOG_INF("connected");
 	app_on_connected();
@@ -312,8 +338,8 @@ int ble_init(void)
 	bt_set_name(name);
 
 	reset_credits();
-	adv_work_fn(NULL);
-	LOG_INF("advertising as %s", name);
+	ble_adv_refresh();
+	LOG_INF("name %s", name);
 	return 0;
 }
 
@@ -331,4 +357,5 @@ void ble_shutdown(void)
 		}
 	}
 	bt_le_adv_stop();
+	atomic_set(&adv_on, 0);
 }
