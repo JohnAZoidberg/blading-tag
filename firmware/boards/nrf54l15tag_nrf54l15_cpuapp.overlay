@@ -1,0 +1,41 @@
+/*
+ * Flash layout of the factory-programmed nRF54L15 Tag.
+ *
+ * The factory MCUboot uses NCS's "FLPR" partition variant
+ * (WITH_FLPR_PARTITIONS in nrf54l15_cpuapp_partition.dtsi), not the default
+ * one. Read back from a stock tag over SWD:
+ *
+ *   mcuboot  0x000000  62 KiB
+ *   slot0    0x010000  664 KiB  (image trailer at the end, 0x0b6000)
+ *   slot1    0x0b6000  664 KiB
+ *   storage  0x15c000  36 KiB
+ *
+ * The app has to agree with the bootloader on these, or it writes its
+ * "confirmed" flag to the wrong place and MCUboot reverts the update. Keep
+ * this in sync with sysbuild/mcuboot.overlay (which includes this file).
+ */
+
+/delete-node/ &slot1_partition;
+/delete-node/ &storage_partition;
+
+&cpuapp_rram {
+	partitions {
+		slot0_partition: partition@10000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-0";
+			reg = <0x10000 DT_SIZE_K(664)>;
+		};
+
+		slot1_partition: partition@b6000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-1";
+			reg = <0xb6000 DT_SIZE_K(664)>;
+		};
+
+		storage_partition: partition@15c000 {
+			compatible = "zephyr,mapped-partition";
+			label = "storage";
+			reg = <0x15c000 DT_SIZE_K(36)>;
+		};
+	};
+};

@@ -1,0 +1,12 @@
+/*
+ * MCUboot uses the same flash layout as the app, see the board overlay.
+ * This file replaces MCUboot's own app.overlay, so it also has to point
+ * MCUboot's code at boot_partition.
+ */
+#include "../boards/nrf54l15tag_nrf54l15_cpuapp.overlay"
+
+/ {
+	chosen {
+		zephyr,code-partition = &boot_partition;
+	};
+};

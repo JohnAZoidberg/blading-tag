@@ -1,0 +1,17 @@
+# West manifest for the blading-tag firmware.
+#
+# The workspace topdir is the repo root (`west init -l firmware`), so
+# zephyr/, nrf/, modules/, bootloader/, ... are cloned next to firmware/ and
+# are gitignored. See firmware/README.md.
+manifest:
+  remotes:
+    - name: ncs
+      url-base: https://github.com/nrfconnect
+  projects:
+    - name: nrf
+      remote: ncs
+      repo-path: sdk-nrf
+      revision: v3.4.0
+      import: true
+  self:
+    path: firmware
