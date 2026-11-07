@@ -110,6 +110,13 @@ Transitions:
 These are estimates from the datasheets and Nordic's tag blog post. Measure
 them later with a PPK2 (cut SB1, measure across TP6/TP7).
 
+TX power is +7 dBm, the most the tag's QFN48 nRF54L15 can do, for range from
+the ankle to a phone on the body. Against 0 dBm that adds roughly 5 mA while
+the radio transmits: ~+60 µA while recording (~1.4 % TX duty) and ~+5 µA
+while advertising in READY. That's cheap as long as the tag sleeps when idle
+(`BLADING_IDLE_SLEEP_S`, still off). The ~10 mA TX peaks are harder on an
+old or cold coin cell.
+
 The factory firmware is not power-optimised. Take the coin cell out between
 uses until our firmware is on the tag.
 
