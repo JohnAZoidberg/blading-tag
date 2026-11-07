@@ -355,7 +355,7 @@ def format_summary(r: Result) -> str:
     lines = [
         f"tag {s['tag']} ({s['position']})",
         f"  duration        {s['duration_s'] / 60:.1f} min, skating {s['moving_s'] / 60:.1f} min",
-        f"  sample rate     {s['sample_rate_hz']:.2f} Hz, clock fit ±{s['clock_residual_ms']:.2f} ms,"
+        f"  sample rate     {s['sample_rate_hz']:.2f} Hz, clock fit ±{f(s['clock_residual_ms'], '{:.2f}')} ms,"
         f" {s['samples_missing']} samples missing",
         f"  stroke cycles   {s['strokes']} (this foot, by {s['cycle_method']}),"
         f" median period {f(s['cycle_period_s'], '{:.2f}')} s",

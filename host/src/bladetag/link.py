@@ -7,6 +7,7 @@ from __future__ import annotations
 import abc
 import asyncio
 import re
+import sys
 from dataclasses import dataclass
 from typing import Callable
 
@@ -110,8 +111,17 @@ class BleakLink(TagLink):
     async def connect(self) -> None:
         from bleak import BleakClient, BleakScanner
 
+        # A client from before a link loss still has its D-Bus connection, and
+        # BlueZ keeps that connection's notification sessions. They come back
+        # on the next connection next to the new ones, and every notification
+        # then arrives twice. Closing the old client ends them.
+        await self._drop_client()
+
         # Scanning first lets BlueZ/WinRT find a tag that isn't cached yet.
         dev = await BleakScanner.find_device_by_address(self.address, timeout=self._timeout)
+        if dev is None and await _bluez_drop_stale_link(self.address):
+            # The tag now sees a link loss, buffers, and advertises again.
+            dev = await BleakScanner.find_device_by_address(self.address, timeout=self._timeout)
         if dev is None:
             raise TimeoutError(f"{self.address} not found (asleep? connected elsewhere?)")
         self._client = BleakClient(dev, disconnected_callback=self._disconnected, timeout=self._timeout)
@@ -125,13 +135,24 @@ class BleakLink(TagLink):
             except Exception:
                 pass
 
-    def _disconnected(self, _client) -> None:
+    def _disconnected(self, client) -> None:
+        # Only the current client counts, not one being closed by _drop_client.
+        if client is not self._client:
+            return
         if self.on_disconnect:
             self.on_disconnect()
 
     async def disconnect(self) -> None:
-        if self._client is not None:
-            await self._client.disconnect()
+        await self._drop_client()
+
+    async def _drop_client(self) -> None:
+        client, self._client = self._client, None
+        if client is None:
+            return
+        try:
+            await asyncio.wait_for(client.disconnect(), 10.0)
+        except Exception:  # noqa: BLE001 - it's gone either way
+            pass
 
     @property
     def is_connected(self) -> bool:
@@ -159,6 +180,41 @@ class BleakLink(TagLink):
     async def subscribe(self, on_status: Callback, on_data: Callback) -> None:
         await self._client.start_notify(p.STATUS_UUID, lambda _c, d: on_status(bytes(d)))
         await self._client.start_notify(p.DATA_UUID, lambda _c, d: on_data(bytes(d)))
+
+
+async def _bluez_drop_stale_link(address: str) -> bool:
+    """Disconnect a BlueZ connection to ``address`` that we didn't find by
+    scanning, and return True if there was one.
+
+    BlueZ keeps a link up when the program using it dies, or sometimes after
+    bleak reported a disconnect. The tag then thinks it's connected: it
+    doesn't advertise, so bleak can't find it, and its data goes nowhere.
+    Linux only. Note that this also takes the tag away from any other
+    program on this computer that is using it."""
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        from dbus_fast import BusType, Message, MessageType
+        from dbus_fast.aio import MessageBus
+    except ImportError:
+        return False
+    bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+    try:
+        reply = await bus.call(Message(destination="org.bluez", path="/",
+                                       interface="org.freedesktop.DBus.ObjectManager",
+                                       member="GetManagedObjects"))
+        if reply.message_type == MessageType.ERROR:
+            return False
+        for path, ifaces in reply.body[0].items():
+            dev = ifaces.get("org.bluez.Device1")
+            if (dev and dev["Address"].value.upper() == address.upper()
+                    and dev["Connected"].value):
+                r = await bus.call(Message(destination="org.bluez", path=path,
+                                           interface="org.bluez.Device1", member="Disconnect"))
+                return r.message_type != MessageType.ERROR
+        return False
+    finally:
+        bus.disconnect()
 
 
 def open_link(address: str) -> TagLink:

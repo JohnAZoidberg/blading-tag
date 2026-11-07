@@ -36,8 +36,13 @@ def test_truncated_record_is_dropped():
     assert list(iter_records(good + RECORD_HEADER.pack(2, 1, 10) + b"xy")) == [(1, 1, b"abc")]
 
 
-def write_session(folder, true_rate=200.6, n_packets=200, drop_after=None, drop_samples=0):
-    """Fake recording: 19-sample packets with a known clock relation."""
+def write_session(folder, true_rate=200.6, n_packets=200, drop_after=None, drop_samples=0,
+                  dup_after=None, backlog=0):
+    """Fake recording: 19-sample packets with a known clock relation.
+
+    ``dup_after``: from that packet on, log every packet twice.
+    ``backlog``: the first that many packets arrive in a burst just before
+    the next one, as when a recorder joins a running recording."""
     w = SessionWriter(folder, start_utc=datetime(2026, 11, 7, 14, 25, 30, tzinfo=timezone.utc),
                       start_elapsed_ns=10_000_000_000)
     log = w.add_tag(ADDR, INFO)
@@ -52,7 +57,17 @@ def write_session(folder, true_rate=200.6, n_packets=200, drop_after=None, drop_
         samples = np.tile(np.array([k, -k, 2048, 1, 2, 3], np.int16), (19, 1))
         samples[:, 0] = np.arange(idx, idx + 19) % 30000
         rx = offset_ns + skew * ts_us * 1000 + 19 / true_rate * 1e9 + rng.exponential(8e6) + 3e6
-        log.write(RecordKind.DATA, p.DataPacket.pack_imu6(seq, idx, int(ts_us), samples), int(rx))
+        if k < backlog:
+            join_ns = offset_ns + skew * (5e6 + backlog * 19e6 / true_rate) * 1000
+            if k == 0:
+                log.write(RecordKind.STATUS, status(buffer_fill=backlog * 19).pack(), int(join_ns) - 1_000_000)
+            rx = join_ns + k * 0.2e6  # drained faster than real time, before packet `backlog` is due
+        elif backlog and k == backlog:
+            log.write(RecordKind.STATUS, status(buffer_fill=0).pack(), int(rx) - 1)
+        pkt = p.DataPacket.pack_imu6(seq, idx, int(ts_us), samples)
+        log.write(RecordKind.DATA, pkt, int(rx))
+        if dup_after is not None and k >= dup_after:
+            log.write(RecordKind.DATA, pkt, int(rx) + 2_000_000)
         idx += 19
         seq += 1
     w.tags[ADDR].update_from_status(status())
@@ -110,3 +125,28 @@ def test_gps(tmp_path):
     w.close()
     g = load_session(tmp_path / "s").gps
     assert g["speed_mps"][0] == 7.0 and np.isnan(g["alt_m"][0])
+
+
+def test_duplicate_packets_are_dropped(tmp_path):
+    write_session(tmp_path / "s", dup_after=120)
+    t = load_session(tmp_path / "s").tags[0]
+    assert t.duplicate_packets == 80
+    assert len(t.pkt_seq) == 200 and t.seq_gaps() == 0 and t.gaps() == []
+    assert np.array_equal(t.sample_index, np.arange(200 * 19))
+
+
+def test_clock_fit_ignores_backlog_after_join(tmp_path):
+    # 40 % of the log is a buffer drained right after joining: as late
+    # arrivals they'd pull a plain envelope fit far off.
+    offset_ns, skew = write_session(tmp_path / "s", n_packets=1000, backlog=400)
+    t = load_session(tmp_path / "s").tags[0]
+    fit = fit_clocks(t)
+    tag_us = np.array([5e6, 90e6])
+    true_min = offset_ns + skew * tag_us * 1000 + 1 / 200.6 * 1e9 + 3e6
+    assert np.all(np.abs(fit.rx_clock(tag_us) - true_min) < 1e6)
+    assert fit.rx_residual_ms < 1.0
+
+
+def test_clock_fit_too_short_to_judge(tmp_path):
+    write_session(tmp_path / "s", n_packets=100)  # under 10 s: one fit window
+    assert np.isnan(fit_clocks(load_session(tmp_path / "s").tags[0]).rx_residual_ms)

@@ -78,6 +78,10 @@ class Recorder:
         self._taglog: TagLog | None = None
         self._lost = asyncio.Event()
         self._ready = asyncio.Event()
+        # Set when the tag goes from RECORDING to READY without our STOP
+        # (button, or the tag's own link-loss timeout).
+        self._tag_stopped = asyncio.Event()
+        self._seen_recording = False
         self._stopping = False
         link.on_disconnect = self._on_disconnect
 
@@ -94,8 +98,17 @@ class Recorder:
         self.stats.last_status = s
         if s.state == p.State.READY:
             self._ready.set()
+            if self._seen_recording and not self._stopping:
+                self._tag_stopped.set()
         else:
             self._ready.clear()
+            self._seen_recording = True
+            # Keep session.json current, so a crashed recorder still leaves
+            # the right session_id and settings.
+            meta = self.writer.tags.get(self.link.address)
+            if meta is not None and meta.session_id != s.session_id:
+                meta.update_from_status(s)
+                self.writer.save()
 
     def _on_data(self, payload: bytes) -> None:
         self._taglog.write(RecordKind.DATA, payload)
@@ -122,11 +135,16 @@ class Recorder:
         self.writer.save()
         return status
 
-    async def _reconnect(self) -> p.Status | None:
+    async def _reconnect(self, stop: asyncio.Event, end: float | None) -> p.Status | None:
+        """Reconnect until it works, the tag must have given up, ``stop`` is
+        set or the recording's ``end`` (monotonic) has passed."""
         self.log("link lost, reconnecting ...")
-        deadline = time.monotonic() + LINK_LOSS_GIVE_UP_S
+        self._taglog.flush()
+        give_up = time.monotonic() + LINK_LOSS_GIVE_UP_S
+        if end is not None:
+            give_up = min(give_up, end)
         delay = 0.5
-        while time.monotonic() < deadline and not self._stopping:
+        while time.monotonic() < give_up and not stop.is_set():
             try:
                 await self.link.connect()
                 self._lost.clear()
@@ -136,7 +154,11 @@ class Recorder:
                 return st
             except Exception as e:  # noqa: BLE001 - any failure: retry
                 self.log(f"  reconnect failed: {e}")
-                await asyncio.sleep(delay)
+                self._taglog.flush()
+                try:
+                    await asyncio.wait_for(stop.wait(), delay)
+                except asyncio.TimeoutError:
+                    pass
                 delay = min(delay * 2, 5.0)
         return None
 
@@ -166,7 +188,8 @@ class Recorder:
 
         deadline = time.monotonic() + self.opts.duration_s if self.opts.duration_s else None
         while True:
-            waits = [asyncio.ensure_future(stop.wait()), asyncio.ensure_future(self._lost.wait())]
+            waits = [asyncio.ensure_future(stop.wait()), asyncio.ensure_future(self._lost.wait()),
+                     asyncio.ensure_future(self._tag_stopped.wait())]
             timeout = None if deadline is None else max(0.0, deadline - time.monotonic())
             done, pending = await asyncio.wait(waits, timeout=min(timeout or 1.0, 1.0),
                                                return_when=asyncio.FIRST_COMPLETED)
@@ -175,10 +198,14 @@ class Recorder:
             self._taglog.flush()
             if stop.is_set() or (deadline is not None and time.monotonic() >= deadline):
                 break
+            if self._tag_stopped.is_set():
+                self.log("tag stopped recording on its own (button?); session ends here")
+                break
             if self._lost.is_set():
-                st = await self._reconnect()
+                st = await self._reconnect(stop, deadline)
                 if st is None:
-                    self.log("could not reconnect; giving up")
+                    if not stop.is_set() and (deadline is None or time.monotonic() < deadline):
+                        self.log("could not reconnect; giving up")
                     break
                 if st.state != p.State.RECORDING:
                     self.log("tag stopped recording on its own (link lost too long); session ends here")
@@ -189,7 +216,11 @@ class Recorder:
 
     async def _finish(self) -> None:
         self._stopping = True
-        if self.link.is_connected:
+        st = self.stats.last_status
+        if self.link.is_connected and st is not None and st.state == p.State.READY:
+            self.log("tag is already stopped")
+            await self.link.disconnect()
+        elif self.link.is_connected:
             try:
                 await self.link.write_control(p.cmd_stop())
                 await asyncio.wait_for(self._ready.wait(), self.opts.stop_timeout_s)

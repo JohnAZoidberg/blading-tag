@@ -31,7 +31,7 @@ class ClockFit:
     sample_clock: LinearMap   # sample_index -> tag_time_us
     rx_clock: LinearMap       # tag_time_us -> receiver elapsed_ns
     rate_hz: float            # true sample rate
-    rx_residual_ms: float     # spread of envelope points around the fit
+    rx_residual_ms: float     # spread of envelope points around the fit; nan if too short to tell
 
     def sample_elapsed_ns(self, sample_index: np.ndarray) -> np.ndarray:
         return self.rx_clock(self.sample_clock(sample_index))
@@ -63,6 +63,9 @@ def fit_rx_clock(tag: TagData, sample_clock: LinearMap | None = None, window_s: 
     rx = tag.pkt_rx_ns.astype(np.float64)
     if len(ts) == 0:
         return LinearMap(0.0, 1000.0), float("nan")
+    live = _live_packets(tag)
+    if np.count_nonzero(live) >= 2:
+        ts, rx = ts[live], rx[live]
     delay = rx - ts * 1000.0
     win = np.floor((ts - ts.min()) / (window_s * 1e6)).astype(np.int64)
     # Lowest delay per window.
@@ -72,7 +75,7 @@ def fit_rx_clock(tag: TagData, sample_clock: LinearMap | None = None, window_s: 
     x, y = ts[sel], rx[sel]
     if len(x) < 2:
         a = float(np.min(delay))
-        return LinearMap(a, 1000.0), 0.0
+        return LinearMap(a, 1000.0), float("nan")
     keep = np.ones(len(x), bool)
     for _ in range(max_iter):
         x0 = x[keep].mean()
@@ -86,8 +89,30 @@ def fit_rx_clock(tag: TagData, sample_clock: LinearMap | None = None, window_s: 
         if new_keep.sum() < 2 or np.array_equal(new_keep, keep):
             break
         keep = new_keep
-    spread = float(np.std(resid[keep]) / 1e6)
+    # Two windows always fit exactly, so the spread says nothing until there
+    # are three (a recording of 20 s or more).
+    spread = float(np.std(resid[keep]) / 1e6) if keep.sum() >= 3 else float("nan")
     return LinearMap(float(a), float(b)), spread
+
+
+def _live_packets(tag: TagData, backlog_s: float = 0.5) -> np.ndarray:
+    """Packets that weren't sent from a backlog. When a recorder joins a
+    running recording, or right after a reconnect, the tag first drains its
+    buffer: those packets arrive late, and if they make up a large share of
+    the log they pull the envelope fit off. The logged Status records say how
+    full the buffer was, so drop packets received while it held more than
+    ``backlog_s`` of samples."""
+    n = len(tag.pkt_rx_ns)
+    if not tag.statuses:
+        return np.ones(n, bool)
+    st_rx = np.array([t for t, _ in tag.statuses], dtype=np.int64)
+    fill = np.array([s.buffer_fill for _, s in tag.statuses], dtype=np.int64)
+    order = np.argsort(st_rx, kind="stable")
+    st_rx, fill = st_rx[order], fill[order]
+    # The Status in effect when each packet arrived. Packets that arrived
+    # before the first Status use that one (it is read right after subscribing).
+    i = np.clip(np.searchsorted(st_rx, tag.pkt_rx_ns, side="right") - 1, 0, len(st_rx) - 1)
+    return fill[i] <= backlog_s * tag.odr_hz
 
 
 def fit_clocks(tag: TagData) -> ClockFit:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import signal
 import sys
 import threading
@@ -213,11 +214,15 @@ def cmd_dump(a):
             print(f"  firmware {t.info.fw_string}, buffer {t.info.buffer_capacity}")
         print(f"  {len(t.pkt_n)} packets, {len(t.raw)} samples, {len(t.statuses)} status records"
               + (f", {t.unknown_packets} unknown packets" if t.unknown_packets else "")
-              + (f", {t.bad_records} bad records" if t.bad_records else ""))
+              + (f", {t.bad_records} bad records" if t.bad_records else "")
+              + (f", {t.duplicate_packets} duplicate packets dropped" if t.duplicate_packets else ""))
         if len(t.raw):
             fit = fit_clocks(t)
-            print(f"  true rate {fit.rate_hz:.3f} Hz, clock fit ±{fit.rx_residual_ms:.2f} ms,"
-                  f" skew {(fit.rx_clock.b / 1000 - 1) * 1e6:+.1f} ppm")
+            if math.isfinite(fit.rx_residual_ms):
+                print(f"  true rate {fit.rate_hz:.3f} Hz, clock fit ±{fit.rx_residual_ms:.2f} ms,"
+                      f" skew {(fit.rx_clock.b / 1000 - 1) * 1e6:+.1f} ppm")
+            else:
+                print(f"  true rate {fit.rate_hz:.3f} Hz, clock fit n/a (recording too short)")
         for start, n in t.gaps():
             print(f"  gap: {n} samples missing from index {start}")
         if t.seq_gaps():

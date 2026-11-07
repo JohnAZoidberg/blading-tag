@@ -189,6 +189,7 @@ class TagData:
     statuses: list[tuple[int, p.Status]] = field(default_factory=list)
     unknown_packets: int = 0
     bad_records: int = 0
+    duplicate_packets: int = 0
 
     @property
     def odr_hz(self) -> int:
@@ -226,7 +227,8 @@ def decode_tag_log(data: bytes, meta: TagMeta) -> TagData:
             pass
     rx, seq, idx, n, ts, chunks = [], [], [], [], [], []
     statuses: list[tuple[int, p.Status]] = []
-    unknown = bad = 0
+    unknown = bad = dup = 0
+    seen: set[tuple[int, int, int]] = set()
     for t, kind, payload in iter_records(data):
         try:
             if kind == RecordKind.DATA:
@@ -234,6 +236,15 @@ def decode_tag_log(data: bytes, meta: TagMeta) -> TagData:
                 if pkt.samples is None:
                     unknown += 1
                     continue
+                # BlueZ can deliver a notification twice (old notify sessions
+                # after a reconnect). Keep the first copy. timestamp_us is in
+                # the key so a new session in the same log isn't mistaken
+                # for a copy.
+                key = (pkt.seq, pkt.sample_index, pkt.timestamp_us)
+                if key in seen:
+                    dup += 1
+                    continue
+                seen.add(key)
                 rx.append(t); seq.append(pkt.seq); idx.append(pkt.sample_index)
                 n.append(pkt.n); ts.append(pkt.timestamp_us); chunks.append(pkt.samples)
             elif kind == RecordKind.STATUS:
@@ -259,7 +270,7 @@ def decode_tag_log(data: bytes, meta: TagMeta) -> TagData:
         meta=meta, info=info, sample_index=sample_index, raw=raw,
         pkt_rx_ns=np.array(rx, dtype=np.int64), pkt_seq=np.array(seq, dtype=np.int64),
         pkt_sample_index=idx_arr, pkt_n=n_arr, pkt_timestamp_us=np.array(ts, dtype=np.int64),
-        statuses=statuses, unknown_packets=unknown, bad_records=bad,
+        statuses=statuses, unknown_packets=unknown, bad_records=bad, duplicate_packets=dup,
     )
 
 

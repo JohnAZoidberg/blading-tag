@@ -4,10 +4,11 @@ Python tools that run on a laptop: a BLE recorder with a live plot, and the
 session analysis. Phases 4 and 6 in [../PLAN.md](../PLAN.md). They implement
 both interfaces in [../PROTOCOL.md](../PROTOCOL.md).
 
-> **Status:** the recorder works with a real tag (firmware 0.2.0): a 30 s
-> recording at 200 Hz with no gaps and a ±0.72 ms clock fit. The analysis has
-> only been checked on simulated data, and its thresholds still need a real
-> skate session.
+> **Status:** the recorder works with a real tag (firmware 0.2.0): every rate
+> from 25 to 800 Hz with no gaps, a forced link drop and reconnect with no
+> samples lost, and joining a recording after the recorder crashed. A real
+> out-of-range drop hasn't been retested since the reconnect fix. The analysis
+> runs on real recordings, but its thresholds still need a real skate session.
 
 ## Install
 
@@ -36,13 +37,22 @@ bladetag sleep [ADDR]             # System OFF
 Ctrl-C, after `--duration` seconds, or when the plot window is closed. It
 sends STOP and waits for the tag to flush its buffer. If the link drops, it
 reconnects and continues the same session without sending START again. If the
-tag is already recording when it connects, it joins that session.
+tag is already recording when it connects, it joins that session. If the tag
+stops on its own (button press, or 5 min without a link), the recording ends
+there.
 
 Use `fake` as the address to record from a simulated tag in-process, without
 any hardware: `bladetag record fake --plot`.
 
 On Linux (BlueZ) the MTU exchange happens on connect. The recorder warns if
 the MTU is below 64, because the tag then refuses START.
+
+BlueZ keeps a link up after the program using it dies. The tag then thinks
+it's connected: it stops advertising and its data goes nowhere. When the
+recorder can't find a tag by scanning but BlueZ still holds a link to it, it
+disconnects that link, so the tag buffers and advertises again (this also
+takes the tag from any other program on the laptop that's using it). Stop the
+recorder with Ctrl-C (SIGINT), not `kill`, so it can send STOP and save.
 
 ## Exploring a recording
 
