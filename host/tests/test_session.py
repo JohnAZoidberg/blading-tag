@@ -97,11 +97,11 @@ def test_clock_fit(tmp_path):
     t = load_session(tmp_path / "s").tags[0]
     fit = fit_clocks(t)
     assert fit.rate_hz == pytest.approx(200.6, rel=1e-5)
-    # The envelope carries the fixed 1-packet + 3 ms latency; the fitted
-    # mapping should be within a couple of ms of the true minimum delay.
+    # The fake rx time is one sample period after the packet's last sample
+    # plus >= 3 ms latency; the fit maps last-sample time to that minimum.
     tag_us = np.array([5e6, 200e6])
-    true_min = offset_ns + skew * tag_us * 1000 + 19 / 200.6 * 1e9 + 3e6
-    assert np.all(np.abs(fit.rx_clock(tag_us) - true_min) < 2e6)
+    true_min = offset_ns + skew * tag_us * 1000 + 1 / 200.6 * 1e9 + 3e6
+    assert np.all(np.abs(fit.rx_clock(tag_us) - true_min) < 0.5e6)
 
 
 def test_gps(tmp_path):

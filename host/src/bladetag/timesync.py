@@ -36,6 +36,9 @@ class ClockFit:
     def sample_elapsed_ns(self, sample_index: np.ndarray) -> np.ndarray:
         return self.rx_clock(self.sample_clock(sample_index))
 
+    def tag_us_to_elapsed_ns(self, tag_us) -> np.ndarray:
+        return self.rx_clock(tag_us)
+
 
 def fit_sample_clock(tag: TagData) -> LinearMap:
     idx = tag.pkt_sample_index.astype(np.float64)
@@ -50,8 +53,13 @@ def fit_sample_clock(tag: TagData) -> LinearMap:
     return LinearMap(t0 - b * i0, b)
 
 
-def fit_rx_clock(tag: TagData, window_s: float = 10.0, max_iter: int = 5) -> tuple[LinearMap, float]:
-    ts = tag.pkt_timestamp_us.astype(np.float64)
+def fit_rx_clock(tag: TagData, sample_clock: LinearMap | None = None, window_s: float = 10.0,
+                 max_iter: int = 5) -> tuple[LinearMap, float]:
+    sample_clock = sample_clock or fit_sample_clock(tag)
+    # A notification goes out once its *last* sample is taken, so short
+    # packets (e.g. the STOP flush) would bias the envelope if we used the
+    # header timestamp. Use the last sample's time instead.
+    ts = tag.pkt_timestamp_us + sample_clock.b * np.maximum(tag.pkt_n - 1, 0)
     rx = tag.pkt_rx_ns.astype(np.float64)
     if len(ts) == 0:
         return LinearMap(0.0, 1000.0), float("nan")
@@ -74,7 +82,7 @@ def fit_rx_clock(tag: TagData, window_s: float = 10.0, max_iter: int = 5) -> tup
         # Drop windows whose minimum was still inflated (e.g. all packets in
         # that window were from a post-reconnect burst).
         mad = np.median(np.abs(resid[keep])) + 1e5  # +0.1 ms floor
-        new_keep = resid < 5 * mad
+        new_keep = np.abs(resid) < 5 * mad
         if new_keep.sum() < 2 or np.array_equal(new_keep, keep):
             break
         keep = new_keep
@@ -84,5 +92,5 @@ def fit_rx_clock(tag: TagData, window_s: float = 10.0, max_iter: int = 5) -> tup
 
 def fit_clocks(tag: TagData) -> ClockFit:
     sc = fit_sample_clock(tag)
-    rc, spread = fit_rx_clock(tag)
+    rc, spread = fit_rx_clock(tag, sc)
     return ClockFit(sc, rc, 1e6 / sc.b, spread)
