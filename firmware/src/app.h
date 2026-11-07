@@ -27,4 +27,8 @@ void app_on_disconnected(void);
 void app_kick(void);
 void app_adv_fields(uint8_t *state, uint8_t *position, uint16_t *battery_mv, bool *fast);
 
+/* What a short button press does: start (defaults) or stop recording. Also
+ * used by testhook.c. Call from the system workqueue. */
+void app_button_short(void);
+
 #endif /* BLADING_APP_H_ */

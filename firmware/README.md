@@ -123,6 +123,13 @@ west build -b unit_testing --no-sysbuild firmware/tests/unit -d firmware/build-u
 firmware/build-unit/testbinary
 ```
 
+## Hardware tests
+
+`make build-test ota-test test-hw` runs pytest tests against a real tag in
+the DK's DEBUG OUT header. `test.conf` adds `src/testhook.c`, a RAM mailbox
+the J-Link writes commands into, such as "short button press". See
+[../host/tests/hw/README.md](../host/tests/hw/README.md).
+
 ## Building and updating
 
 From the repo root (only podman or docker and [uv](https://docs.astral.sh/uv/)

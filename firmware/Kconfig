@@ -31,6 +31,13 @@ config BLADING_LOW_BATTERY_MV
 	int "Status LOW_BATTERY below this voltage (mV)"
 	default 2500
 
+config BLADING_TEST_HOOKS
+	bool "Hooks for the hardware tests (test builds only)"
+	help
+	  A RAM mailbox that a J-Link writes commands into, e.g. "short
+	  button press", for host/tests/hw. Polls every 20 ms, so it costs
+	  power: only for test builds (make build-test, test.conf).
+
 endmenu
 
 source "Kconfig.zephyr"

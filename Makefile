@@ -1,4 +1,4 @@
-.PHONY: help workspace build build-incremental ota ota-confirm image-state reset flash clean
+.PHONY: help workspace build build-incremental build-test ota-test test-hw ota ota-confirm image-state reset flash clean
 
 # Configuration (override with `make VAR=value target`)
 BOARD ?= nrf54l15tag/nrf54l15/cpuapp
@@ -57,6 +57,22 @@ build: check-runtime
 
 build-incremental: check-runtime
 	$(CONTAINER_RUN) 'cd $(FIRMWARE_DIR) && west build -b $(BOARD) --sysbuild -d build'
+
+# Hardware tests (host/tests/hw/README.md): a test build with the J-Link
+# mailbox (firmware/test.conf) in its own build directory, installed over BLE.
+TEST_BUILD_DIR := $(FIRMWARE_DIR)/build-test
+TEST_SIGNED_BIN := $(TEST_BUILD_DIR)/firmware/zephyr/zephyr.signed.bin
+JLINK ?= 1051834948
+
+build-test: check-runtime
+	$(CONTAINER_RUN) 'cd $(FIRMWARE_DIR) && west build -p -b $(BOARD) --sysbuild -d build-test -- -Dfirmware_EXTRA_CONF_FILE=test.conf'
+	@echo "Test image: $(TEST_SIGNED_BIN)"
+
+ota-test:
+	$(UV) run --script host/ota.py $(TAG) $(TEST_SIGNED_BIN)
+
+test-hw:
+	cd host && BLADETAG_HW=$(TAG) BLADETAG_JLINK=$(JLINK) .venv/bin/python -m pytest tests/hw -v
 
 $(APP_SIGNED_BIN):
 	@echo "$@ not found, run 'make build' first"; exit 1

@@ -19,3 +19,4 @@ target_sources(app PRIVATE
   src/battery.c
   src/led.c
 )
+target_sources_ifdef(CONFIG_BLADING_TEST_HOOKS app PRIVATE src/testhook.c)

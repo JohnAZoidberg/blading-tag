@@ -677,7 +677,12 @@ static void button_fn(struct k_work *work)
 		k_work_reschedule(&sleep_work, K_NO_WAIT);
 		return;
 	}
+	app_button_short();
+}
 
+/* System workqueue only, like the button. */
+void app_button_short(void)
+{
 	k_mutex_lock(&app_lock, K_FOREVER);
 	bool recording = app.state == PROTO_STATE_RECORDING;
 
