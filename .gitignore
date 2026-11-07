@@ -1,0 +1,28 @@
+# west workspace (cloned by `west update`, see PLAN.md)
+/.west/
+/zephyr/
+/nrf/
+/nrfxlib/
+/modules/
+/bootloader/
+/test/
+/tools/
+
+# firmware build output
+/firmware/build*/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Android
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+.idea/
+
+# recorded sessions
+*.session
+/sessions/
