@@ -44,6 +44,44 @@ any hardware: `bladetag record fake --plot`.
 On Linux (BlueZ) the MTU exchange happens on connect. The recorder warns if
 the MTU is below 64, because the tag then refuses START.
 
+## Exploring a recording
+
+Before the analysis can be trusted, look at what a real recording actually
+contains:
+
+```sh
+bladetag explore SESSION                       # summary + zoomable overview window
+bladetag explore SESSION --start 300 --end 900 # only part of the session
+bladetag explore SESSION --psd 0:5:standing --psd 120:180:walking --psd 400:460:skating
+bladetag explore SESSION --png overview.png --export samples.csv
+```
+
+It prints a summary: rest periods and which sensor axis points up during
+each one, peaks and clipping against the configured range, vibration RMS
+above 20 Hz while moving vs. still, the dominant repetition period, and GPS
+speed and accuracy.
+
+The overview window shows on one shared time axis: the accel and gyro axes
+(a min/max envelope zoomed out, raw samples once you zoom in), an
+acceleration spectrogram, a cadence track (autocorrelation of the gyro in
+8 s windows, coloured by how repetitive it is), and GPS speed. Rest periods
+are shaded grey and gaps red. `--psd` compares the spectra of time ranges,
+e.g. walking vs. skating, smooth vs. rough road, frame vs. cuff mount.
+
+Note down what you did and when (stand still, 10 easy strides, 10 hard
+strides, ...), so the ranges can be found again afterwards. Times are
+seconds since the session start, as in `analyze --raw-at`.
+
+In a notebook:
+
+```python
+from bladetag.explore import load, cadence_track, psd
+df, fs, gps = load("sessions/session-...")   # one row per sample, in g and dps
+```
+
+`--export` writes the same table to `.csv` (or `.parquet` if pyarrow is
+installed).
+
 ## Analysis
 
 ```sh
@@ -105,12 +143,13 @@ The model is only meant to exercise the code. Don't tune thresholds on it.
 | `recorder.py` | record loop: START/resume, logging, reconnect, STOP |
 | `faketag.py` | in-process fake tag implementing the protocol state machine |
 | `sim.py` | synthetic skating sessions |
+| `explore.py` | raw-signal exploration: per-sample table, overview, spectra |
 | `analysis.py`, `plots.py` | analysis v1 and its plots |
 | `liveplot.py` | live plot during recording |
 | `cli.py` | the `bladetag` command |
 
 ```sh
-pytest           # protocol vectors, session round-trip, recorder against the fake tag, analysis vs sim truth
+pytest           # protocol vectors, session round-trip, recorder against the fake tag, analysis vs sim truth, explore
 ```
 
 ## Not done yet

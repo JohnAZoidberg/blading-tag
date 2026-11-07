@@ -268,6 +268,61 @@ def cmd_analyze(a):
                 plot_raw(r, a.raw_at, path=_suffixed(a.raw, suffix))
 
 
+def cmd_explore(a):
+    from . import explore as ex
+    from .session import load_session
+    from .timesync import fit_clocks
+
+    s = load_session(a.session)
+    tags = s.tags
+    if a.tag:
+        tags = [t for t in s.tags if a.tag in (t.meta.position, t.meta.address)]
+    if not tags:
+        _die(f"no tag {a.tag!r}" if a.tag else "session has no tags")
+    try:
+        ranges = [ex.parse_range(r) for r in a.psd]
+    except ValueError as e:
+        _die(str(e))
+    if a.export and Path(a.export).suffix not in (".csv", ".parquet"):
+        _die("--export needs a .csv or .parquet file name")
+    show = not (a.png or a.psd_png or a.export)
+    import matplotlib
+
+    if not show:
+        matplotlib.use("Agg")
+    gps = ex.gps_frame(s)
+    if gps is not None and (a.start is not None or a.end is not None):
+        gps = gps[(gps["t_s"] >= (a.start if a.start is not None else -float("inf")))
+                  & (gps["t_s"] < (a.end if a.end is not None else float("inf")))]
+    for tag in tags:
+        if len(tag.raw) == 0:
+            print(f"tag {tag.meta.address}: no IMU samples")
+            continue
+        clock = fit_clocks(tag)
+        fs = clock.rate_hz
+        try:
+            df = ex.crop(ex.sample_frame(s, tag, clock), a.start, a.end)
+        except ValueError as e:
+            _die(str(e))
+        name = f"{tag.meta.address} ({tag.meta.position})"
+        still = ex.still_mask(df, fs)
+        cad = ex.cadence_track(df, fs)
+        print(f"tag {name}")
+        print("\n".join(ex.describe(df, fs, tag.meta.accel_range_g, tag.meta.gyro_range_dps, gps, cad, still)))
+        suffix = f"-{tag.meta.position}" if len(tags) > 1 else ""
+        if a.export:
+            ex.export(df, _suffixed(a.export, suffix))
+        if show or a.png:
+            ex.plot_overview(df, fs, gps, title=name, cad=cad, still=still,
+                             path=_suffixed(a.png, suffix) if a.png else None)
+        if ranges and (show or a.psd_png):
+            ex.plot_psd(df, fs, ranges, title=name, path=_suffixed(a.psd_png, suffix) if a.psd_png else None)
+    if show:
+        import matplotlib.pyplot as plt
+
+        plt.show()
+
+
 def _suffixed(path: str, suffix: str) -> str:
     pth = Path(path)
     return str(pth.with_name(pth.stem + suffix + pth.suffix))
@@ -346,6 +401,20 @@ def main(argv=None):
     c.add_argument("--method", choices=["auto", "setdown", "gyro"], default="auto",
                    help="cycle boundaries: wheel set-down (vibration) or |gyro| peaks")
     c.set_defaults(fn=cmd_analyze)
+
+    c = sub.add_parser("explore", help="look at the raw signal: zoomable overview, spectra, export",
+                       description="Print a summary and open a zoomable overview of the raw signal. "
+                                   "With --png/--psd-png/--export, write files instead of opening windows.")
+    c.add_argument("session", help="session folder or .zip")
+    c.add_argument("--tag", help="left, right or an address (default: all)")
+    c.add_argument("--start", type=float, help="only from this time (s since session start)")
+    c.add_argument("--end", type=float, help="only up to this time (s)")
+    c.add_argument("--psd", action="append", default=[], metavar="START:END[:LABEL]",
+                   help="compare spectra of time ranges (repeatable)")
+    c.add_argument("--png", metavar="PNG", help="save the overview")
+    c.add_argument("--psd-png", metavar="PNG", help="save the --psd comparison")
+    c.add_argument("--export", metavar="FILE", help="write every sample as .csv or .parquet")
+    c.set_defaults(fn=cmd_explore)
 
     a = ap.parse_args(argv)
     a.fn(a)
