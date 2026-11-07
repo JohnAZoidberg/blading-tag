@@ -1,0 +1,1 @@
+- commit as you go, if there are changes you didn't make, don't commit those. Use git to selectively stage the changes you made

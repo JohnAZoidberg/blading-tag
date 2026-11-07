@@ -1,4 +1,4 @@
-.PHONY: help workspace build build-incremental build-test ota-test test-hw ota ota-confirm image-state reset flash clean
+.PHONY: help workspace build build-incremental build-test ota-test test-hw ota ota-confirm image-state reset flash recover clean
 
 # Configuration (override with `make VAR=value target`)
 BOARD ?= nrf54l15tag/nrf54l15/cpuapp
@@ -11,7 +11,10 @@ UV ?= uv
 FIRMWARE_DIR := firmware
 BUILD_DIR := $(FIRMWARE_DIR)/build
 APP_SIGNED_BIN := $(BUILD_DIR)/firmware/zephyr/zephyr.signed.bin
-MERGED_HEX := $(BUILD_DIR)/merged.hex
+# NCS 3.4 sysbuild with DTS partitions doesn't produce a merged.hex, so the
+# J-Link flash programs the two images one after the other.
+MCUBOOT_HEX := $(BUILD_DIR)/mcuboot/zephyr/zephyr.hex
+APP_SIGNED_HEX := $(BUILD_DIR)/firmware/zephyr/zephyr.signed.hex
 DFU_ZIP := $(BUILD_DIR)/dfu_application.zip
 
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
@@ -37,6 +40,7 @@ help:
 	@echo "  make image-state        show the tag's image slots"
 	@echo "  make reset              reset the tag over SMP"
 	@echo "  make flash              flash MCUboot + app over J-Link (recovery only)"
+	@echo "  make recover            unlock + erase the tag over J-Link if flash is refused"
 	@echo "  make clean              remove the build directory"
 	@echo ""
 	@echo "  BOARD=$(BOARD)"
@@ -91,8 +95,13 @@ reset:
 	$(SMPMGR) --ble $(TAG) --timeout 10 os reset
 
 flash:
-	nrfutil device program --firmware $(MERGED_HEX) --options chip_erase_mode=ERASE_ALL
+	nrfutil device program --firmware $(MCUBOOT_HEX) --options chip_erase_mode=ERASE_ALL
+	nrfutil device program --firmware $(APP_SIGNED_HEX) --options chip_erase_mode=ERASE_RANGES_TOUCHED_BY_FIRMWARE
 	nrfutil device reset
+
+# Unlock a tag whose access port is protected (erases everything).
+recover:
+	nrfutil device recover
 
 clean:
 	rm -rf $(BUILD_DIR)
