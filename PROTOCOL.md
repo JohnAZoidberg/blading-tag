@@ -296,12 +296,14 @@ rest. Sample 1 is (100, −100, 2048, 16, −16, 0).
 - When the buffer is full, the tag drops **new** samples and counts them in
   `samples_dropped`.
 - The tag keeps each sample in the buffer until the Data packet carrying it
-  has been acknowledged by the client's link layer. Packets that were in
-  flight when the link dropped may or may not have arrived. So on reconnect
-  the tag sends again from the first unacknowledged packet, with the same
-  `seq`, `sample_index` and `timestamp_us`. With a different MTU, the
-  packets can be cut differently, so the client may get some samples twice
-  (see [1.7 Data](#17-data-notify)).
+  has been acknowledged by the client's link layer, and keeps the last few
+  acknowledged packets too (a controller can report a packet flushed at a
+  link loss like an acknowledged one). Packets that were in flight when the
+  link dropped may or may not have arrived. So on reconnect the tag sends
+  again from the oldest packet it kept, with the same `seq` and
+  `sample_index`. `timestamp_us` is interpolated again and can differ by a
+  few µs, and with a different MTU the packets can be cut differently. So
+  the client gets some samples twice (see [1.7 Data](#17-data-notify)).
 - On reconnect, the client reads Status (state RECORDING) and re-enables
   notifications. The buffered packets then continue as described above.
   **The client must not send START again**; it would get BAD_STATE.

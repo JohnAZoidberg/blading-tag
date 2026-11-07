@@ -216,13 +216,14 @@ class TagData:
         return [(int(self.sample_index[j] + 1), int(d[j] - 1)) for j in jumps]
 
     def seq_gaps(self) -> int:
-        """Packets skipped in seq. A repeated or earlier seq is a packet
-        sent again after a reconnect, not a loss."""
+        """Packets never received, by seq. After a reconnect the tag sends
+        its last packets again, so seq steps back; those aren't losses."""
         if len(self.pkt_seq) < 2:
             return 0
         d = np.diff(self.pkt_seq) % 65536
-        fwd = (d >= 1) & (d < 32768)
-        return int((d[fwd] - 1).sum())
+        d = np.where(d >= 32768, d - 65536, d)   # unwrap
+        u = np.concatenate([[0], np.cumsum(d)])
+        return int(u.max() - u.min() + 1 - len(np.unique(u)))
 
 
 def decode_tag_log(data: bytes, meta: TagMeta) -> TagData:

@@ -26,9 +26,11 @@ bool ble_data_subscribed(void);
  * these wait up to `timeout` for one to complete.
  * Returns 0, -ENOTCONN, -EACCES (not subscribed) or -EAGAIN (timed out).
  *
- * Once the peer has acknowledged a Data notification, ble.c calls
- * app_on_data_acked(token), in order. It doesn't for one lost to a
- * disconnect. token has 24 bits.
+ * Once the controller reports a Data notification complete, ble.c calls
+ * app_on_data_acked(token), in order. That usually means the peer
+ * acknowledged it, but right before a link loss it can also mean it was
+ * flushed. It isn't called for packets the host drops at a disconnect.
+ * token has 24 bits.
  */
 int ble_notify_status(const uint8_t *buf, size_t len, k_timeout_t timeout);
 int ble_notify_data(const uint8_t *buf, size_t len, k_timeout_t timeout, uint32_t token);

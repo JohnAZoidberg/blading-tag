@@ -162,15 +162,28 @@ def test_resent_packets_after_reconnect(tmp_path):
     log.write(RecordKind.STATUS, status().pack(), 0)
     samples = np.zeros((19, 6), np.int16)
     t = 1
-    # seq 2 arrived but its acknowledgement was lost with the link: it
-    # comes again, cut differently, along with what follows.
-    for seq, idx, n in [(0, 0, 19), (1, 19, 19), (2, 38, 19),
-                        (2, 38, 10), (3, 48, 10), (4, 58, 10)]:
+    # After the drop the tag goes back to seq 1: seq 1 comes again with a
+    # timestamp off by a few us (it's interpolated again), seq 2 cut
+    # differently, then new data.
+    for seq, idx, n, ts in [(0, 0, 19, 0), (1, 19, 19, 95000), (2, 38, 19, 190000),
+                            (1, 19, 19, 95003), (2, 38, 10, 190000), (3, 48, 10, 240000),
+                            (4, 58, 10, 290000)]:
         samples[:, 0] = np.arange(idx, idx + 19)
-        log.write(RecordKind.DATA, p.DataPacket.pack_imu6(seq, idx, idx * 5000, samples[:n]), t)
+        log.write(RecordKind.DATA, p.DataPacket.pack_imu6(seq, idx, ts, samples[:n]), t)
         t += 1
     w.close()
     tag = load_session(tmp_path / "s").tags[0]
     assert tag.gaps() == [] and tag.seq_gaps() == 0
     assert np.array_equal(tag.sample_index, np.arange(68))
     assert np.array_equal(tag.raw[:, 0], np.arange(68))
+
+
+def test_seq_gaps_counts_only_seqs_never_received(tmp_path):
+    w = SessionWriter(tmp_path / "s")
+    log = w.add_tag(ADDR, INFO)
+    samples = np.zeros((19, 6), np.int16)
+    # Across the wrap at 65536, a resend from 65534, and seq 2 never seen.
+    for i, seq in enumerate([65533, 65534, 65535, 0, 65534, 65535, 0, 1, 3]):
+        log.write(RecordKind.DATA, p.DataPacket.pack_imu6(seq, i * 19, i * 95000, samples), i)
+    w.close()
+    assert load_session(tmp_path / "s").tags[0].seq_gaps() == 1

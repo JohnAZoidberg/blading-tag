@@ -60,9 +60,19 @@ static struct sb_anchor sb_anchors[BUF_ANCHORS];
 static struct samplebuf sb;
 static uint32_t samples_recorded;
 static uint32_t samples_dropped;
-/* seq of the next packet to send, and of the next one to be acknowledged. */
+/*
+ * The controller reports a packet complete when the peer acknowledged it, but
+ * also when it flushed it at a link loss, and that can come before the
+ * disconnect (HCI Number Of Completed Packets: "transmitted or flushed"). So
+ * the last few acknowledged packets stay in the buffer and are sent again
+ * after a reconnect too. At most BT_CONN_TX_MAX (3) are in flight.
+ */
+#define KEEP_ACKED 8
+static uint8_t kept_n[KEEP_ACKED];
+static uint8_t kept_head, kept_count;
+/* seq of the next packet to send, and of the oldest one still in the buffer. */
 static uint16_t seq;
-static uint16_t seq_acked;
+static uint16_t seq_kept;
 /*
  * Bumped when the buffer is reset or rewound, so a late acknowledgement or a
  * failed send from before doesn't touch the buffer.
@@ -228,6 +238,7 @@ static void reset_buffer(void)
 	k_mutex_lock(&sb_lock, K_FOREVER);
 	sb_reset(&sb);
 	tx_epoch++;
+	kept_count = 0;
 	k_mutex_unlock(&sb_lock);
 }
 
@@ -271,7 +282,8 @@ static int start_recording(const struct proto_rec_cfg *cfg, bool need_link)
 	samples_recorded = 0;
 	samples_dropped = 0;
 	seq = 0;
-	seq_acked = 0;
+	seq_kept = 0;
+	kept_count = 0;
 	k_mutex_unlock(&sb_lock);
 	app.cfg = *cfg;
 
@@ -393,7 +405,7 @@ static int send_data(bool flush)
 		/*
 		 * Mark them sent before the notify: the acknowledgement can
 		 * come before it returns. The samples stay in the buffer until
-		 * then (app_on_data_acked).
+		 * a while after that (app_on_data_acked).
 		 */
 		sb_mark_sent(&sb, n);
 		seq++;
@@ -476,8 +488,15 @@ void app_on_data_acked(uint32_t token)
 {
 	k_mutex_lock(&sb_lock, K_FOREVER);
 	if (TOKEN_EPOCH(token) == tx_epoch) {
-		sb_consume(&sb, TOKEN_N(token));
-		seq_acked++;
+		kept_n[(kept_head + kept_count) % KEEP_ACKED] = TOKEN_N(token);
+		if (kept_count < KEEP_ACKED) {
+			kept_count++;
+		} else {
+			/* The oldest kept packet can go now. */
+			sb_consume(&sb, kept_n[kept_head]);
+			kept_head = (kept_head + 1) % KEEP_ACKED;
+			seq_kept++;
+		}
 	}
 	k_mutex_unlock(&sb_lock);
 }
@@ -488,18 +507,20 @@ void app_on_disconnected(void)
 	app.connected = false;
 
 	/*
-	 * Packets in flight when the link dropped may never have arrived. Send
-	 * everything that wasn't acknowledged again, with the same seq.
+	 * Packets in flight when the link dropped may never have arrived, even
+	 * some reported as acknowledged (see KEEP_ACKED). Send everything still
+	 * in the buffer again, with the same seq.
 	 */
 	k_mutex_lock(&sb_lock, K_FOREVER);
 	uint32_t resend = sb_count(&sb) - sb_unsent(&sb);
 
 	sb_rewind(&sb);
-	seq = seq_acked;
+	seq = seq_kept;
+	kept_count = 0;
 	tx_epoch++;
 	k_mutex_unlock(&sb_lock);
 	if (resend) {
-		LOG_INF("link lost, %u unacknowledged samples to resend", resend);
+		LOG_INF("link lost, resending the last %u samples sent", resend);
 	}
 
 	touch_active();

@@ -14,7 +14,8 @@ What it does:
 - Keeps recording into a buffer (14336 samples, ~72 s at 200 Hz) while the
   link is down or too slow, and stops on its own after 5 min without a link.
   Samples stay in the buffer until the phone's link layer has acknowledged
-  them, so packets in flight when the link drops are sent again.
+  them (and the last 8 packets a while longer), so packets in flight when
+  the link drops are sent again.
 - Advertises state, position and battery. Advertising is every 1 s in READY,
   and every ~100 ms while recording without a link, so the app reconnects
   quickly.

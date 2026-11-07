@@ -155,13 +155,14 @@ static void notify_done(struct bt_conn *conn, void *user_data)
 }
 
 /*
- * Zephyr calls this once the controller reports the packet complete, i.e.
- * acknowledged by the peer's link layer. But it also calls it for packets
- * thrown away at a disconnect: process_unack_tx() destroys them after the
+ * Zephyr calls this once the controller reports the packet complete:
+ * acknowledged by the peer's link layer, or flushed at a link loss (app.c
+ * keeps a few packets for that). It also calls it for packets the host
+ * throws away at a disconnect: process_unack_tx() destroys them after the
  * connection is already in DISCONNECT_COMPLETE, and ATT runs the callback
  * from a work item that can come before our disconnected() callback. So only
- * a callback while still connected, on the same connection, counts as an
- * acknowledgement. Getting it wrong the other way only sends a packet twice.
+ * a callback while still connected, on the same connection, is passed on.
+ * Getting it wrong the other way only sends a packet twice.
  */
 static void data_done(struct bt_conn *conn, void *user_data)
 {
