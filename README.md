@@ -57,9 +57,12 @@ Some details:
 
 - Sleep only starts when you **let go**. A button that's still held down
   would wake the tag right away again.
-- A recording started with the button works like one started from the app.
-  The tag keeps the last ~41 s in its buffer until the app connects and picks
-  the session up. Without a connection it stops by itself after 5 minutes.
+- Without a phone connected, "recording" only means the tag is sampling into
+  a small buffer (8192 samples, the **first** ~41 s at 200 Hz). When it's full,
+  newer samples are dropped (and counted). If the app connects, it picks up
+  the running recording, gets the buffer, and then streams live. With no
+  connection for 5 minutes the tag stops and throws the buffer away. The tag
+  has no flash storage for sessions, so the phone is what actually records.
 - **Sleep doesn't fully work yet**: the tag sometimes wakes up again by itself
   after a few seconds, and waking on motion isn't working. See
   [firmware/README.md](firmware/README.md#power-states-status).
