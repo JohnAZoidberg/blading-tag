@@ -311,6 +311,38 @@ function cadencePanel() {
   };
 }
 
+function stridePanel() {
+  const s = meta.strides;
+  const mid = s.t.map((x, i) => x + s.period[i] / 2);
+  const vis = () => [lowerBound(mid, view.x0), lowerBound(mid, view.x1 + 1e-9)];
+  return {
+    id: "strides", label: "step (m)", h: 120,
+    legend(p, box) {
+      const span = document.createElement("span");
+      span.textContent = "half of each stride, walking only";
+      box.appendChild(span);
+    },
+    range() {
+      const [a, b] = vis();
+      let mx = 0.1;
+      for (let i = a; i < b; i++) mx = Math.max(mx, s.step[i]);
+      return [0, mx * 1.12];
+    },
+    plot(p, ctx, xOf, yOf) {
+      const [a, b] = vis();
+      ctx.fillStyle = css.c0;
+      for (let i = a; i < b; i++) {
+        ctx.beginPath(); ctx.arc(xOf(mid[i]), yOf(s.step[i]), 2.4, 0, 2 * Math.PI); ctx.fill();
+      }
+    },
+    read(p, tc) {
+      const i = Math.max(0, lowerBound(s.t, tc + 1e-9) - 1);
+      if (!s.t.length || tc < s.t[i] || tc > s.t[i] + s.period[i]) return "";
+      return `step ${s.step[i].toFixed(2)} m (stride ${(2 * s.step[i]).toFixed(2)} m in ${s.period[i].toFixed(2)} s)`;
+    },
+  };
+}
+
 function gpsPanel() {
   const g = meta.gps;
   const vis = () => [Math.max(0, lowerBound(g.t, view.x0) - 1), Math.min(g.t.length, lowerBound(g.t, view.x1) + 1)];
@@ -550,6 +582,7 @@ function build() {
     specPanel(),
     cadencePanel(),
   ];
+  if (meta.strides && meta.strides.t.length) kinds.push(stridePanel());
   if (meta.gps && meta.gps.t.length) kinds.push(gpsPanel());
   const main = $("panels");
   main.innerHTML = "";

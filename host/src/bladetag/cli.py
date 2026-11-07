@@ -275,6 +275,7 @@ def cmd_analyze(a):
 
 def cmd_explore(a):
     from . import explore as ex
+    from . import walking
     from .session import load_session
     from .timesync import fit_clocks
 
@@ -290,7 +291,7 @@ def cmd_explore(a):
         _die(str(e))
     if a.export and Path(a.export).suffix not in (".csv", ".parquet"):
         _die("--export needs a .csv or .parquet file name")
-    show = not (a.png or a.psd_png or a.export or a.html)
+    show = not (a.png or a.psd_png or a.export or a.html or a.strides)
     if show or a.png or a.psd_png:
         import matplotlib
 
@@ -315,15 +316,19 @@ def cmd_explore(a):
         cad = ex.cadence_track(df, fs)
         print(f"tag {name}")
         summary = ex.describe(df, fs, tag.meta.accel_range_g, tag.meta.gyro_range_dps, gps, cad, still)
+        st = walking.strides(df, fs, still)
+        summary += walking.describe(st, gps)
         print("\n".join(summary))
         suffix = f"-{tag.meta.position}" if len(tags) > 1 else ""
         if a.export:
             ex.export(df, _suffixed(a.export, suffix))
+        if a.strides:
+            st.to_csv(_suffixed(a.strides, suffix), index=False, float_format="%.4f")
         if a.html:
             from .explore_html import write_overview_html
 
             write_overview_html(_suffixed(a.html, suffix), df, fs, gps, title=name, cad=cad, still=still,
-                                summary=summary, accel_range_g=tag.meta.accel_range_g,
+                                summary=summary, strides=st, accel_range_g=tag.meta.accel_range_g,
                                 gyro_range_dps=tag.meta.gyro_range_dps)
         if show or a.png:
             ex.plot_overview(df, fs, gps, title=name, cad=cad, still=still,
@@ -417,7 +422,8 @@ def main(argv=None):
 
     c = sub.add_parser("explore", help="look at the raw signal: zoomable overview, spectra, export",
                        description="Print a summary and open a zoomable overview of the raw signal. "
-                                   "With --html/--png/--psd-png/--export, write files instead of opening windows.")
+                                   "With --html/--png/--psd-png/--export/--strides, write files instead of "
+                                   "opening windows. Stride lengths are for walking only.")
     c.add_argument("session", help="session folder or .zip")
     c.add_argument("--tag", help="left, right or an address (default: all)")
     c.add_argument("--start", type=float, help="only from this time (s since session start)")
@@ -429,6 +435,7 @@ def main(argv=None):
     c.add_argument("--png", metavar="PNG", help="save the overview")
     c.add_argument("--psd-png", metavar="PNG", help="save the --psd comparison")
     c.add_argument("--export", metavar="FILE", help="write every sample as .csv or .parquet")
+    c.add_argument("--strides", metavar="CSV", help="write each walking stride (length, period, speed) as .csv")
     c.set_defaults(fn=cmd_explore)
 
     a = ap.parse_args(argv)

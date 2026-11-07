@@ -65,6 +65,7 @@ bladetag explore SESSION --start 300 --end 900 # only part of the session
 bladetag explore SESSION --psd 0:5:standing --psd 120:180:walking --psd 400:460:skating
 bladetag explore SESSION --html overview.html   # same overview as a page for any browser
 bladetag explore SESSION --png overview.png --export samples.csv
+bladetag explore SESSION --strides strides.csv # walking: length of every stride
 ```
 
 It prints a summary: rest periods and which sensor axis points up during
@@ -85,6 +86,16 @@ can be opened on a phone or sent to someone. Scroll to zoom, drag to pan,
 shift-drag to zoom to a range, double-click for the whole session; the
 legend buttons hide axes, hovering reads out the values, and the URL keeps
 the zoomed range (`overview.html#t=230-360`).
+
+**Walking.** When the tag is worn walking, the summary also gives the stride
+length (from one plant of the tag's foot to the next; a step is about half
+of it), the walking speed, and the distance compared with GPS. The HTML page
+gets a step panel and `--strides` writes every stride. It integrates the
+IMU between foot plants, resetting the velocity to zero at each one
+(`src/bladetag/walking.py`). On the first real walks it agreed with GPS to
+1 % where GPS was accurate (±4 m). It only works when the foot actually stops:
+gliding skates never do, and their road vibration keeps them from being
+mistaken for a planted foot, so skating sessions report no strides.
 
 Note down what you did and when (stand still, 10 easy strides, 10 hard
 strides, ...), so the ranges can be found again afterwards. Times are

@@ -1,7 +1,8 @@
 """``bladetag explore --html``: the overview as one self-contained HTML file.
 
 Same panels as ``explore.plot_overview`` (accel, gyro, spectrogram, cadence,
-GPS speed, rest and gap shading), drawn in the browser so it can be zoomed
+GPS speed, rest and gap shading), plus step length when walking strides were
+found (``walking.strides``), drawn in the browser so it can be zoomed
 and panned without Python or matplotlib. No network access is needed: the
 page's script is inline and the samples are embedded.
 
@@ -36,7 +37,8 @@ def _int16(x: np.ndarray, full_scale: float) -> tuple[np.ndarray, float]:
 
 def payload(df: pd.DataFrame, fs: float, gps: pd.DataFrame | None = None, title: str = "",
             cad: pd.DataFrame | None = None, still: np.ndarray | None = None, summary: list[str] | None = None,
-            accel_range_g: float = 16, gyro_range_dps: float = 2000) -> tuple[dict, bytes]:
+            accel_range_g: float = 16, gyro_range_dps: float = 2000,
+            strides: pd.DataFrame | None = None) -> tuple[dict, bytes]:
     """(meta, blob): what the page embeds. ``meta`` is JSON-able and names
     the byte ranges of the arrays in the (uncompressed) ``blob``."""
     t = df["t_s"].to_numpy()
@@ -76,6 +78,10 @@ def payload(df: pd.DataFrame, fs: float, gps: pd.DataFrame | None = None, title:
     meta["cadence"] = {"t": np.round(c["t_s"], 3).tolist() if len(c) else [],
                        "cpm": np.round(60 / c["period_s"], 2).tolist() if len(c) else [],
                        "strength": np.round(c["strength"], 3).tolist() if len(c) else []}
+    if strides is not None and len(strides):
+        meta["strides"] = {"t": np.round(strides["t_s"], 3).tolist(),
+                           "period": np.round(strides["period_s"], 3).tolist(),
+                           "step": np.round(strides["step_m"], 3).tolist()}
     if gps is not None and len(gps):
         g = gps[np.isfinite(gps["speed_mps"])]
         meta["gps"] = {"t": np.round(g["t_s"], 3).tolist(), "kmh": np.round(g["speed_mps"] * 3.6, 2).tolist()}
@@ -104,8 +110,8 @@ def decode(html: str) -> tuple[dict, bytes]:
 def write_overview_html(path: str | Path, df: pd.DataFrame, fs: float, gps: pd.DataFrame | None = None,
                         title: str = "", cad: pd.DataFrame | None = None, still: np.ndarray | None = None,
                         summary: list[str] | None = None, accel_range_g: float = 16,
-                        gyro_range_dps: float = 2000) -> None:
-    meta, blob = payload(df, fs, gps, title, cad, still, summary, accel_range_g, gyro_range_dps)
+                        gyro_range_dps: float = 2000, strides: pd.DataFrame | None = None) -> None:
+    meta, blob = payload(df, fs, gps, title, cad, still, summary, accel_range_g, gyro_range_dps, strides)
     # "</" can't appear inside a <script>; JSON allows escaping the slash.
     meta_json = json.dumps(meta, separators=(",", ":")).replace("</", "<\\/")
     b64 = base64.b64encode(zlib.compress(blob, 6)).decode("ascii")

@@ -106,8 +106,11 @@ def test_cli_writes_html(session, tmp_path, capsys):
 
     path, _ = session
     out = tmp_path / "o.html"
-    main(["explore", str(path), "--html", str(out), "--start", "10", "--end", "200"])
-    assert "cadence" in capsys.readouterr().out
+    main(["explore", str(path), "--html", str(out), "--start", "10", "--end", "200",
+          "--strides", str(tmp_path / "st.csv")])
+    text = capsys.readouterr().out
+    assert "cadence" in text and "strides         none found" in text   # skating, not walking
+    assert list(pd.read_csv(tmp_path / "st.csv").columns)[:3] == ["t_s", "period_s", "stride_m"]
     html = out.read_text()
     assert "<title>" in html and "__BLOB__" not in html and "/*__META__*/" not in html
     meta, blob = decode(html)
