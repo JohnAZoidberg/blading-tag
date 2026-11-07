@@ -176,3 +176,103 @@ ZTEST(samplebuf, test_reset)
 	zassert_equal(sb_peek(&sb, out, 19, true, &idx, &t), 5);
 	zassert_equal(t, 7);
 }
+
+/* Sent samples stay stored until they're acknowledged. */
+ZTEST(samplebuf, test_sent_samples_wait_for_ack)
+{
+	uint32_t idx;
+	uint64_t t;
+
+	push(30, 0, 0);
+	zassert_equal(sb_peek(&sb, out, 10, false, &idx, &t), 10);
+	sb_mark_sent(&sb, 10);
+	zassert_equal(sb_peek(&sb, out, 10, false, &idx, &t), 10);
+	zassert_equal(idx, 10);
+	zassert_equal(t, 10 * 5000);
+	check_out(10, 10);
+	sb_mark_sent(&sb, 10);
+
+	/* 20 in flight: they still take up room. */
+	zassert_equal(sb_count(&sb), 30);
+	zassert_equal(sb_unsent(&sb), 10);
+	zassert_equal(push(10, 30, 150000), 2);
+
+	/* The first packet is acknowledged. */
+	sb_consume(&sb, 10);
+	zassert_equal(sb_count(&sb), 22);
+	zassert_equal(sb_unsent(&sb), 12);
+	zassert_equal(sb_peek(&sb, out, 10, false, &idx, &t), 10);
+	zassert_equal(idx, 20);
+}
+
+/* The link drops with packets in flight: they go out again. */
+ZTEST(samplebuf, test_rewind_resends_unacknowledged)
+{
+	uint32_t idx;
+	uint64_t t;
+
+	push(16, 0, 0);
+	push(16, 16, 80000);
+	for (int i = 0; i < 3; i++) {
+		zassert_equal(sb_peek(&sb, out, 10, false, &idx, &t), 10);
+		sb_mark_sent(&sb, 10);
+	}
+	sb_consume(&sb, 10);
+
+	sb_rewind(&sb);
+	zassert_equal(sb_count(&sb), 22);
+	zassert_equal(sb_unsent(&sb), 22);
+
+	/* Same index and timestamp as the first time, so receivers can
+	 * recognise the copy. A bigger MTU may pack them differently.
+	 */
+	zassert_equal(sb_peek(&sb, out, 19, false, &idx, &t), 19);
+	zassert_equal(idx, 10);
+	zassert_equal(t, 10 * 5000);
+	check_out(19, 10);
+}
+
+/* Resending from before a gap still splits packets at the gap. */
+ZTEST(samplebuf, test_rewind_across_a_gap)
+{
+	uint32_t idx;
+	uint64_t t;
+
+	push(10, 0, 0);
+	push(10, 50, 500000);
+	zassert_equal(sb_peek(&sb, out, 19, false, &idx, &t), 10);
+	sb_mark_sent(&sb, 10);
+	zassert_equal(sb_peek(&sb, out, 5, false, &idx, &t), 5);
+	zassert_equal(idx, 50);
+	sb_mark_sent(&sb, 5);
+	zassert_equal(sb_peek(&sb, out, 5, false, &idx, &t), 5);
+	zassert_equal(idx, 55);
+	zassert_equal(t, 500000 + 5 * 5000);
+
+	sb_rewind(&sb);
+	zassert_equal(sb_peek(&sb, out, 19, false, &idx, &t), 10);
+	zassert_equal(idx, 0);
+	sb_mark_sent(&sb, 10);
+	zassert_equal(sb_peek(&sb, out, 19, true, &idx, &t), 10);
+	zassert_equal(idx, 50);
+	zassert_equal(t, 500000);
+	check_out(10, 50);
+}
+
+/* A packet that couldn't be queued is offered again. */
+ZTEST(samplebuf, test_unmark_sent)
+{
+	uint32_t idx;
+	uint64_t t;
+
+	push(20, 0, 0);
+	sb_peek(&sb, out, 10, false, &idx, &t);
+	sb_mark_sent(&sb, 10);
+	sb_peek(&sb, out, 10, false, &idx, &t);
+	sb_mark_sent(&sb, 10);
+	sb_unmark_sent(&sb, 10);
+	zassert_equal(sb_peek(&sb, out, 10, false, &idx, &t), 10);
+	zassert_equal(idx, 10);
+	zassert_equal(sb_unsent(&sb), 10);
+	zassert_equal(sb_count(&sb), 20);
+}

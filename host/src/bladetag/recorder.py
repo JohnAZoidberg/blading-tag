@@ -37,13 +37,21 @@ class Stats:
 
     def on_packet(self, pkt: p.DataPacket) -> None:
         self.packets += 1
-        self.samples += pkt.n
-        if self._next_seq is not None and pkt.seq != self._next_seq:
-            self.seq_gaps += (pkt.seq - self._next_seq) % 65536
-        if self._next_index is not None and pkt.sample_index != self._next_index:
-            self.index_gaps += 1
-        self._next_seq = (pkt.seq + 1) % 65536
-        self._next_index = pkt.sample_index + pkt.n
+        # After a reconnect the tag sends unacknowledged packets again
+        # (PROTOCOL.md 1.9): same or earlier seq, samples already seen.
+        if self._next_seq is None or (pkt.seq - self._next_seq) % 65536 < 32768:
+            if self._next_seq is not None and pkt.seq != self._next_seq:
+                self.seq_gaps += (pkt.seq - self._next_seq) % 65536
+            self._next_seq = (pkt.seq + 1) % 65536
+        end = pkt.sample_index + pkt.n
+        if self._next_index is None:
+            self.samples += pkt.n
+            self._next_index = end
+        elif end > self._next_index:
+            if pkt.sample_index > self._next_index:
+                self.index_gaps += 1
+            self.samples += end - max(pkt.sample_index, self._next_index)
+            self._next_index = end
 
     def line(self) -> str:
         s = self.last_status

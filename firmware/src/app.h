@@ -23,6 +23,8 @@ void app_encode_status(uint8_t out[PROTO_STATUS_LEN]);
 int app_control(const uint8_t *buf, size_t len);
 void app_on_connected(void);
 void app_on_disconnected(void);
+/* The peer acknowledged the Data packet sent with this token. */
+void app_on_data_acked(uint32_t token);
 /* Wake the TX thread (new data, notifications enabled, TX done). */
 void app_kick(void);
 void app_adv_fields(uint8_t *state, uint8_t *position, uint16_t *battery_mv, bool *fast);

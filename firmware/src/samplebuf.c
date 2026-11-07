@@ -14,6 +14,7 @@ void sb_init(struct samplebuf *sb, struct imu6 *buf, uint32_t cap, struct sb_anc
 void sb_reset(struct samplebuf *sb)
 {
 	sb->rpos = 0;
+	sb->spos = 0;
 	sb->wpos = 0;
 	sb->a_head = 0;
 	sb->a_count = 0;
@@ -85,23 +86,28 @@ uint32_t sb_push(struct samplebuf *sb, const struct imu6 *s, uint32_t n, uint32_
 uint32_t sb_peek(struct samplebuf *sb, struct imu6 *out, uint32_t max, bool flush,
 		 uint32_t *index, uint64_t *t_us)
 {
-	uint32_t count = sb_count(sb);
-
-	if (count == 0 || max == 0 || sb->a_count == 0) {
+	if (sb_unsent(sb) == 0 || max == 0 || sb->a_count == 0) {
 		return 0;
 	}
 
 	trim_anchors(sb);
 
+	/* The anchor that covers spos: the last one at or before it. */
+	uint32_t ai = 0;
+
+	while (ai + 1 < sb->a_count && anchor_at(sb, ai + 1)->pos <= sb->spos) {
+		ai++;
+	}
+
 	/* The run that can go into one packet ends at the next gap. */
-	const struct sb_anchor *a = anchor_at(sb, 0);
+	const struct sb_anchor *a = anchor_at(sb, ai);
 	uint32_t run_end = sb->wpos;
 	bool gap_follows = false;
 
-	for (uint32_t i = 1; i < sb->a_count; i++) {
+	for (uint32_t i = ai + 1; i < sb->a_count; i++) {
 		const struct sb_anchor *b = anchor_at(sb, i);
 
-		if (b->pos - sb->rpos >= max) {
+		if (b->pos - sb->spos >= max) {
 			break;
 		}
 		if (!contiguous(a, b)) {
@@ -111,23 +117,39 @@ uint32_t sb_peek(struct samplebuf *sb, struct imu6 *out, uint32_t max, bool flus
 		}
 	}
 
-	uint32_t avail = run_end - sb->rpos;
+	uint32_t avail = run_end - sb->spos;
 	uint32_t n = avail < max ? avail : max;
 
 	if (n < max && !flush && !gap_follows) {
 		return 0;
 	}
 
-	uint32_t off = sb->rpos - a->pos;
+	uint32_t off = sb->spos - a->pos;
 
 	*index = a->index + off;
 	*t_us = a->t_us + ((uint64_t)off * sb->period_ns + 500) / 1000;
 
 	for (uint32_t i = 0; i < n; i++) {
-		out[i] = sb->buf[(sb->rpos + i) % sb->cap];
+		out[i] = sb->buf[(sb->spos + i) % sb->cap];
 	}
 
 	return n;
+}
+
+void sb_mark_sent(struct samplebuf *sb, uint32_t n)
+{
+	if (n > sb_unsent(sb)) {
+		n = sb_unsent(sb);
+	}
+	sb->spos += n;
+}
+
+void sb_unmark_sent(struct samplebuf *sb, uint32_t n)
+{
+	if (n > sb->spos - sb->rpos) {
+		n = sb->spos - sb->rpos;
+	}
+	sb->spos -= n;
 }
 
 void sb_consume(struct samplebuf *sb, uint32_t n)
@@ -136,5 +158,14 @@ void sb_consume(struct samplebuf *sb, uint32_t n)
 		n = sb_count(sb);
 	}
 	sb->rpos += n;
+	if (sb->spos - sb->rpos > sb->wpos - sb->rpos) {
+		/* spos was behind rpos (consumed without sb_mark_sent). */
+		sb->spos = sb->rpos;
+	}
 	trim_anchors(sb);
+}
+
+void sb_rewind(struct samplebuf *sb)
+{
+	sb->spos = sb->rpos;
 }

@@ -201,7 +201,7 @@ The tag notifies Status:
 | 10 | u16 | gyro_range_dps | 125 … 2000 |
 | 12 | u32 | samples_recorded | this session |
 | 16 | u32 | samples_dropped | this session (buffer overflow) |
-| 20 | u32 | buffer_fill | samples waiting to be sent |
+| 20 | u32 | buffer_fill | samples in the buffer: not sent yet, or sent and not acknowledged |
 | 24 | u64 | tag_time_us | tag clock "now", see [1.8 Time](#18-time) |
 
 Example (RECORDING, 2950 mV, session 3, 200 Hz, ±16 g, ±2000 °/s,
@@ -259,7 +259,10 @@ gravity. The mapping from sensor axes to PCB edges is documented in
   `sample_index + n`) means the tag dropped samples because its buffer
   overflowed (`samples_dropped` counts them).
 - A jump in `seq` means a packet was lost. BLE notifications are reliable
-  within a connection, so this should only happen across a disconnect.
+  within a connection, and the tag resends unacknowledged packets after a
+  reconnect (see [1.9 Link loss](#19-link-loss)), so this shouldn't happen.
+- A `seq` that repeats or goes back, with samples already received, is such
+  a resend. Keep the first copy of each `sample_index`.
 
 Example: type 1, 2 samples, seq 5, sample_index 1000,
 timestamp 12.345678 s. Sample 0 is (0, 0, 2048, 0, 0, 0), i.e. 1 g on z at
@@ -292,8 +295,15 @@ rest. Sample 1 is (100, −100, 2048, 16, −16, 0).
   again.
 - When the buffer is full, the tag drops **new** samples and counts them in
   `samples_dropped`.
+- The tag keeps each sample in the buffer until the Data packet carrying it
+  has been acknowledged by the client's link layer. Packets that were in
+  flight when the link dropped may or may not have arrived. So on reconnect
+  the tag sends again from the first unacknowledged packet, with the same
+  `seq`, `sample_index` and `timestamp_us`. With a different MTU, the
+  packets can be cut differently, so the client may get some samples twice
+  (see [1.7 Data](#17-data-notify)).
 - On reconnect, the client reads Status (state RECORDING) and re-enables
-  notifications. The buffered packets then continue with the next `seq`.
+  notifications. The buffered packets then continue as described above.
   **The client must not send START again**; it would get BAD_STATE.
 - After **5 minutes** disconnected, the tag stops recording on its own and
   goes to READY. The buffered data is discarded.

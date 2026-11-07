@@ -92,14 +92,21 @@ abstract class TagLink(val address: String, protected val listener: Listener) {
         listener.onRecord(this, TagLog.KIND_DATA, elapsedNs, raw)
         val h = Protocol.parseDataHeader(raw) ?: return
         packets++
-        if (lastSeq >= 0 && h.seq != ((lastSeq + 1) and 0xFFFF)) seqGaps++
-        lastSeq = h.seq
+        // After a reconnect the tag sends unacknowledged packets again (PROTOCOL.md 1.9):
+        // same or earlier seq, samples already seen. Those aren't gaps.
+        val dSeq = (h.seq - lastSeq) and 0xFFFF
+        if (lastSeq < 0 || dSeq in 1 until 0x8000) {
+            if (lastSeq >= 0 && dSeq != 1) seqGaps++
+            lastSeq = h.seq
+        }
         if (h.type != Protocol.PACKET_IMU6) return
         val n = minOf(h.n, (raw.size - Protocol.DATA_HEADER) / Protocol.IMU6_SAMPLE)
         if (n <= 0) return
-        samples += n
+        val end = h.sampleIndex + n
+        if (nextIndex >= 0 && end <= nextIndex) return
+        samples += if (nextIndex >= 0) end - maxOf(h.sampleIndex, nextIndex) else n.toLong()
         if (nextIndex >= 0 && h.sampleIndex > nextIndex) missingSamples += h.sampleIndex - nextIndex
-        nextIndex = h.sampleIndex + h.n
+        nextIndex = end
         if (firstIndex < 0) {
             firstIndex = h.sampleIndex
             firstTsUs = h.timestampUs

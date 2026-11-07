@@ -150,3 +150,27 @@ def test_clock_fit_ignores_backlog_after_join(tmp_path):
 def test_clock_fit_too_short_to_judge(tmp_path):
     write_session(tmp_path / "s", n_packets=100)  # under 10 s: one fit window
     assert np.isnan(fit_clocks(load_session(tmp_path / "s").tags[0]).rx_residual_ms)
+
+
+def test_resent_packets_after_reconnect(tmp_path):
+    # The tag resends packets that weren't acknowledged when the link
+    # dropped (PROTOCOL.md 1.9), from the last acknowledged seq. With a
+    # different MTU on the new link they're cut differently, so they aren't
+    # exact copies: seq goes back and samples overlap.
+    w = SessionWriter(tmp_path / "s")
+    log = w.add_tag(ADDR, INFO)
+    log.write(RecordKind.STATUS, status().pack(), 0)
+    samples = np.zeros((19, 6), np.int16)
+    t = 1
+    # seq 2 arrived but its acknowledgement was lost with the link: it
+    # comes again, cut differently, along with what follows.
+    for seq, idx, n in [(0, 0, 19), (1, 19, 19), (2, 38, 19),
+                        (2, 38, 10), (3, 48, 10), (4, 58, 10)]:
+        samples[:, 0] = np.arange(idx, idx + 19)
+        log.write(RecordKind.DATA, p.DataPacket.pack_imu6(seq, idx, idx * 5000, samples[:n]), t)
+        t += 1
+    w.close()
+    tag = load_session(tmp_path / "s").tags[0]
+    assert tag.gaps() == [] and tag.seq_gaps() == 0
+    assert np.array_equal(tag.sample_index, np.arange(68))
+    assert np.array_equal(tag.raw[:, 0], np.arange(68))

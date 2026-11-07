@@ -133,16 +133,53 @@ bool ble_data_subscribed(void)
 	return on;
 }
 
+/*
+ * A notification's user_data: the connection generation it was sent on
+ * (low 8 bits) and, for Data, the caller's token (upper 24 bits).
+ */
+#define UD_MAKE(gen, token) ((void *)(uintptr_t)(((uint32_t)(token) << 8) | ((gen) & 0xff)))
+#define UD_GEN(ud)          ((uint32_t)(uintptr_t)(ud) & 0xff)
+#define UD_TOKEN(ud)        ((uint32_t)(uintptr_t)(ud) >> 8)
+
+static bool same_conn_gen(void *user_data)
+{
+	return UD_GEN(user_data) == ((uint32_t)atomic_get(&conn_gen) & 0xff);
+}
+
 static void notify_done(struct bt_conn *conn, void *user_data)
 {
-	if ((atomic_val_t)(uintptr_t)user_data == atomic_get(&conn_gen)) {
+	if (same_conn_gen(user_data)) {
 		k_sem_give(&tx_credits);
 	}
 	app_kick();
 }
 
+/*
+ * Zephyr calls this once the controller reports the packet complete, i.e.
+ * acknowledged by the peer's link layer. But it also calls it for packets
+ * thrown away at a disconnect: process_unack_tx() destroys them after the
+ * connection is already in DISCONNECT_COMPLETE, and ATT runs the callback
+ * from a work item that can come before our disconnected() callback. So only
+ * a callback while still connected, on the same connection, counts as an
+ * acknowledgement. Getting it wrong the other way only sends a packet twice.
+ */
+static void data_done(struct bt_conn *conn, void *user_data)
+{
+	struct bt_conn_info info;
+	bool acked = same_conn_gen(user_data) && bt_conn_get_info(conn, &info) == 0 &&
+		     info.state == BT_CONN_STATE_CONNECTED;
+
+	if (same_conn_gen(user_data)) {
+		k_sem_give(&tx_credits);
+	}
+	if (acked) {
+		app_on_data_acked(UD_TOKEN(user_data));
+	}
+	app_kick();
+}
+
 static int notify(const struct bt_gatt_attr *attr, const uint8_t *buf, size_t len,
-		  k_timeout_t timeout)
+		  k_timeout_t timeout, bt_gatt_complete_func_t done, uint32_t token)
 {
 	struct bt_conn *conn = conn_get();
 	int err;
@@ -155,7 +192,7 @@ static int notify(const struct bt_gatt_attr *attr, const uint8_t *buf, size_t le
 		return -EACCES;
 	}
 
-	atomic_val_t gen = atomic_get(&conn_gen);
+	uint32_t gen = (uint32_t)atomic_get(&conn_gen);
 
 	if (k_sem_take(&tx_credits, timeout) != 0) {
 		bt_conn_unref(conn);
@@ -166,8 +203,8 @@ static int notify(const struct bt_gatt_attr *attr, const uint8_t *buf, size_t le
 		.attr = attr,
 		.data = buf,
 		.len = len,
-		.func = notify_done,
-		.user_data = (void *)(uintptr_t)gen,
+		.func = done,
+		.user_data = UD_MAKE(gen, token),
 	};
 
 	err = bt_gatt_notify_cb(conn, &params);
@@ -181,12 +218,12 @@ static int notify(const struct bt_gatt_attr *attr, const uint8_t *buf, size_t le
 
 int ble_notify_status(const uint8_t *buf, size_t len, k_timeout_t timeout)
 {
-	return notify(STATUS_ATTR, buf, len, timeout);
+	return notify(STATUS_ATTR, buf, len, timeout, notify_done, 0);
 }
 
-int ble_notify_data(const uint8_t *buf, size_t len, k_timeout_t timeout)
+int ble_notify_data(const uint8_t *buf, size_t len, k_timeout_t timeout, uint32_t token)
 {
-	return notify(DATA_ATTR, buf, len, timeout);
+	return notify(DATA_ATTR, buf, len, timeout, data_done, token);
 }
 
 /* --- Advertising ---------------------------------------------------------- */

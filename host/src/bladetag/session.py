@@ -204,18 +204,25 @@ class TagData:
         return self.raw[:, 3:] * p.gyro_scale_dps(self.meta.gyro_range_dps or p.DEFAULT_GYRO_RANGE_DPS)
 
     def gaps(self) -> list[tuple[int, int]]:
-        """(first missing sample_index, count) for every jump in sample_index."""
-        if len(self.pkt_sample_index) < 2:
+        """(first missing sample_index, count) for every jump in sample_index.
+
+        Works on the de-duplicated samples, so packets the tag sent again
+        after a reconnect (PROTOCOL.md 1.9) don't show up as gaps.
+        """
+        if len(self.sample_index) < 2:
             return []
-        expected = self.pkt_sample_index[:-1] + self.pkt_n[:-1]
-        jumps = np.nonzero(self.pkt_sample_index[1:] != expected)[0]
-        return [(int(expected[j]), int(self.pkt_sample_index[j + 1] - expected[j])) for j in jumps]
+        d = np.diff(self.sample_index)
+        jumps = np.nonzero(d > 1)[0]
+        return [(int(self.sample_index[j] + 1), int(d[j] - 1)) for j in jumps]
 
     def seq_gaps(self) -> int:
+        """Packets skipped in seq. A repeated or earlier seq is a packet
+        sent again after a reconnect, not a loss."""
         if len(self.pkt_seq) < 2:
             return 0
-        d = (np.diff(self.pkt_seq) - 1) % 65536
-        return int(d.sum())
+        d = np.diff(self.pkt_seq) % 65536
+        fwd = (d >= 1) & (d < 32768)
+        return int((d[fwd] - 1).sum())
 
 
 def decode_tag_log(data: bytes, meta: TagMeta) -> TagData:

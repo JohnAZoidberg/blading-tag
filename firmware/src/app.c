@@ -24,7 +24,10 @@
 LOG_MODULE_REGISTER(app, LOG_LEVEL_INF);
 
 #define BUF_SAMPLES CONFIG_BLADING_BUFFER_SAMPLES
-/* One anchor per IMU batch (~100 ms); room for the whole buffer and then some. */
+/* One anchor per IMU batch (~100 ms, ~20 samples at 200 Hz); room for the
+ * whole buffer at 200 Hz and then some. Batches without a gap before them
+ * don't need one, so lower rates still fill the buffer.
+ */
 #define BUF_ANCHORS 1024
 
 #define BATTERY_PERIOD   K_SECONDS(60)
@@ -57,9 +60,20 @@ static struct sb_anchor sb_anchors[BUF_ANCHORS];
 static struct samplebuf sb;
 static uint32_t samples_recorded;
 static uint32_t samples_dropped;
+/* seq of the next packet to send, and of the next one to be acknowledged. */
 static uint16_t seq;
-/* Bumped when the buffer is reset, so the TX thread doesn't consume stale samples. */
-static uint32_t sb_gen;
+static uint16_t seq_acked;
+/*
+ * Bumped when the buffer is reset or rewound, so a late acknowledgement or a
+ * failed send from before doesn't touch the buffer.
+ */
+static uint16_t tx_epoch;
+
+/* A Data packet's token for ble_notify_data(): tx_epoch and sample count. */
+#define DATA_TOKEN(epoch, n) (((uint32_t)(epoch) << 8) | (n))
+#define TOKEN_EPOCH(token)   ((uint16_t)((token) >> 8))
+#define TOKEN_N(token)       ((token) & 0xff)
+BUILD_ASSERT(PROTO_MAX_SAMPLES_PER_PACKET <= 0xff);
 
 static K_SEM_DEFINE(tx_sem, 0, 1);
 static atomic_t tx_flags;
@@ -213,7 +227,7 @@ static void reset_buffer(void)
 {
 	k_mutex_lock(&sb_lock, K_FOREVER);
 	sb_reset(&sb);
-	sb_gen++;
+	tx_epoch++;
 	k_mutex_unlock(&sb_lock);
 }
 
@@ -253,10 +267,11 @@ static int start_recording(const struct proto_rec_cfg *cfg, bool need_link)
 
 	k_mutex_lock(&sb_lock, K_FOREVER);
 	sb_reset(&sb);
-	sb_gen++;
+	tx_epoch++;
 	samples_recorded = 0;
 	samples_dropped = 0;
 	seq = 0;
+	seq_acked = 0;
 	k_mutex_unlock(&sb_lock);
 	app.cfg = *cfg;
 
@@ -357,9 +372,9 @@ static int send_data(bool flush)
 	static struct imu6 tmp[PROTO_MAX_SAMPLES_PER_PACKET];
 	static uint8_t pkt[PROTO_MAX_DATA_LEN];
 	uint8_t max = proto_samples_per_packet(ble_mtu());
-	uint32_t index, gen;
+	uint32_t index;
 	uint64_t t_us;
-	uint16_t s;
+	uint16_t s, epoch;
 	int err;
 
 	if (max == 0) {
@@ -373,7 +388,16 @@ static int send_data(bool flush)
 	uint32_t n = sb_peek(&sb, tmp, max, flush, &index, &t_us);
 
 	s = seq;
-	gen = sb_gen;
+	epoch = tx_epoch;
+	if (n > 0) {
+		/*
+		 * Mark them sent before the notify: the acknowledgement can
+		 * come before it returns. The samples stay in the buffer until
+		 * then (app_on_data_acked).
+		 */
+		sb_mark_sent(&sb, n);
+		seq++;
+	}
 	k_mutex_unlock(&sb_lock);
 
 	if (n == 0) {
@@ -382,17 +406,16 @@ static int send_data(bool flush)
 
 	size_t len = proto_encode_data(pkt, s, index, t_us, tmp, n);
 
-	err = ble_notify_data(pkt, len, K_SECONDS(1));
+	err = ble_notify_data(pkt, len, K_SECONDS(1), DATA_TOKEN(epoch, n));
 	if (err) {
+		k_mutex_lock(&sb_lock, K_FOREVER);
+		if (epoch == tx_epoch) {
+			sb_unmark_sent(&sb, n);
+			seq--;
+		}
+		k_mutex_unlock(&sb_lock);
 		return err;
 	}
-
-	k_mutex_lock(&sb_lock, K_FOREVER);
-	if (gen == sb_gen) {
-		sb_consume(&sb, n);
-		seq++;
-	}
-	k_mutex_unlock(&sb_lock);
 	return 1;
 }
 
@@ -449,10 +472,36 @@ void app_on_connected(void)
 	k_mutex_unlock(&app_lock);
 }
 
+void app_on_data_acked(uint32_t token)
+{
+	k_mutex_lock(&sb_lock, K_FOREVER);
+	if (TOKEN_EPOCH(token) == tx_epoch) {
+		sb_consume(&sb, TOKEN_N(token));
+		seq_acked++;
+	}
+	k_mutex_unlock(&sb_lock);
+}
+
 void app_on_disconnected(void)
 {
 	k_mutex_lock(&app_lock, K_FOREVER);
 	app.connected = false;
+
+	/*
+	 * Packets in flight when the link dropped may never have arrived. Send
+	 * everything that wasn't acknowledged again, with the same seq.
+	 */
+	k_mutex_lock(&sb_lock, K_FOREVER);
+	uint32_t resend = sb_count(&sb) - sb_unsent(&sb);
+
+	sb_rewind(&sb);
+	seq = seq_acked;
+	tx_epoch++;
+	k_mutex_unlock(&sb_lock);
+	if (resend) {
+		LOG_INF("link lost, %u unacknowledged samples to resend", resend);
+	}
+
 	touch_active();
 	k_work_cancel_delayable(&status_work);
 	if (app.state == PROTO_STATE_RECORDING && !app.stopping) {
