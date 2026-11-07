@@ -48,6 +48,8 @@ polls the mailbox every 20 ms, which costs power.
 | `test_ble_start_stop` | START from the laptop, Data flows, STOP ends with a READY Status |
 | `test_stop_from_another_connection` | The app's Stop button: STOP without subscribing ends a recording someone else started |
 | `test_sleep_refused_while_recording` | SLEEP gets BAD_STATE while recording |
+| `test_link_drops_lose_no_samples` | The recorder survives `bluetoothctl disconnect` mid-recording (`BLADETAG_DROPS`, default 5) with no samples lost: packets in flight are resent |
+| `test_link_timeouts_lose_no_samples` | Same with real supervision timeouts: the J-Link halts the tag for 6 s. Needs the J-Link but not the test build |
 
 Not covered here:
 

@@ -4,8 +4,10 @@ The J-Link plays the button (firmware/src/testhook.c), the laptop plays the
 phone. See README.md here for the setup.
 """
 import asyncio
+import os
 import time
 
+import numpy as np
 import pytest
 
 from bladetag import protocol as p
@@ -111,3 +113,118 @@ def test_sleep_refused_while_recording(ready, hooks):
             assert p.Status.parse(await link.read_status()).state == p.State.RECORDING
 
     run(go())
+
+
+# More with BLADETAG_DROPS=20: each drop catches a packet in flight only sometimes.
+DROPS = int(os.environ.get("BLADETAG_DROPS", "5"))
+
+
+def test_link_drops_lose_no_samples(ready, tmp_path):
+    """Drop the link a few times while data flows, the way a weak link does.
+    Packets in flight at each drop never got acknowledged, so the tag sends
+    them again after the reconnect: the session must have no gaps at all."""
+    from bladetag.link import BleakLink
+    from bladetag.recorder import Recorder
+    from bladetag.session import SessionWriter, load_session
+
+    async def go():
+        writer = SessionWriter(tmp_path / "s")
+        rec = Recorder(BleakLink(ready), writer)
+        stop = asyncio.Event()
+
+        async def dropper():
+            drops = 0
+            while drops < DROPS:
+                # Wait for a link with data flowing for a few seconds.
+                n0 = rec.stats.reconnects
+                await asyncio.sleep(4)
+                if not rec.link.is_connected or rec.stats.reconnects != n0:
+                    continue
+                proc = await asyncio.create_subprocess_exec(
+                    "bluetoothctl", "disconnect", ready,
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                await proc.wait()
+                drops += 1
+                while rec.stats.reconnects < n0 + 1:
+                    await asyncio.sleep(0.2)
+            await asyncio.sleep(4)
+            stop.set()
+
+        d = asyncio.create_task(dropper())
+        try:
+            stats = await asyncio.wait_for(rec.run(stop), DROPS * 60)
+        finally:
+            d.cancel()
+            writer.close()
+        return stats
+
+    stats = run(go())
+    assert stats.reconnects >= DROPS
+    t = load_session(tmp_path / "s").tags[0]
+    last = t.statuses[-1][1]
+    assert last.state == p.State.READY
+    assert last.samples_dropped == 0
+    assert t.gaps() == [], f"gaps {t.gaps()}"
+    assert t.seq_gaps() == 0
+    assert len(t.sample_index) == last.samples_recorded
+    d = np.diff(t.pkt_seq) % 65536
+    resent = t.duplicate_packets + int(np.sum((d == 0) | (d >= 32768)))
+    print(f"{stats.reconnects} reconnects, {last.samples_recorded} samples, "
+          f"{resent} resent packet(s) seen")
+
+
+def test_link_timeouts_lose_no_samples(ready, tmp_path):
+    """Like a phone going out of range: halt the tag's CPU (and with it the
+    radio) for longer than the supervision timeout, so both sides lose the
+    link without either host tearing it down. Nothing may get lost on the
+    link: no seq gaps, and every missing sample is one the tag counted as
+    dropped (its IMU FIFO overflows while halted)."""
+    from bladetag.jlink import JLink
+    from bladetag.link import BleakLink
+    from bladetag.recorder import Recorder
+    from bladetag.session import SessionWriter, load_session
+
+    serial = os.environ.get("BLADETAG_JLINK")
+    if not serial:
+        pytest.skip("set BLADETAG_JLINK=<J-Link serial> (the tag must sit in the DK's DEBUG OUT)")
+    jlink = JLink(serial)
+
+    async def go():
+        writer = SessionWriter(tmp_path / "s")
+        rec = Recorder(BleakLink(ready), writer)
+        stop = asyncio.Event()
+
+        async def dropper():
+            drops = 0
+            while drops < DROPS:
+                n0 = rec.stats.reconnects
+                await asyncio.sleep(3)
+                if not rec.link.is_connected or rec.stats.reconnects != n0:
+                    continue
+                # Supervision timeout is 4 s.
+                await asyncio.to_thread(jlink.commander, ["halt", "Sleep 6000", "go"])
+                drops += 1
+                while rec.stats.reconnects < n0 + 1:
+                    await asyncio.sleep(0.2)
+            await asyncio.sleep(3)
+            stop.set()
+
+        d = asyncio.create_task(dropper())
+        try:
+            stats = await asyncio.wait_for(rec.run(stop), DROPS * 60)
+        finally:
+            d.cancel()
+            writer.close()
+        return stats
+
+    stats = run(go())
+    assert stats.reconnects >= DROPS
+    t = load_session(tmp_path / "s").tags[0]
+    last = t.statuses[-1][1]
+    assert last.state == p.State.READY
+    assert t.seq_gaps() == 0, f"{t.seq_gaps()} packet(s) lost on the link"
+    missing = sum(n for _, n in t.gaps())
+    assert missing == last.samples_dropped, f"{missing} missing, tag dropped {last.samples_dropped}"
+    assert len(t.sample_index) + missing == last.samples_recorded
+    print(f"{stats.reconnects} reconnects, {last.samples_recorded} samples, "
+          f"{last.samples_dropped} dropped by the tag while halted")
