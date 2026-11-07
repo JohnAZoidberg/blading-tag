@@ -32,8 +32,8 @@ NCS v3.4.0, so no custom board definition is needed.
 | RGB LED, 1 button | GPIO | Status, manual start/stop |
 | CR2032 coin cell | | Power: keep under ~3 mA continuous |
 
-All three sensors are `status = "disabled"` in the board DTS, so the app
-overlay enables them.
+The sensor nodes are `status = "disabled"` in `nrf54l15tag_common.dtsi`, but
+`nrf54l15tag_cpuapp_common.dtsi` enables all three for the cpuapp target.
 
 Factory state (read over BLE on 2026-11-07): it advertises as `Nordic_LBS` and
 already has the SMP (mcumgr) DFU service. Slot 0 holds version `3.2.99`,
@@ -42,16 +42,32 @@ confirmed, with a SHA-512 hash (ED25519 / NCS nRF54L signing).
 The factory image is sdk-nrf's `samples/bluetooth/peripheral_lbs`, test
 `sample.bluetooth.peripheral_lbs.l15_tag` (added 2026-01-20, when the sample's
 VERSION was 3.2.99). That test only sets `SB_CONFIG_BOOTLOADER_MCUBOOT=y` and
-`CONFIG_NCS_SAMPLE_MCUMGR_BT_OTA_DFU=y` plus RTT logging, so the factory
-MCUboot uses NCS defaults: ED25519 (hash, not pure), the public dev key
-`bootloader/mcuboot/root-ed25519.pem`, no KMU, swap-using-move, no downgrade
-prevention, and the default nRF54L15 layout (slot0 0x10000, slot1 0xc2000,
-712 KiB each). Our build uses the same settings.
+`CONFIG_NCS_SAMPLE_MCUMGR_BT_OTA_DFU=y` plus RTT logging. Its MCUboot uses
+the public dev key `bootloader/mcuboot/root-ed25519.pem` (ED25519, SHA-512),
+no KMU, swap-using-move (SMP bootloader info reports mode 3), and no downgrade
+prevention. All of this is verified: our image signed with that key boots.
+
+**The factory layout is not NCS 3.4's default.** It is the "FLPR" variant of
+`nrf54l15_cpuapp_partition.dtsi` (`WITH_FLPR_PARTITIONS`). This was read back
+from a stock tag's RRAM over SWD on 2026-11-07:
+
+| Partition | Factory | NCS 3.4 default |
+|---|---|---|
+| mcuboot | 0x000000, 62 KiB | same |
+| slot0 | 0x010000, 664 KiB | 0x010000, 712 KiB |
+| slot1 | 0x0b6000, 664 KiB | 0x0c2000, 712 KiB |
+| storage | 0x15c000, 36 KiB | 0x174000, 36 KiB |
+
+With the default layout, the image still boots, but it writes its "confirmed"
+flag past the end of MCUboot's slot0, so MCUboot reverts it on the next reset.
+`firmware/boards/nrf54l15tag_nrf54l15_cpuapp.overlay` sets the factory layout
+for the app and, through `firmware/sysbuild/mcuboot.overlay`, for our MCUboot.
 
 A J-Link is available and plugs straight into the Tag's debug header. The tag
 is not powered through that header, so the coin cell must be in. Never put
-3.3 V on the Tag's VDD while the cell is in. The J-Link does the first flash
-(see "Build and flash"), and after that it is only for recovery.
+3.3 V on the Tag's VDD while the cell is in. It is only for recovery: tags
+are updated over BLE, starting with the very first update from the factory
+firmware.
 
 ## Architecture
 
@@ -121,28 +137,24 @@ Built the same way as `../hid-remapper-private`:
   `modules/`, `bootloader/`, …) is cloned into the repo root and gitignored.
 - `Makefile` targets:
   - `make build`: pristine sysbuild of MCUboot + app
-  - `make ota`: `smpmgr --ble <addr> upgrade` from the laptop, uploaded in
-    test mode
+  - `make ota`: `host/ota.py` (uv script, smpclient). It uploads in test
+    mode, resets, and checks that the new image runs and confirmed itself
   - `make flash`: `nrfutil` over J-Link (recovery only)
 - **OTA from the phone:** nRF Connect Device Manager with `dfu_application.zip`.
-- **OTA config,** per Nordic's tag blog post:
-  - `CONFIG_BOOTLOADER_MCUBOOT=y`, `CONFIG_NCS_SAMPLE_MCUMGR_BT_OTA_DFU=y`
-  - `sysbuild.conf`: `SB_CONFIG_BOOTLOADER_MCUBOOT=y`
-  - `sysbuild/mcuboot.conf`: `CONFIG_FPROTECT_ALLOW_COMBINED_REGIONS=y`,
-    `CONFIG_PM_PARTITION_SIZE_MCUBOOT=0xF800`
+- **OTA config:**
+  - `prj.conf`: `CONFIG_NCS_SAMPLE_MCUMGR_BT_OTA_DFU=y`; the app calls
+    `boot_write_img_confirmed()` once Bluetooth is up
+  - `sysbuild.conf`: `SB_CONFIG_BOOTLOADER_MCUBOOT=y`,
+    `SB_CONFIG_MCUBOOT_MODE_SWAP_USING_MOVE=y`
+  - the factory partition layout (above), in the board overlay
 
-**First OTA onto the factory image:** the key and layout match (see above).
-The obstacle is pairing. The LBS sample's `CONFIG_BT_LBS_SECURITY_ENABLED`
-defaults to y and selects `BT_SMP`, which makes the SMP characteristic default
-to `MCUMGR_TRANSPORT_BT_PERM_RW_AUTHEN`. So the central needs an authenticated
-(passkey) bond before mcumgr works. The tag is DisplayOnly: it prints
-`Passkey for <addr>: NNNNNN` to RTT, so reading it needs the J-Link anyway. A
-phone that falls back to Just Works only gets an encrypted link, not an
-authenticated one, so its SMP writes are refused.
-
-Since the J-Link is needed either way, the simplest first flash is
-`make flash`. After that the tag runs our MCUboot + app, where SMP is
-`PERM_RW` (no pairing), and `make ota` works from then on.
+**First OTA onto the factory image works without pairing.** The factory SMP
+characteristic accepted unauthenticated writes from both BlueZ and smpclient.
+Tested on 2026-11-07: factory 3.2.99 → 0.1.0 → 0.1.0+1 with `make ota`, each
+step confirmed and still running after a reset, with the previous image kept in
+slot 1. Our own MCUboot is only flashed when recovering with the J-Link. A
+tag updated over BLE keeps the factory MCUboot, which is fine because it uses
+the same key and layout.
 
 Images are signed with MCUboot's default debug key, so they are for
 development only.
@@ -167,9 +179,9 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
 
 ## Phases
 
-- [ ] **1. Repo setup**: `west.yml`, Makefile, `.gitignore`, west workspace
+- [x] **1. Repo setup**: `west.yml`, Makefile, `.gitignore`, west workspace
       in the container.
-- [ ] **2. Canary firmware**: BLE + SMP OTA + LED blink only. OTA it to the
+- [x] **2. Canary firmware**: BLE + SMP OTA + LED blink only. OTA it to the
       tag, confirm it boots, then OTA it again to prove updates still work.
 - [ ] **3. Firmware v1**: BMI270 streaming over the protocol above, start/stop
       from the app or button, LED status.
