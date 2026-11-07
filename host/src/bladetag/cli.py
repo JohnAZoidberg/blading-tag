@@ -243,7 +243,7 @@ def cmd_analyze(a):
         tags = [t for t in s.tags if a.tag in (t.meta.position, t.meta.address)]
         if not tags:
             _die(f"no tag {a.tag!r}")
-    for i, tag in enumerate(tags):
+    for tag in tags:
         r = analyze(s, tag, method=a.method)
         if a.json:
             print(json.dumps(r.summary, indent=2, default=float))

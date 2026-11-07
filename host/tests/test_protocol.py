@@ -1,6 +1,5 @@
 """Test vectors copied from PROTOCOL.md."""
 
-import numpy as np
 import pytest
 
 from bladetag import protocol as p
