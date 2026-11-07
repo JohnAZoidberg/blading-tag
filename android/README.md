@@ -66,7 +66,7 @@ phone, which `make pull` reads over adb.
 - Tested on a Fairphone 6 (Android 16) with the simulated tag: a recording
   with the screen off had no gaps, and the files decode with `host/`'s
   `bladetag.protocol`.
-- **Not tested against a real tag yet**, because the firmware doesn't
-  implement the protocol yet. Try `GattTag` first with phase 3 firmware.
+- **Not tested against a real tag yet.** Firmware 0.2.0 implements the
+  protocol and works with the laptop recorder, so `GattTag` is next.
 - Not done yet: live push rate, firmware updates from the app (use nRF
   Connect Device Manager for now), START parameters other than the defaults.

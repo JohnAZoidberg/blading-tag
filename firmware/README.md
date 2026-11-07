@@ -3,16 +3,72 @@
 Zephyr / nRF Connect SDK v3.4.0 app for the nRF54L15 Tag
 (board target `nrf54l15tag/nrf54l15/cpuapp`).
 
-Phase 2 (canary: BLE + OTA + LED) is done. Phases 3 and 7 are in [../PLAN.md](../PLAN.md).
+Version 0.2.0 is firmware v1 (phase 3 in [../PLAN.md](../PLAN.md)). It
+implements the BLE protocol in [../PROTOCOL.md](../PROTOCOL.md) §1 and has
+been tested on a tag with the host recorder: 30 s at 200 Hz, 0 samples dropped.
 
-What it will do:
+What it does:
 
-- Stream BMI270 accelerometer + gyroscope data at 200 Hz over BLE when the
-  app asks for it.
-- Sleep when idle, and wake on motion via the ADXL367.
-- Accept firmware updates over BLE (MCUboot + mcumgr/SMP).
+- Streams BMI270 accelerometer + gyroscope data at 200 Hz over BLE while the
+  app asks for it (START/STOP), or after a button press.
+- Keeps recording into a buffer (8192 samples, ~41 s at 200 Hz) while the
+  link is down, and stops on its own after 5 min without a link.
+- Advertises state, position and battery. Advertising is every 1 s in READY,
+  and every ~100 ms while recording without a link, so the app reconnects
+  quickly.
+- Goes to System OFF on SLEEP, a 2 s button hold, or after 10 min in READY
+  with no link and no motion. ADXL367 motion or the button wakes it.
+- Accepts firmware updates over BLE (MCUboot + mcumgr/SMP), and confirms its
+  image once Bluetooth is up.
+
+Wake-up from System OFF and the power draw have not been checked on a tag yet
+(phase 7).
 
 Build, OTA and flash run from the repo root via the `Makefile`.
+
+## Code
+
+| File | What it does |
+|---|---|
+| `src/main.c` | Startup, image confirm |
+| `src/app.c` | State machine: START/STOP, link loss, Status, button, idle sleep |
+| `src/ble.c` | Advertising and the Blading GATT service (SMP comes from `prj.conf`) |
+| `src/proto.c` | Encodes Info/Status/Data/advertising, parses Control writes |
+| `src/imu.c` | BMI270: driver init, then the FIFO with a ~100 ms watermark interrupt |
+| `src/samplebuf.c` | Ring buffer between the IMU and Data notifications |
+| `src/motion.c` | ADXL367 wake-on-motion |
+| `src/battery.c` | Coin-cell voltage from the SAADC VDD input |
+| `src/led.c` | LED patterns |
+| `Kconfig` | Buffer size, link-loss and idle timeouts, motion threshold, low battery |
+
+The IMU interrupt edge is timestamped in the ISR, which dates each FIFO batch
+without waking up for every sample. A FIFO overflow is counted as dropped
+samples, so `sample_index` never slips silently.
+
+`CONFIG_RESET_ON_FATAL_ERROR` is on: a crash in a test image resets the tag,
+and MCUboot reverts to the previous image.
+
+### LED and button
+
+| | |
+|---|---|
+| Green blip every 2 s | Recording, connected |
+| Yellow blip every 1 s | Recording into the buffer, no link |
+| Blue blinking | IDENTIFY |
+| Short press | Start recording (green flash) or stop (red flash) |
+| Hold 2 s (red flash), release | System OFF |
+
+## Unit tests
+
+`proto.c` and `samplebuf.c` are plain C, tested with ztest on the
+`unit_testing` board (a host binary), including the example bytes from
+PROTOCOL.md. Inside the toolchain container (see `CONTAINER_RUN` in the
+Makefile):
+
+```sh
+west build -b unit_testing --no-sysbuild firmware/tests/unit -d firmware/build-unit
+firmware/build-unit/testbinary
+```
 
 ## Building and updating
 

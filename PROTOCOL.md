@@ -29,12 +29,13 @@ signed N-bit integers. Offsets are in bytes.
 
 ### 1.1 Advertising
 
-The tag advertises only in the **Ready** state when no central is connected.
+The tag advertises when no central is connected: in the **Ready** state, and
+in the **Recording** state after the link drops (see [1.9 Link loss](#19-link-loss)).
 It supports one connection at a time.
 
 | | |
 |---|---|
-| Interval | ~1 s, connectable, undirected |
+| Interval | ~1 s in Ready, ~100 ms in Recording (faster reconnect); connectable, undirected |
 | Address | static random, stable across reboots and updates; used to identify a tag |
 | Pairing / bonding | none in v1 |
 

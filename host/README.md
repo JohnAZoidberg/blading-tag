@@ -4,9 +4,10 @@ Python tools that run on a laptop: a BLE recorder with a live plot, and the
 session analysis. Phases 4 and 6 in [../PLAN.md](../PLAN.md). They implement
 both interfaces in [../PROTOCOL.md](../PROTOCOL.md).
 
-> **Status:** everything has been checked against simulated data only. No
-> real tag runs the protocol yet, and the analysis thresholds still need a
-> real skate session.
+> **Status:** the recorder works with a real tag (firmware 0.2.0): a 30 s
+> recording at 200 Hz with no gaps and a ±0.72 ms clock fit. The analysis has
+> only been checked on simulated data, and its thresholds still need a real
+> skate session.
 
 ## Install
 

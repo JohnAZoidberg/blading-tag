@@ -9,8 +9,11 @@ a coin-cell board about the size of a coin, with a motion sensor
 skate with your Android phone in your pocket. The phone records the tag's data
 together with GPS, and you look at the results afterwards.
 
-> **Status: early.** The plan is done. The firmware, app and analysis are not
-> built yet. See [PLAN.md](PLAN.md) for details and progress.
+> **Status: early.** The firmware streams the motion data over Bluetooth and
+> updates over Bluetooth. The laptop recorder works with a real tag. The
+> Android app and the analysis are built but only tested with simulated data,
+> and there hasn't been a real skate session yet. See [PLAN.md](PLAN.md) for
+> details and progress.
 
 ## What it will do
 
@@ -26,7 +29,7 @@ The tag only records when the app tells it to. When it's not in use it sleeps,
 draws almost nothing, and wakes up when the skate moves. One CR2032 coin cell
 should last for many sessions.
 
-## How to use it (once built)
+## How to use it
 
 1. **Mount the tag** firmly on the skate: on the frame, or strapped to the
    cuff. Mount it the same way every time.
@@ -34,8 +37,9 @@ should last for many sessions.
    and the app connects and starts recording.
 3. **Stand still for 2 seconds**, then skate. Keep the phone with you.
 4. **Press stop** when you're done. The session is saved on the phone.
-5. **Look at the results** in the app, or copy the file to a laptop and run
-   the analysis in `host/`.
+5. **Look at the results:** share the session from the app (or copy it over
+   adb with `make -C android pull`) and run the analysis in `host/` on a
+   laptop. The app doesn't show results itself yet.
 
 ## Repo layout
 
@@ -48,7 +52,7 @@ should last for many sessions.
 The parts talk to each other through the Bluetooth protocol and session file
 format in [PROTOCOL.md](PROTOCOL.md).
 
-## Building and updating the firmware (planned)
+## Building and updating the firmware
 
 You only need podman or docker. The nRF Connect SDK toolchain runs in a
 container, so nothing else needs to be installed.

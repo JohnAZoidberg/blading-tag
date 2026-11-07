@@ -183,17 +183,26 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
       in the container.
 - [x] **2. Canary firmware**: BLE + SMP OTA + LED blink only. OTA it to the
       tag, confirm it boots, then OTA it again to prove updates still work.
-- [ ] **3. Firmware v1**: BMI270 streaming over the protocol above, start/stop
-      from the app or button, LED status.
+- [x] **3. Firmware v1**: BMI270 streaming over the protocol above, start/stop
+      from the app or button, LED status. Version 0.2.0. Tested on the tag
+      with the host recorder: 30 s at 200 Hz, continuous `sample_index` and
+      `seq`, 0 dropped, clock fit ±0.72 ms.
 - [ ] **4. Laptop recorder**: `host/` script (bleak). Logs to a file and plots
       live. Do one real skate session to look at the raw signal.
+      *Built and recording from the real tag. Still to do: the skate session.*
 - [ ] **5. Android logger**: Kotlin foreground service. Connects, starts and
       stops recording, logs IMU + GPS, exports files. First test the stream
       with nRF Connect.
+      *Built and tested with the simulated tag. Still to do: a real tag.*
 - [ ] **6. Analysis v1**: push detection and push rate, push/glide split,
       distance per push, fatigue drift over the session.
+      *Built and checked on simulated sessions. Still to do: tune the
+      thresholds on a real session.*
 - [ ] **7. Power states**: ADXL367 wake-on-motion, System OFF, ready-mode
       advertising, then measure.
+      *In firmware v1: 1 s ready advertising, ADXL367 activity wake-up,
+      System OFF from SLEEP, a 2 s button hold or 10 min idle. Still to do:
+      check wake-up from System OFF on the tag, and measure with a PPK2.*
 - [ ] **8. Second tag**: one per foot, clock sync, left/right metrics.
 - [ ] **9. Technique**: orientation fusion (Madgwick), edge angle, push
       direction, crossovers.
@@ -202,9 +211,13 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
 
 ## Open questions
 
-- The Zephyr BMI270 driver only has data-ready triggers, no FIFO. That works
-  at 200 Hz, but a FIFO reader would let the CPU sleep longer. Decide once
-  power is measured.
 - Is 200 Hz enough, or does push onset need more? Check against the raw data
   from phase 4.
 - Frame vs. cuff mount: compare both in an early session.
+
+Settled:
+
+- **Data-ready vs. FIFO:** the Zephyr BMI270 driver only has data-ready
+  triggers, so the app uses the driver for init and config upload, then runs
+  the BMI270 FIFO itself with a ~100 ms watermark interrupt (`imu.c`). The
+  CPU wakes ~10 times a second instead of 200.
