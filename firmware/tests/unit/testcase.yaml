@@ -1,0 +1,3 @@
+tests:
+  blading.unit:
+    type: unit
