@@ -11,8 +11,10 @@ What it does:
 
 - Streams BMI270 accelerometer + gyroscope data at 200 Hz over BLE while the
   app asks for it (START/STOP), or after a button press.
-- Keeps recording into a buffer (8192 samples, ~41 s at 200 Hz) while the
-  link is down, and stops on its own after 5 min without a link.
+- Keeps recording into a buffer (14336 samples, ~72 s at 200 Hz) while the
+  link is down or too slow, and stops on its own after 5 min without a link.
+  Samples stay in the buffer until the phone's link layer has acknowledged
+  them, so packets in flight when the link drops are sent again.
 - Advertises state, position and battery. Advertising is every 1 s in READY,
   and every ~100 ms while recording without a link, so the app reconnects
   quickly.

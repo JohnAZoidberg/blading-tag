@@ -58,7 +58,7 @@ Some details:
 - Sleep only starts when you **let go**. A button that's still held down
   would wake the tag right away again.
 - Without a phone connected, "recording" only means the tag is sampling into
-  a small buffer (8192 samples, the **first** ~41 s at 200 Hz). When it's full,
+  a small buffer (14336 samples, the **first** ~72 s at 200 Hz). When it's full,
   newer samples are dropped (and counted). If the app connects, it picks up
   the running recording, gets the buffer, and then streams live. With no
   connection for 5 minutes the tag stops and throws the buffer away. The tag

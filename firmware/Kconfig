@@ -4,10 +4,11 @@ menu "blading-tag"
 
 config BLADING_BUFFER_SAMPLES
 	int "Samples buffered on the tag"
-	default 8192
+	default 14336
 	help
-	  Samples the tag can hold while the link is down (reported as
-	  buffer_capacity in Info). 12 bytes each; 8192 is 41 s at 200 Hz.
+	  Samples the tag can hold while the link is down or too slow
+	  (reported as buffer_capacity in Info). 12 bytes each; 14336 is
+	  72 s at 200 Hz and takes 168 KB of the 256 KB RAM.
 
 config BLADING_LINK_LOSS_STOP_S
 	int "Stop recording after this long without a connection (s)"
