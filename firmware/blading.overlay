@@ -1,0 +1,38 @@
+/*
+ * App devicetree additions, on top of boards/nrf54l15tag_nrf54l15_cpuapp.overlay
+ * (the flash layout, owned by the OTA setup). Added via EXTRA_DTC_OVERLAY_FILE.
+ */
+#include <zephyr/dt-bindings/adc/adc.h>
+#include <zephyr/dt-bindings/adc/nrf-saadc.h>
+
+/ {
+	zephyr,user {
+		io-channels = <&adc 0>;
+	};
+};
+
+/* Coin-cell voltage: VDD, gain 1/4 against the 0.9 V reference = 3.6 V full scale. */
+&adc {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	channel@0 {
+		reg = <0>;
+		zephyr,gain = "ADC_GAIN_1_4";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <14>;
+		zephyr,oversampling = <8>;
+		zephyr,vref-mv = <900>;
+		zephyr,input-positive = <NRF_SAADC_VDD>;
+	};
+};
+
+/*
+ * ADXL367 INT1 is on P0.03 (as in sdk-nrf's fast_pair/locator_tag overlay for
+ * this board). Port 0 supports SENSE, so it can wake from System OFF.
+ */
+&adxl367 {
+	int1-gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+};

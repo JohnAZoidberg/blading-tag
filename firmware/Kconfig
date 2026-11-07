@@ -1,0 +1,34 @@
+mainmenu "blading-tag"
+
+menu "blading-tag"
+
+config BLADING_BUFFER_SAMPLES
+	int "Samples buffered on the tag"
+	default 8192
+	help
+	  Samples the tag can hold while the link is down (reported as
+	  buffer_capacity in Info). 12 bytes each; 8192 is 41 s at 200 Hz.
+
+config BLADING_LINK_LOSS_STOP_S
+	int "Stop recording after this long without a connection (s)"
+	default 300
+
+config BLADING_IDLE_SLEEP_S
+	int "Go to System OFF after this long idle (s), 0 = never"
+	default 600
+	help
+	  Idle means READY, not connected and no motion. Only applies when the
+	  ADXL367 works, since motion is what wakes the tag again.
+
+config BLADING_MOTION_THRESHOLD_MG
+	int "Wake-on-motion threshold (mg)"
+	default 150
+	range 10 2000
+
+config BLADING_LOW_BATTERY_MV
+	int "Status LOW_BATTERY below this voltage (mV)"
+	default 2500
+
+endmenu
+
+source "Kconfig.zephyr"
