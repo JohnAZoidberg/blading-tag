@@ -37,11 +37,21 @@ overlay enables them.
 
 Factory state (read over BLE on 2026-11-07): it advertises as `Nordic_LBS` and
 already has the SMP (mcumgr) DFU service. Slot 0 holds version `3.2.99`,
-confirmed, with a SHA-512 hash (ED25519 / NCS nRF54L signing). The signing key
-and memory layout are not published.
+confirmed, with a SHA-512 hash (ED25519 / NCS nRF54L signing).
 
-A J-Link is available. It plugs straight into the Tag's debug header, but it
-is only for recovery. The first flash goes over OTA.
+The factory image is sdk-nrf's `samples/bluetooth/peripheral_lbs`, test
+`sample.bluetooth.peripheral_lbs.l15_tag` (added 2026-01-20, when the sample's
+VERSION was 3.2.99). That test only sets `SB_CONFIG_BOOTLOADER_MCUBOOT=y` and
+`CONFIG_NCS_SAMPLE_MCUMGR_BT_OTA_DFU=y` plus RTT logging, so the factory
+MCUboot uses NCS defaults: ED25519 (hash, not pure), the public dev key
+`bootloader/mcuboot/root-ed25519.pem`, no KMU, swap-using-move, no downgrade
+prevention, and the default nRF54L15 layout (slot0 0x10000, slot1 0xc2000,
+712 KiB each). Our build uses the same settings.
+
+A J-Link is available and plugs straight into the Tag's debug header. The tag
+is not powered through that header, so the coin cell must be in. Never put
+3.3 V on the Tag's VDD while the cell is in. The J-Link does the first flash
+(see "Build and flash"), and after that it is only for recovery.
 
 ## Architecture
 
@@ -121,14 +131,18 @@ Built the same way as `../hid-remapper-private`:
   - `sysbuild/mcuboot.conf`: `CONFIG_FPROTECT_ALLOW_COMBINED_REGIONS=y`,
     `CONFIG_PM_PARTITION_SIZE_MCUBOOT=0xF800`
 
-**Risk on the first OTA:** we have to match the factory MCUboot's key and
-layout, and both are assumed (default NCS dev key, the blog's layout).
+**First OTA onto the factory image:** the key and layout match (see above).
+The obstacle is pairing. The LBS sample's `CONFIG_BT_LBS_SECURITY_ENABLED`
+defaults to y and selects `BT_SMP`, which makes the SMP characteristic default
+to `MCUMGR_TRANSPORT_BT_PERM_RW_AUTHEN`. So the central needs an authenticated
+(passkey) bond before mcumgr works. The tag is DisplayOnly: it prints
+`Passkey for <addr>: NNNNNN` to RTT, so reading it needs the J-Link anyway. A
+phone that falls back to Just Works only gets an encrypted link, not an
+authenticated one, so its SMP writes are refused.
 
-- Wrong key: the image is rejected and the factory firmware keeps running.
-- Wrong layout: the app may fail to boot. It is uploaded in test mode and only
-  confirms itself after BLE is up, so the bootloader reverts if it can.
-- If neither works: flash our own MCUboot + app with the J-Link. After that we
-  own the key and layout.
+Since the J-Link is needed either way, the simplest first flash is
+`make flash`. After that the tag runs our MCUboot + app, where SMP is
+`PERM_RW` (no pairing), and `make ota` works from then on.
 
 Images are signed with MCUboot's default debug key, so they are for
 development only.
