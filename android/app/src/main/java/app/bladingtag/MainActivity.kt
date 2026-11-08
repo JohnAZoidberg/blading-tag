@@ -61,6 +61,7 @@ class MainActivity : Activity() {
     private lateinit var tagsBox: LinearLayout
     private lateinit var tagList: LinearLayout
     private lateinit var startButton: Button
+    private lateinit var gpsBox: CheckBox
     private lateinit var sessionList: LinearLayout
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -111,6 +112,16 @@ class MainActivity : Activity() {
         }, lp(dp(4)))
         tagList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         tagsBox.addView(tagList, lp(dp(8)))
+        gpsBox = CheckBox(this).apply {
+            text = "Record GPS (speed, for distance per push)"
+            textSize = 15f
+            isChecked = prefs().getBoolean(PREF_GPS, true)
+            setOnCheckedChangeListener { _, on ->
+                prefs().edit().putBoolean(PREF_GPS, on).apply()
+                if (on && !hasLocation()) requestPermissions(arrayOf(LOCATION), REQ_PERMISSIONS)
+            }
+        }
+        tagsBox.addView(gpsBox, lp(dp(8)))
         startButton = Button(this).apply {
             text = "Start recording"
             setOnClickListener { startRecording() }
@@ -143,7 +154,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (!hasPermissions()) requestPermissions(PERMISSIONS, REQ_PERMISSIONS)
+        if (!hasPermissions()) requestPermissions(wantedPermissions(), REQ_PERMISSIONS)
         refreshSessions()
         refresh()
     }
@@ -160,6 +171,12 @@ class MainActivity : Activity() {
     }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, results: IntArray) {
+        // GPS was asked for but location was refused: show it as off rather
+        // than silently recording without it.
+        if (LOCATION in perms && !hasLocation() && gpsBox.isChecked) {
+            gpsBox.isChecked = false
+            toast("GPS is off: it needs the location permission")
+        }
         refresh()
     }
 
@@ -240,7 +257,7 @@ class MainActivity : Activity() {
         sb.append("\n\nGPS  ")
         val fix = rec.lastFix
         when {
-            rec.gps == null -> sb.append("off (no location permission)")
+            rec.gps == null -> sb.append("off")
             fix == null -> sb.append("waiting for fix…")
             else -> {
                 val age = (SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos) / 1_000_000_000
@@ -376,7 +393,7 @@ class MainActivity : Activity() {
     private fun startRecording() {
         if (selected.isEmpty()) return
         stopScan()
-        RecorderService.start(this, selected.toList())
+        RecorderService.start(this, selected.toList(), gps = gpsBox.isChecked && hasLocation())
         selected.clear()
         ui.postDelayed({ refresh() }, 200)
     }
@@ -504,10 +521,18 @@ class MainActivity : Activity() {
     /** Only the permissions the app can't work without; location is optional (no gps.csv without it). */
     private fun hasPermissions() = REQUIRED.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
+    private fun hasLocation() = checkSelfPermission(LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    /** REQUIRED, plus location if GPS recording is switched on. */
+    private fun wantedPermissions() =
+        if (prefs().getBoolean(PREF_GPS, true)) REQUIRED + LOCATION else REQUIRED
+
+    private fun prefs() = getSharedPreferences("bladingtag", MODE_PRIVATE)
+
     private fun openAppSettings() {
         if (REQUIRED.any { shouldShowRequestPermissionRationale(it) } ||
             REQUIRED.none { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
-            requestPermissions(PERMISSIONS, REQ_PERMISSIONS)
+            requestPermissions(wantedPermissions(), REQ_PERMISSIONS)
         } else {
             startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 android.net.Uri.fromParts("package", packageName, null)))
@@ -522,7 +547,8 @@ class MainActivity : Activity() {
             Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.POST_NOTIFICATIONS,
         )
-        /** Asked for together with REQUIRED; recording works without it, just no GPS track. */
-        private val PERMISSIONS = REQUIRED + Manifest.permission.ACCESS_FINE_LOCATION
+        /** Only needed for the optional GPS track. */
+        private const val LOCATION = Manifest.permission.ACCESS_FINE_LOCATION
+        private const val PREF_GPS = "record_gps"
     }
 }

@@ -20,7 +20,9 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
 2. Tick one tag, or two, and press **Start recording**. Stand still for 2 s,
    then skate. The phone can go in your pocket with the screen off. The
    recording runs in a foreground service, and its notification has a Stop
-   button.
+   button. Untick **Record GPS** to record without location. The session
+   then has no `gps.csv`, so there is no speed or distance per push. The
+   choice is remembered.
 3. **Stop recording** sends STOP, waits for the tag to flush its buffer, and
    saves the session.
 4. Under **Sessions**, **Share** zips a session into `Downloads/blading-tag/`

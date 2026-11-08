@@ -55,15 +55,17 @@ class RecorderService : Service(), TagLink.Listener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> if (current == null) {
-                begin(intent.getStringArrayExtra(EXTRA_ADDRESSES)?.toList().orEmpty())
+                begin(intent.getStringArrayExtra(EXTRA_ADDRESSES)?.toList().orEmpty(),
+                    intent.getBooleanExtra(EXTRA_GPS, true))
             }
             ACTION_STOP -> end()
         }
         return START_NOT_STICKY
     }
 
-    private fun begin(addresses: List<String>) {
-        val hasLocation = granted(Manifest.permission.ACCESS_FINE_LOCATION)
+    /** [wantGps]: the user's choice; GPS also needs the location permission. */
+    private fun begin(addresses: List<String>, wantGps: Boolean) {
+        val hasLocation = wantGps && granted(Manifest.permission.ACCESS_FINE_LOCATION)
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
         if (hasLocation) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
         startForeground(NOTIFICATION_ID, notification("Starting…"), types)
@@ -252,16 +254,19 @@ class RecorderService : Service(), TagLink.Listener {
         const val ACTION_START = "app.bladingtag.START"
         const val ACTION_STOP = "app.bladingtag.STOP"
         const val EXTRA_ADDRESSES = "addresses"
+        const val EXTRA_GPS = "gps"
 
         @Volatile var current: Recording? = null
             private set
 
         fun sessionsDir(c: Context) = File(c.getExternalFilesDir(null), "sessions").apply { mkdirs() }
 
-        fun start(c: Context, addresses: List<String>) {
+        /** Without [gps] there is no gps.csv (PROTOCOL.md §2 allows it to be missing). */
+        fun start(c: Context, addresses: List<String>, gps: Boolean) {
             c.startForegroundService(Intent(c, RecorderService::class.java)
                 .setAction(ACTION_START)
-                .putExtra(EXTRA_ADDRESSES, addresses.toTypedArray()))
+                .putExtra(EXTRA_ADDRESSES, addresses.toTypedArray())
+                .putExtra(EXTRA_GPS, gps))
         }
 
         fun stop(c: Context) {
