@@ -105,4 +105,41 @@ class ProtocolTest {
         assertEquals("session-20261107-142530", SessionMeta.folderName(1_794_061_530_123L))
         assertEquals("\"a\\\"b\\n\"", SessionMeta.q("a\"b\n"))
     }
+
+    @Test fun editSessionJson() {
+        val dir = Files.createTempDirectory("session").toFile()
+        val left = TagMeta("C0:BB:4A:A7:0D:57").apply { position = "left"; sessionId = 3; odrHz = 200 }
+        val other = TagMeta("C0:BB:4A:A7:0D:58").apply { position = "right" }
+        val m = SessionMeta("0.1.0", 1_794_061_530_123L, 123456789012L, listOf(left, other))
+        writeSessionJson(dir, m)
+
+        var j = SessionJson.read(dir)!!
+        assertEquals("", j.notes)
+        assertEquals(123456789012L, j.startElapsedNs)
+        assertNull(j.endElapsedNs)
+        assertEquals(listOf("left", "right"), j.tags.map { it.position })
+
+        // Only the named tag changes; other fields survive the rewrite.
+        SessionJson.edit(dir, "crossovers \"fast\"\nline 2", mapOf("C0:BB:4A:A7:0D:57" to "right"))
+        j = SessionJson.read(dir)!!
+        assertEquals("crossovers \"fast\"\nline 2", j.notes)
+        assertEquals(listOf("right", "right"), j.tags.map { it.position })
+        assertEquals(123456789012L, j.startElapsedNs)
+        val text = File(dir, "session.json").readText()
+        assertTrue(text, text.contains("\"session_id\": 3"))
+        assertTrue(text, text.contains("\"start_utc\": \"2026-11-07T14:25:30.123Z\""))
+        assertTrue(text, text.contains("\"file\": \"tag-C0BB4AA70D57.bin\""))
+        assertNull(SessionJson.read(File(dir, "missing")))
+        dir.deleteRecursively()
+    }
+
+    @Test fun closedLogRefusesAppend() {
+        val dir = Files.createTempDirectory("log").toFile()
+        val log = TagLog(File(dir, "t.bin"))
+        assertTrue(log.append(1, TagLog.KIND_DATA, byteArrayOf(1)))
+        log.close()
+        assertTrue(!log.append(2, TagLog.KIND_DATA, byteArrayOf(2)))
+        assertEquals(12L, File(dir, "t.bin").length())
+        dir.deleteRecursively()
+    }
 }

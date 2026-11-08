@@ -17,7 +17,9 @@ import java.util.zip.ZipOutputStream
  */
 object Sessions {
 
-    class Summary(val dir: File, val durationS: Long?, val bytes: Long, val tags: Int, val gpsFixes: Int)
+    /** [json] is null if session.json is missing or unreadable (then it can't be edited). */
+    class Summary(val dir: File, val json: SessionJson?, val durationS: Long?, val bytes: Long,
+                  val tags: Int, val gpsFixes: Int)
 
     fun list(c: Context): List<Summary> =
         (RecorderService.sessionsDir(c).listFiles { f -> f.isDirectory && f.name.startsWith("session-") }
@@ -27,14 +29,14 @@ object Sessions {
 
     private fun summarize(dir: File): Summary {
         val files = dir.listFiles().orEmpty()
-        val json = File(dir, "session.json").takeIf { it.exists() }?.readText().orEmpty()
-        fun num(key: String) = Regex("\"$key\":\\s*(\\d+)").find(json)?.groupValues?.get(1)?.toLong()
-        val start = num("start_elapsed_ns")
-        val end = num("end_elapsed_ns")
+        val json = SessionJson.read(dir)
+        val start = json?.startElapsedNs
+        val end = json?.endElapsedNs
         val gps = File(dir, "gps.csv").takeIf { it.exists() }
             ?.useLines { l -> l.count() - 1 }?.coerceAtLeast(0) ?: 0
         return Summary(
             dir = dir,
+            json = json,
             durationS = if (start != null && end != null) (end - start) / 1_000_000_000 else null,
             bytes = files.sumOf { it.length() },
             tags = files.count { it.name.startsWith("tag-") },

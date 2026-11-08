@@ -13,6 +13,7 @@ import android.bluetooth.le.ScanSettings
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
+import android.text.InputType
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -23,7 +24,10 @@ import android.view.View
 import android.view.WindowInsets
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -96,6 +100,22 @@ class MainActivity : Activity() {
         recordingBox.addView(heading("Recording"))
         recordingText = TextView(this).apply { textSize = 15f; typeface = Typeface.MONOSPACE }
         recordingBox.addView(recordingText, lp(dp(8)))
+        recordingBox.addView(Button(this).apply {
+            text = "Description…"
+            setOnClickListener { editCurrentNotes() }
+        }, lp(dp(12)))
+        recordingBox.addView(Button(this).apply {
+            text = "Save and start new session"
+            setOnClickListener {
+                RecorderService.split(this@MainActivity)
+                toast("Saved. Recording a new session")
+            }
+        }, lp(dp(4)))
+        recordingBox.addView(TextView(this).apply {
+            text = "Keeps recording without a gap, so each movement pattern gets its own session."
+            textSize = 14f
+            alpha = 0.7f
+        }, lp(dp(2)))
         recordingBox.addView(Button(this).apply {
             text = "Stop recording"
             setOnClickListener { RecorderService.stop(this@MainActivity) }
@@ -187,7 +207,8 @@ class MainActivity : Activity() {
         ui.removeCallbacks(tick)
         ui.postDelayed(tick, 500)
         val rec = RecorderService.current
-        if (shownRecording != null && rec == null) refreshSessions() // a recording just ended
+        // A recording just ended, or was split: a session was saved.
+        if (shownRecording != null && rec !== shownRecording) refreshSessions()
         shownRecording = rec
 
         val adapter = getSystemService(BluetoothManager::class.java).adapter
@@ -225,6 +246,7 @@ class MainActivity : Activity() {
         sb.append("%d:%02d:%02d".format(secs / 3600, secs / 60 % 60, secs % 60))
         if (rec.stopping) sb.append("  stopping…")
         sb.append("\n")
+        rec.meta.notes.takeIf { it.isNotBlank() }?.let { sb.append(it.lines().first()).append("\n") }
         for (l in rec.links) {
             val s = l.status
             sb.append("\n").append(if (l.address == SimulatedTag.ADDRESS) "simulated" else l.address)
@@ -451,27 +473,34 @@ class MainActivity : Activity() {
             return
         }
         for (s in list) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(4), 0, dp(4))
-            }
             val d = s.durationS
             val dur = if (d == null) "unfinished" else "%d:%02d:%02d".format(d / 3600, d / 60 % 60, d % 60)
-            row.addView(TextView(this).apply {
-                text = "${s.dir.name.removePrefix("session-")}\n$dur · ${s.tags} tag · " +
+            val feet = s.json?.tags?.joinToString(" + ") { it.position }?.let { " · $it" }.orEmpty()
+            sessionList.addView(TextView(this).apply {
+                text = "${s.dir.name.removePrefix("session-")}\n$dur · ${s.tags} tag$feet · " +
                     "${s.gpsFixes} GPS · ${size(s.bytes)}"
                 textSize = 14f
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(Button(this).apply {
-                text = "Share"; isAllCaps = false
-                setOnClickListener { export(s) }
+                setPadding(0, dp(10), 0, 0)
             })
-            row.addView(Button(this).apply {
-                text = "Delete"; isAllCaps = false
-                setOnClickListener { confirmDelete(s) }
+            s.json?.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+                sessionList.addView(TextView(this).apply {
+                    text = notes
+                    textSize = 14f
+                    setTypeface(typeface, Typeface.ITALIC)
+                })
+            }
+            val buttons = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            fun b(label: String, action: () -> Unit) = buttons.addView(Button(this).apply {
+                text = label; isAllCaps = false
+                setOnClickListener { action() }
             })
-            sessionList.addView(row)
+            if (s.json != null) b("Edit") { edit(s, s.json) }
+            b("Share") { export(s) }
+            b("Delete") { confirmDelete(s) }
+            sessionList.addView(buttons)
         }
     }
 
@@ -488,6 +517,78 @@ class MainActivity : Activity() {
                 }.onFailure { toast("Export failed: ${it.message}") }
             }
         }
+    }
+
+    private fun notesField(current: String) = EditText(this).apply {
+        hint = "e.g. crossovers, double push, uphill"
+        setText(current)
+        setSelection(text.length)
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+            InputType.TYPE_TEXT_FLAG_MULTI_LINE
+    }
+
+    /** The description of the session being recorded. */
+    private fun editCurrentNotes() {
+        val rec = RecorderService.current ?: return
+        val field = notesField(rec.meta.notes)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(field)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Description")
+            .setView(box)
+            .setPositiveButton("Save") { _, _ ->
+                val notes = field.text.toString().trim()
+                io.execute { RecorderService.setNotes(rec, notes) }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Description and foot of each tag for a saved session. */
+    private fun edit(s: Sessions.Summary, json: SessionJson) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        box.addView(TextView(this).apply { text = "Description"; textSize = 15f })
+        val field = notesField(json.notes)
+        box.addView(field)
+        val positions = listOf("left" to "Left foot", "right" to "Right foot", "unknown" to "Unknown")
+        // Per tag: the radio button id -> position.
+        val choices = json.tags.map { t ->
+            box.addView(TextView(this).apply {
+                text = if (t.address == SimulatedTag.ADDRESS) "Simulated tag" else "Tag ${t.address}"
+                textSize = 15f
+            }, lp(dp(16)))
+            val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+            val ids = HashMap<Int, String>()
+            for ((value, label) in positions) {
+                val rb = RadioButton(this).apply { id = View.generateViewId(); text = label }
+                ids[rb.id] = value
+                group.addView(rb)
+                if (value == t.position) group.check(rb.id)
+            }
+            Triple(t, group, ids)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(s.dir.name)
+            .setView(ScrollView(this).apply { addView(box) })
+            .setPositiveButton("Save") { _, _ ->
+                val notes = field.text.toString().trim()
+                val feet = choices.associate { (t, group, ids) ->
+                    t.address to (ids[group.checkedRadioButtonId] ?: t.position)
+                }
+                io.execute {
+                    val r = runCatching { SessionJson.edit(s.dir, notes, feet) }
+                    ui.post { r.onFailure { toast("Saving failed: ${it.message}") } }
+                    refreshSessions()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun confirmDelete(s: Sessions.Summary) {

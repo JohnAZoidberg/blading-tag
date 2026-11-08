@@ -3,6 +3,7 @@ package app.bladingtag
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.text.SimpleDateFormat
@@ -11,8 +12,8 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * Session file format, see PROTOCOL.md §2. Plain java.io so it runs in unit
- * tests; the callers take care of threading (each log is used from one
+ * Session file format, see PROTOCOL.md §2. Plain java.io (and org.json) so it
+ * runs in unit tests; the callers take care of threading (each log is used from one
  * thread at a time, but [TagLog.append] is synchronized anyway since
  * flushing happens from a timer).
  */
@@ -27,16 +28,20 @@ class TagLog(val file: File) {
         private set
     private var closed = false
 
-    /** Ignored after [close]: a link may still deliver a packet while stopping. */
+    /**
+     * Returns false, and writes nothing, after [close]: a link may still
+     * deliver a packet while stopping, or while the recording is split.
+     */
     @Synchronized
-    fun append(elapsedNs: Long, kind: Int, payload: ByteArray) {
-        if (closed) return
+    fun append(elapsedNs: Long, kind: Int, payload: ByteArray): Boolean {
+        if (closed) return false
         header.clear()
         header.putLong(elapsedNs).put(kind.toByte()).putShort(payload.size.toShort())
         out.write(header.array())
         out.write(payload)
         records++
         bytes += HEADER + payload.size
+        return true
     }
 
     @Synchronized fun flush() { if (!closed) out.flush() }
@@ -92,6 +97,16 @@ class TagMeta(val address: String) {
     var accelRangeG: Int? = null
     var gyroRangeDps: Int? = null
     val file get() = TagLog.fileName(address)
+
+    /** For the next session when a recording is split: same tag, same settings. */
+    fun copy() = TagMeta(address).also {
+        it.position = position
+        it.infoHex = infoHex
+        it.sessionId = sessionId
+        it.odrHz = odrHz
+        it.accelRangeG = accelRangeG
+        it.gyroRangeDps = gyroRangeDps
+    }
 }
 
 class SessionMeta(
@@ -158,8 +173,59 @@ class SessionMeta(
 }
 
 /** Writes session.json atomically, so a crash never leaves it half written. */
-fun writeSessionJson(dir: File, meta: SessionMeta) {
+fun writeSessionJson(dir: File, meta: SessionMeta) = writeSessionJson(dir, meta.toJson())
+
+private fun writeSessionJson(dir: File, text: String) {
     val tmp = File(dir, "session.json.tmp")
-    tmp.writeText(meta.toJson())
+    tmp.writeText(text)
     tmp.renameTo(File(dir, "session.json"))
+}
+
+/** What the session list shows from a session.json, and what it lets the user change. */
+class SessionJson(
+    val startElapsedNs: Long?,
+    val endElapsedNs: Long?,
+    val tags: List<Tag>,
+    /** Shown as the session's description. */
+    val notes: String,
+) {
+    class Tag(val address: String, val position: String)
+
+    companion object {
+        /** Null if the folder has no readable session.json. */
+        fun read(dir: File): SessionJson? = runCatching {
+            parse(File(dir, "session.json").readText())
+        }.getOrNull()
+
+        fun parse(text: String): SessionJson {
+            val o = JSONObject(text)
+            fun long(key: String) = if (o.isNull(key)) null else o.getLong(key)
+            val tags = o.optJSONArray("tags")
+            return SessionJson(
+                startElapsedNs = long("start_elapsed_ns"),
+                endElapsedNs = long("end_elapsed_ns"),
+                tags = (0 until (tags?.length() ?: 0)).map { i ->
+                    val t = tags!!.getJSONObject(i)
+                    Tag(t.getString("address"), t.optString("position", "unknown"))
+                },
+                notes = o.optString("notes", ""),
+            )
+        }
+
+        /**
+         * Sets the notes and the tag positions ([positions]: address ->
+         * "left"/"right"/"unknown") of a finished session. Every other field
+         * stays as it is, including ones this app doesn't know.
+         */
+        fun edit(dir: File, notes: String, positions: Map<String, String>) {
+            val o = JSONObject(File(dir, "session.json").readText())
+            o.put("notes", notes)
+            val tags = o.optJSONArray("tags")
+            for (i in 0 until (tags?.length() ?: 0)) {
+                val t = tags!!.getJSONObject(i)
+                positions[t.optString("address")]?.let { t.put("position", it) }
+            }
+            writeSessionJson(dir, o.toString(2) + "\n")
+        }
+    }
 }

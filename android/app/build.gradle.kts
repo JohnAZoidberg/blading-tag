@@ -35,6 +35,8 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // android.jar only has stubs of org.json; the real one for SessionJson tests.
+    testImplementation("org.json:json:20250517")
 }
 
 kotlin {

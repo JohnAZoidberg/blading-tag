@@ -30,10 +30,14 @@ import java.io.File
  *
  * The activity reads the live state from [current]; there's only ever one
  * recording, in this process, so no binder is needed.
+ *
+ * [split] ends the session and starts the next one without touching the tag
+ * links: the tags keep recording and only the files change, so no sample is
+ * lost at the cut and there's no reconnect.
  */
 class RecorderService : Service(), TagLink.Listener {
 
-    /** Live state of the running recording, for the UI. */
+    /** Live state of the running recording's current session, for the UI. A split replaces it. */
     class Recording(
         val dir: File,
         val meta: SessionMeta,
@@ -59,6 +63,7 @@ class RecorderService : Service(), TagLink.Listener {
                     intent.getBooleanExtra(EXTRA_GPS, true))
             }
             ACTION_STOP -> end()
+            ACTION_SPLIT -> split()
         }
         return START_NOT_STICKY
     }
@@ -72,7 +77,7 @@ class RecorderService : Service(), TagLink.Listener {
 
         val startUtc = System.currentTimeMillis()
         val startElapsed = SystemClock.elapsedRealtimeNanos()
-        val dir = File(sessionsDir(this), SessionMeta.folderName(startUtc)).apply { mkdirs() }
+        val dir = newSessionDir(startUtc)
         val meta = SessionMeta(BuildConfig.VERSION_NAME, startUtc, startElapsed,
             addresses.map { TagMeta(it) })
         writeSessionJson(dir, meta)
@@ -88,18 +93,29 @@ class RecorderService : Service(), TagLink.Listener {
         wakeLock = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bladingtag:recording")
             .apply { acquire(12 * 3600 * 1000L) }
-        if (gps != null) startGps(rec, gps)
+        if (gps != null) startGps()
         links.forEach { it.start() }
         Log.i(TAG, "recording to $dir with ${addresses.size} tag(s), gps=${gps != null}")
         main.postDelayed(tick, TICK_MS)
     }
 
+    /** A new folder; "-2", "-3"... if a split comes within the same second. */
+    private fun newSessionDir(startUtc: Long): File {
+        val name = SessionMeta.folderName(startUtc)
+        var dir = File(sessionsDir(this), name)
+        var n = 2
+        while (dir.exists()) dir = File(sessionsDir(this), "$name-${n++}")
+        return dir.apply { mkdirs() }
+    }
+
+    /** Fixes go to whichever session is current (on the main thread, like [split]). */
     @SuppressLint("MissingPermission") // checked in begin()
-    private fun startGps(rec: Recording, gps: GpsLog) {
+    private fun startGps() {
         val lm = getSystemService(LocationManager::class.java)
         val l = LocationListener { loc ->
+            val rec = current ?: return@LocationListener
             rec.lastFix = loc
-            gps.append(GpsLog.Fix(
+            rec.gps?.append(GpsLog.Fix(
                 elapsedNs = loc.elapsedRealtimeNanos,
                 utcMs = loc.time,
                 lat = loc.latitude, lon = loc.longitude,
@@ -126,6 +142,41 @@ class RecorderService : Service(), TagLink.Listener {
         }
     }
 
+    /**
+     * Saves the current session, ending it now, and continues the recording
+     * in a new one with the same tags and GPS setting.
+     */
+    private fun split() {
+        val old = current ?: return
+        if (old.stopping) return
+        val startUtc = System.currentTimeMillis()
+        val startElapsed = SystemClock.elapsedRealtimeNanos()
+        val dir = newSessionDir(startUtc)
+        val logs = old.logs.keys.associateWith { TagLog(File(dir, TagLog.fileName(it))) }
+        val gps = old.gps?.let { GpsLog(File(dir, "gps.csv")) }
+        // Under the old meta's lock, so a concurrent updateMeta() either lands
+        // before the copy or sees the new session and applies there.
+        synchronized(old.meta) {
+            val meta = SessionMeta(BuildConfig.VERSION_NAME, startUtc, startElapsed,
+                old.meta.tags.map { it.copy() })
+            writeSessionJson(dir, meta)
+            current = Recording(dir, meta, old.links, logs, gps).apply { lastFix = old.lastFix }
+        }
+        // A packet being appended right now retries into the new log (onRecord).
+        save(old, startElapsed)
+        Log.i(TAG, "split: saved ${old.dir}, now recording to $dir")
+    }
+
+    /** Closes a session's files and records its end. */
+    private fun save(rec: Recording, endElapsedNs: Long) {
+        rec.logs.values.forEach { it.close() }
+        rec.gps?.close()
+        synchronized(rec.meta) {
+            rec.meta.endElapsedNs = endElapsedNs
+            writeSessionJson(rec.dir, rec.meta)
+        }
+    }
+
     private fun end() {
         val rec = current
         if (rec == null) { stopSelf(); return }
@@ -139,12 +190,7 @@ class RecorderService : Service(), TagLink.Listener {
         var pending = rec.links.size
         val finish = {
             main.removeCallbacks(tick)
-            rec.logs.values.forEach { it.close() }
-            rec.gps?.close()
-            synchronized(rec.meta) {
-                rec.meta.endElapsedNs = SystemClock.elapsedRealtimeNanos()
-                writeSessionJson(rec.dir, rec.meta)
-            }
+            save(rec, SystemClock.elapsedRealtimeNanos())
             wakeLock?.takeIf { it.isHeld }?.release()
             current = null
             Log.i(TAG, "recording saved to ${rec.dir}")
@@ -161,12 +207,7 @@ class RecorderService : Service(), TagLink.Listener {
         // Killed without a stop (e.g. swiped away on some OEM ROMs): keep what we have.
         current?.let { rec ->
             rec.links.forEach { it.stop {} }
-            rec.logs.values.forEach { it.close() }
-            rec.gps?.close()
-            synchronized(rec.meta) {
-                rec.meta.endElapsedNs = SystemClock.elapsedRealtimeNanos()
-                writeSessionJson(rec.dir, rec.meta)
-            }
+            save(rec, SystemClock.elapsedRealtimeNanos())
             current = null
         }
         wakeLock?.takeIf { it.isHeld }?.release()
@@ -181,7 +222,16 @@ class RecorderService : Service(), TagLink.Listener {
     }
 
     override fun onRecord(link: TagLink, kind: Int, elapsedNs: Long, payload: ByteArray) {
-        current?.logs?.get(link.address)?.append(elapsedNs, kind, payload)
+        var rec = current ?: return
+        while (true) {
+            val log = rec.logs[link.address] ?: return
+            if (log.append(elapsedNs, kind, payload)) return
+            // Closed: either stopping (drop it, as before) or split between
+            // reading current and appending (write it to the new session).
+            val next = current
+            if (next == null || next === rec) return
+            rec = next
+        }
     }
 
     override fun onStatus(link: TagLink, status: Protocol.Status) {
@@ -203,11 +253,17 @@ class RecorderService : Service(), TagLink.Listener {
     }
 
     private fun updateMeta(link: TagLink, f: (TagMeta) -> Unit) {
-        val rec = current ?: return
-        synchronized(rec.meta) {
-            val t = rec.meta.tags.firstOrNull { it.address == link.address } ?: return
-            f(t)
-            writeSessionJson(rec.dir, rec.meta)
+        while (true) {
+            val rec = current ?: return
+            synchronized(rec.meta) {
+                // Split while waiting for the lock: apply it to the new session.
+                if (current === rec) {
+                    val t = rec.meta.tags.firstOrNull { it.address == link.address } ?: return
+                    f(t)
+                    writeSessionJson(rec.dir, rec.meta)
+                    return
+                }
+            }
         }
     }
 
@@ -233,6 +289,8 @@ class RecorderService : Service(), TagLink.Listener {
             PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, RecorderService::class.java)
             .setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
+        val split = PendingIntent.getService(this, 2, Intent(this, RecorderService::class.java)
+            .setAction(ACTION_SPLIT), PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Recording skate session")
@@ -240,6 +298,7 @@ class RecorderService : Service(), TagLink.Listener {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(open)
+            .addAction(Notification.Action.Builder(null, "New session", split).build())
             .addAction(Notification.Action.Builder(null, "Stop", stop).build())
             .build()
     }
@@ -253,6 +312,7 @@ class RecorderService : Service(), TagLink.Listener {
         private const val TICK_MS = 5_000L
         const val ACTION_START = "app.bladingtag.START"
         const val ACTION_STOP = "app.bladingtag.STOP"
+        const val ACTION_SPLIT = "app.bladingtag.SPLIT"
         const val EXTRA_ADDRESSES = "addresses"
         const val EXTRA_GPS = "gps"
 
@@ -271,6 +331,19 @@ class RecorderService : Service(), TagLink.Listener {
 
         fun stop(c: Context) {
             c.startService(Intent(c, RecorderService::class.java).setAction(ACTION_STOP))
+        }
+
+        /** Save the current session and keep recording into a new one. */
+        fun split(c: Context) {
+            c.startService(Intent(c, RecorderService::class.java).setAction(ACTION_SPLIT))
+        }
+
+        /** Sets the description (session.json "notes") of the session being recorded. */
+        fun setNotes(rec: Recording, notes: String) {
+            synchronized(rec.meta) {
+                rec.meta.notes = notes
+                writeSessionJson(rec.dir, rec.meta)
+            }
         }
     }
 }
