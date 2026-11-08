@@ -18,6 +18,8 @@
   --line: #cfd4db;
   --accent: #2448d8;      /* tracked skate, wheels down */
   --air: #c77700;         /* tracked skate, in the air */
+  --outside: #0d9682;     /* wheels on their outside edge (inside edge = accent) */
+  --flat: #8a93a0;        /* wheels flat, within the uncertainty of "flat" */
   --early: #8a93a0;
   --ground: #d9dde2;
   --ground-line: #b8bfc8;
@@ -30,14 +32,14 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #121519; --panel: #1a1e24; --ink: #e7eaee; --muted: #949dab; --line: #2c323b;
-    --accent: #7d98ff; --air: #f0a63a; --early: #6b7482;
+    --accent: #7d98ff; --air: #f0a63a; --early: #6b7482; --outside: #3fd0b8; --flat: #7c8594;
     --ground: #1c2026; --ground-line: #2a3039; --lane: #8d8f86;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #121519; --panel: #1a1e24; --ink: #e7eaee; --muted: #949dab; --line: #2c323b;
-  --accent: #7d98ff; --air: #f0a63a; --early: #6b7482;
+  --accent: #7d98ff; --air: #f0a63a; --early: #6b7482; --outside: #3fd0b8; --flat: #7c8594;
   --ground: #1c2026; --ground-line: #2a3039; --lane: #8d8f86;
   color-scheme: dark;
 }
@@ -80,6 +82,12 @@ h2 { font: 600 1.35rem/1.1 var(--font-display); margin: 0; letter-spacing: .02em
 .hud .phase { font: 700 1.05rem/1.1 var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
 .hud .row { display: flex; justify-content: space-between; gap: 14px; font-size: .86rem; }
 .hud .row span:first-child { color: var(--muted); }
+.edge-key {
+  position: absolute; left: 12px; bottom: 12px; pointer-events: none; display: flex; flex-wrap: wrap; gap: 4px 12px;
+  padding: 6px 10px; border-radius: 6px; font-size: .8rem; color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 86%, transparent); border: 1px solid var(--line);
+}
+.edge-key i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
 .views { position: absolute; right: 12px; top: 12px; display: grid; gap: 6px; justify-items: end; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
 .seg button {
@@ -118,6 +126,7 @@ td.up { color: var(--accent); }
   .stage { height: 58vh; }
   .hud { min-width: 0; font-size: .8rem; padding: 8px; }
   .views { top: auto; bottom: 10px; right: 10px; }
+  .edge-key { bottom: auto; top: 12px; left: auto; right: 12px; max-width: 46%; font-size: .72rem; }
   h1 { font-size: 1.7rem; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
@@ -138,9 +147,15 @@ td.up { color: var(--accent); }
       <div class="phase" id="hud-phase">Wheels down</div>
       <div class="row"><span>Time</span><span class="num" id="hud-time">0:00.0</span></div>
       <div class="row"><span>Stroke</span><span class="num" id="hud-stroke">–</span></div>
-      <div class="row"><span>Inside edge</span><span class="num" id="hud-edge">–</span></div>
+      <div class="row"><span>Edge</span><span class="num" id="hud-edge">–</span></div>
       <div class="row"><span>Toe out</span><span class="num" id="hud-toe">–</span></div>
       <div class="row"><span>Speed</span><span class="num" id="hud-speed">–</span></div>
+    </div>
+    <div class="edge-key" aria-hidden="true">
+      <span><i style="background:var(--outside)"></i>outside edge</span>
+      <span><i style="background:var(--flat)"></i>flat</span>
+      <span><i style="background:var(--accent)"></i>inside edge</span>
+      <span><i style="background:var(--air)"></i>in the air</span>
     </div>
     <div class="views">
       <div class="seg" id="mode" role="group" aria-label="What to show">
@@ -181,6 +196,8 @@ td.up { color: var(--accent); }
             <option value="splay_deg">Toe out, °</option>
             <option value="push_rate_spm">Push rate, /min</option>
             <option value="dist_per_push_m">Distance per push, m</option>
+            <option value="outside_deg">Outside edge, °</option>
+            <option value="outside_frac">On the outside edge, % of contact</option>
             <option value="lift_cm">Lift, cm</option>
           </select>
         </label>
@@ -203,6 +220,7 @@ td.up { color: var(--accent); }
       <h2 style="color:var(--ink)">How this is worked out</h2>
       <p>One tag sees one skate. A stroke runs from the wheels touching down to the next touch-down, found from road vibration. Within each stroke the acceleration is integrated twice and the skater's own constant speed is taken out, so the path shows the skate relative to you, the way a camera riding alongside would see it.</p>
       <p>Wheels only roll along the skate, so while they're down the skate must point where it's going. That fixes which way the tag sits on the skate.</p>
+      <p>Edges: while the wheels are down they're coloured by the skate's roll, outside edge to inside edge. “Flat” is how the skate sat while you stood still, averaged over every stop that day with the tag on that foot. Stops differ by a few degrees, so rolls within <span id="flat-deg">4</span>° of flat count as neither edge.</p>
       <p>Sideways sweep includes your body swaying. Heights stay small because the wheels are pinned to the road while they're down, and a low recovery barely leaves it.</p>
       <div id="warnings"></div>
     </section>
@@ -292,7 +310,7 @@ function makeSkate() {
   const tagMat = new THREE.MeshStandardMaterial({ color: 0x2448d8, roughness: 0.4 });
   const tag = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.03, 0.01), tagMat);
   tag.position.set(0.075, 0, 0.205); tag.rotation.y = -0.38; g.add(tag);
-  g.userData = { tagMat, bootMat };
+  g.userData = { tagMat, bootMat, urethane };
   return g;
 }
 const skate = makeSkate(); scene.add(skate);
@@ -306,7 +324,7 @@ const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ vertexColor
 scene.add(trail);
 // Typical-stroke loops.
 const loopEarly = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x888888 }));
-const loopLate = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x2448d8 }));
+const loopLate = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true }));
 const liftMarks = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 0.03, color: 0xc77700 }));
 scene.add(loopEarly, loopLate, liftMarks);
 
@@ -315,12 +333,13 @@ function applyTheme() {
   colors = {
     bg: new THREE.Color(css("--ground")), line: new THREE.Color(css("--ground-line")), lane: new THREE.Color(css("--lane")),
     accent: new THREE.Color(css("--accent")), air: new THREE.Color(css("--air")), early: new THREE.Color(css("--early")),
-    muted: new THREE.Color(css("--muted")),
+    muted: new THREE.Color(css("--muted")), outside: new THREE.Color(css("--outside")), flat: new THREE.Color(css("--flat")),
   };
   scene.background = colors.bg; scene.fog = new THREE.Fog(colors.bg, 4, 14);
   groundMat.color = colors.bg; gridMat.color = colors.line; laneMat.color = colors.lane; travelMat.color = colors.muted;
   skate.userData.tagMat.color = colors.accent;
-  loopEarly.material.color = colors.early; loopLate.material.color = colors.accent; liftMarks.material.color = colors.air;
+  loopEarly.material.color = colors.early; liftMarks.material.color = colors.air;
+  if (S) buildLoops();
   drawTimeline();
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
@@ -342,6 +361,15 @@ function angles(q) {
   const h = Math.hypot(vF.x, vF.y) || 1, lx = -vF.y / h, ly = vF.x / h;
   const leanLeft = Math.atan2(vU.x * lx + vU.y * ly, vU.z);
   return { edge: -S.side * leanLeft * 180 / Math.PI, toe: S.side * Math.atan2(vF.y, vF.x) * 180 / Math.PI };
+}
+
+const Qk = new THREE.Quaternion(), WHEEL_DARK = new THREE.Color(0x2b2f36), BLACK = new THREE.Color(0);
+let FLAT = 4;
+// Wheels-down colour: outside edge, flat, inside edge (stronger with the angle).
+function edgeColor(e) {
+  const m = Math.abs(e);
+  if (m < FLAT) return colors.flat;
+  return colors.flat.clone().lerp(e > 0 ? colors.accent : colors.outside, Math.min(1, 0.45 + 0.55 * (m - FLAT) / 20));
 }
 
 // ---- camera presets ----------------------------------------------------------
@@ -400,15 +428,20 @@ function updateScene() {
       if (S.T[idx] - S.T[k] > span) break;
       const x = S.P[3 * k] / 1000 + (ground ? S.D[k] - d0 : 0);
       pts.push([x, S.P[3 * k + 1] / 1000, S.P[3 * k + 2] / 1000]);
-      const base = S.C[k] ? colors.accent : colors.air, fade = c / TRAIL;
+      const base = S.C[k] ? edgeColor(angles(quatOf(k, Qk)).edge) : colors.air, fade = c / TRAIL;
       cols.push(base.clone().lerp(colors.bg, fade * 0.85));
     }
     if (pts.length) setTrail(pts, cols);
   }
   const a = angles(Q);
+  const ec = inAir ? null : edgeColor(a.edge);
+  // Wheels show the edge while they're down; they glow a little so it reads in any light.
+  skate.userData.urethane.color.copy(inAir ? WHEEL_DARK : ec);
+  skate.userData.urethane.emissive.copy(inAir ? BLACK : ec).multiplyScalar(0.5);
   $("hud-phase").textContent = inAir ? "In the air" : "Wheels down";
-  $("hud-phase").style.color = inAir ? "var(--air)" : "var(--accent)";
-  $("hud-edge").textContent = a.edge.toFixed(0) + "°";
+  $("hud-phase").style.color = inAir ? "var(--air)" : "#" + ec.getHexString();
+  $("hud-edge").textContent = Math.abs(a.edge) < FLAT ? "flat" : (a.edge > 0 ? "inside " : "outside ") + Math.abs(a.edge).toFixed(0) + "°";
+  $("hud-edge").style.color = inAir ? "" : "#" + ec.getHexString();
   $("hud-toe").textContent = a.toe.toFixed(0) + "°";
   if (typical) {
     const L = S.typical.all;
@@ -429,6 +462,15 @@ function buildLoops() {
   const mk = (L) => new THREE.BufferGeometry().setFromPoints((L ? L.pos.concat([L.pos[0]]) : []).map((p) => new THREE.Vector3(p[0], p[1], p[2] + 0.003)));
   loopEarly.geometry.dispose(); loopLate.geometry.dispose(); liftMarks.geometry.dispose();
   loopEarly.geometry = mk(T.early); loopLate.geometry = mk(T.late);
+  // The late loop is coloured like the trail: by edge while the wheels are down.
+  if (T.late) {
+    const n = T.late.pos.length, lp = T.late.lift_phase === null ? 1 : T.late.lift_phase, col = [];
+    for (let i = 0; i <= n; i++) {
+      const j = i % n, c = j / n < lp ? edgeColor(angles(Qk.set(...T.late.quat[j])).edge) : colors.air;
+      col.push(c.r, c.g, c.b);
+    }
+    loopLate.geometry.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  }
   const marks = [];
   for (const L of [T.early, T.late]) if (L && L.lift_phase !== null) {
     const p = L.pos[Math.round(L.lift_phase * L.pos.length) % L.pos.length]; marks.push(new THREE.Vector3(p[0], p[1], p[2] + 0.006));
@@ -467,7 +509,8 @@ function drawTimeline() {
   });
   g.stroke();
   // Per-stroke metric (right axis, robust range).
-  const key = $("metric").value, vals = S.strokes[key];
+  const key = $("metric").value, pct = key.endsWith("_frac") ? 100 : 1;
+  const vals = S.strokes[key].map((v) => (v === null ? null : v * pct));
   const ok = vals.filter((v) => v !== null && isFinite(v)).sort((a, b) => a - b);
   if (ok.length) {
     const lo = ok[Math.floor(ok.length * 0.02)], hi = ok[Math.floor(ok.length * 0.98)];
@@ -506,17 +549,19 @@ function fillHeader() {
     ["Per push", sm.dist_per_push_m ? sm.dist_per_push_m.toFixed(1) + " m" : "–"],
     ["Sweep", median(S.strokes.sweep_cm) !== null ? median(S.strokes.sweep_cm).toFixed(0) + " cm" : "–"],
     ["Inside edge", median(S.strokes.edge_deg) !== null ? median(S.strokes.edge_deg).toFixed(0) + "°" : "–"],
+    ["Outside edge", median(S.strokes.outside_frac) !== null ? (100 * median(S.strokes.outside_frac)).toFixed(0) + " % of contact" : "–"],
   ];
   $("facts").innerHTML = facts.map(([k, v]) => `<div><span class="label">${k}</span><span class="num">${v}</span></div>`).join("");
   $("title").textContent = (m.notes || "Skate Stroke Replay");
   // Early vs late table.
   const n = S.strokes.t_s.length, cut = Math.max(1, Math.round(n * 0.2));
   const rows = [["Push rate", "push_rate_spm", "/min", 0], ["Distance per push", "dist_per_push_m", "m", 2], ["Speed", "speed_kmh", "km/h", 1],
-    ["Sideways sweep", "sweep_cm", "cm", 0], ["Inside edge", "edge_deg", "°", 0], ["Toe out", "splay_deg", "°", 0], ["Wheels down", "contact_frac", "%", 0], ["Lift", "lift_cm", "cm", 1]];
+    ["Sideways sweep", "sweep_cm", "cm", 0], ["Inside edge", "edge_deg", "°", 0], ["Outside edge", "outside_deg", "°", 0],
+    ["On the outside edge", "outside_frac", "% of contact", 0], ["Toe out", "splay_deg", "°", 0], ["Wheels down", "contact_frac", "%", 0], ["Lift", "lift_cm", "cm", 1]];
   let html = "<tr><th>Per stroke (median)</th><th>Early</th><th>Late</th><th>Change</th></tr>";
   for (const [label, key, unit, dec] of rows) {
     const col = S.strokes[key]; let a = median(col.slice(0, cut)), b = median(col.slice(n - cut));
-    if (key === "contact_frac" && a !== null) { a *= 100; b *= 100; }
+    if (key.endsWith("_frac") && a !== null) { a *= 100; b *= 100; }
     const ch = a !== null && b !== null && a !== 0 ? (b - a) / Math.abs(a) * 100 : null;
     html += `<tr><td>${label}</td><td class="num">${a === null ? "–" : a.toFixed(dec) + " " + unit}</td><td class="num">${b === null ? "–" : b.toFixed(dec) + " " + unit}</td><td class="num">${ch === null ? "–" : (ch > 0 ? "+" : "") + ch.toFixed(0) + " %"}</td></tr>`;
   }
@@ -528,6 +573,7 @@ function fillHeader() {
 
 function selectSession(i) {
   S = DATA.sessions[i]; now = S.T[0]; tphase = 0;
+  FLAT = (S.skate && S.skate.edge_flat_deg) || 4; $("flat-deg").textContent = FLAT.toFixed(0);
   for (const b of $("sessions").children) b.setAttribute("aria-pressed", String(Number(b.dataset.i) === i));
   // Start at the first stroke after 20 % of the session: settled skating.
   const ts = S.strokes.t_s; if (ts.length) now = ts[Math.floor(ts.length * 0.2)];
@@ -588,7 +634,11 @@ function tick(ms) {
 }
 applyTheme(); resize(); selectSession(Math.min(DATA.open || 0, DATA.sessions.length - 1));
 controls.update(); renderer.render(scene, camera);  // a first frame before the animation starts
-window.__viz = { render: () => { updateScene(); controls.update(); renderer.render(scene, camera); } };
+window.__viz = {  // for scripted checks of the page
+  render: () => { updateScene(); controls.update(); renderer.render(scene, camera); },
+  seek: (t) => { now = t; },
+  strokes: () => S.strokes,
+};
 setPlaying(!matchMedia("(prefers-reduced-motion: reduce)").matches);
 requestAnimationFrame(tick);
 })();

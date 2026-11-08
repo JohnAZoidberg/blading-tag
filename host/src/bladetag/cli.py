@@ -436,21 +436,25 @@ def cmd_viz3d(a):
     from . import viz3d
     from .session import load_session
 
-    motions = []
+    items = []
     for path in a.sessions:
         s = load_session(path)
         _warn_simulated(s)
         if s.activity not in ("skating", "unknown"):
             print(f"{path}: skipped, it's a {s.activity} session (the 3D view is for skating)", file=sys.stderr)
             continue
-        for tag in _tags(s, a.tag):
-            try:
-                fm = viz3d.foot_motion(s, tag)
-            except ValueError as e:
-                print(f"{path}: skipped, {e}", file=sys.stderr)
-                continue
-            print("\n".join(viz3d.describe(fm)))
-            motions.append(fm)
+        items += [(s, tag) for tag in _tags(s, a.tag)]
+    # One "flat" per tag and foot and day, from every stop on the skates.
+    hints = viz3d.shared_rest_up(items)
+    motions = []
+    for i, (s, tag) in enumerate(items):
+        try:
+            fm = viz3d.foot_motion(s, tag, up_hint=hints.get(i))
+        except ValueError as e:
+            print(f"{s.path}: skipped, {e}", file=sys.stderr)
+            continue
+        print("\n".join(viz3d.describe(fm)))
+        motions.append(fm)
     if not motions:
         _die("nothing to show: no skating session with stroke cycles")
     first = 0

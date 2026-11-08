@@ -57,6 +57,7 @@ G = 9.80665
 WHEEL_X = (-0.12, 0.0, 0.12)
 WHEEL_R = 0.055
 TAG_ON_SKATE = np.array([0.075, 0.0, 0.205])
+EDGE_FLAT_DEG = 4.0   # within this of flat counts as neither edge: about how well "flat" is known
 TEMPLATE = Path(__file__).with_name("viz3d_template.html")
 
 
@@ -270,7 +271,7 @@ def _side(position: str) -> tuple[int, str | None]:
     return 1, f"tag position is {position!r}: assumed left foot (outward = left)"
 
 
-def _solve(r: Result, t, acc, rw, contact, still, side, fs, p: Params) -> dict:
+def _solve(r: Result, t, acc, rw, contact, still, side, fs, p: Params, up_hint=None) -> dict:
     """Path, skater frame and mount for one orientation estimate."""
     dt = 1 / fs
     warnings = []
@@ -323,10 +324,15 @@ def _solve(r: Result, t, acc, rw, contact, still, side, fs, p: Params) -> dict:
     lat_s = np.array(lat_s)
     mean_lat = lat_s.mean(axis=0)
     agreement = float(np.linalg.norm(mean_lat))
-    if still.sum() > 3 * fs:
+    # Up (and so "flat" for the edge angles) from standing still on the skates.
+    if up_hint is not None:
+        up_s, up_from = np.array(up_hint[0], dtype=float), up_hint[1]
+    elif still.sum() > 3 * fs:
         up_s, up_from = acc[still].mean(axis=0), "rest"
     else:
         up_s, up_from = rw[contact][:, 2, :].mean(axis=0), "contact"
+        warnings.append("no rest period to tell flat from: edge angles are relative to the average roll "
+                        "while the wheels are down, which understates the inside edge and overstates the outside one")
     up_s /= np.linalg.norm(up_s)
     out_s = mean_lat - (mean_lat @ up_s) * up_s
     out_s /= np.linalg.norm(out_s)
@@ -387,7 +393,55 @@ def _level_pitch(rw, r_world, contact, stroke_id, fs, edge_s: float = 0.04, smoo
     return _rotvec_to_matrix(axis * e[:, None]) @ rw
 
 
-def foot_motion(sess: Session, tag=None, p: Params = Params(), result: Result | None = None) -> FootMotion:
+def rest_ups(sess: Session, tag=None) -> list[np.ndarray]:
+    """The tag's up axis during each rest period (standing on the skates)."""
+    from .explore import _runs
+    from .timesync import fit_clocks
+
+    tag = tag or sess.tags[0]
+    clock = fit_clocks(tag)
+    df = sample_frame(sess, tag, clock)
+    acc = df[ACCEL].to_numpy()
+    out = []
+    for a, b in zip(*_runs(still_mask(df, clock.rate_hz))):
+        if b - a > 3 * clock.rate_hz:
+            up = acc[a:b].mean(axis=0)
+            out.append(up / np.linalg.norm(up))
+    return out
+
+
+def shared_rest_up(items: list) -> dict:
+    """"Flat" for the edge angles, shared by every (session, tag) pair with
+    the same tag on the same foot on the same day: the mean up axis over all
+    their rest periods. How you stand varies by a few degrees from one stop
+    to the next, so one stop alone is only good to about that; sharing also
+    makes the sessions comparable. Assumes the tag wasn't remounted.
+    Returns {index: (up, description)} for pairs in a group with any rest."""
+    def key(sess, tag):
+        return (tag.meta.address, tag.meta.position, str(sess.start_utc.date()))
+    ups = [rest_ups(s, t) for s, t in items]
+    groups: dict = {}
+    for i, (s, t) in enumerate(items):
+        groups.setdefault(key(s, t), []).append(i)
+    out = {}
+    for (_, position, day), idx in groups.items():
+        allu = [u for i in idx for u in ups[i]]
+        if not allu:
+            continue
+        m = np.mean(allu, axis=0)
+        m /= np.linalg.norm(m)
+        spread = max(np.degrees(np.arccos(np.clip(np.array(allu) @ m, -1, 1))))
+        desc = (f"{len(allu)} stop{'s' if len(allu) > 1 else ''} on {position} on {day}"
+                + (f", which differ by up to {spread:.0f}° from their mean" if len(allu) > 1 else ""))
+        for i in idx:
+            out[i] = (m, desc)
+    return out
+
+
+def foot_motion(sess: Session, tag=None, p: Params = Params(), result: Result | None = None,
+                up_hint: tuple | None = None) -> FootMotion:
+    """``up_hint``: (up axis, where it's from) for "flat", e.g. from
+    :func:`shared_rest_up`; otherwise this session's own rest periods."""
     r = result or analyze(sess, tag)
     tag = r.tag
     warnings = list(r.warnings)
@@ -404,14 +458,14 @@ def foot_motion(sess: Session, tag=None, p: Params = Params(), result: Result | 
     bias = gyr[still].mean(axis=0) if still.sum() > 3 * fs else np.zeros(3)
     contact = r.signals.contact.astype(bool)
     rw = orientation(acc, gyr, fs, seg, bias, p)
-    sol = _solve(r, t, acc, rw, contact, still, side, fs, p)
+    sol = _solve(r, t, acc, rw, contact, still, side, fs, p, up_hint)
     # The wheels are on the road while they're down, so the skate's frame is
     # level front to back: its pitch is an orientation error then. Correct the
     # orientation for it (interpolated through the air phases) and solve again,
     # so the gravity removed from the path is right too.
     pitch0 = np.degrees(np.arcsin(np.clip(sol["r_world"][:, 2, 0], -1, 1)))
     rw = _level_pitch(rw, sol["r_world"], contact, sol["stroke_id"], fs)
-    sol = _solve(r, t, acc, rw, contact, still, side, fs, p)
+    sol = _solve(r, t, acc, rw, contact, still, side, fs, p, up_hint)
     pos, r_body, mount, stroke_id, ok, dist = (sol[k] for k in ("pos", "r_body", "mount", "stroke_id", "ok", "dist"))
     st, i0s, i1s, los = sol["st"], sol["i0s"], sol["i1s"], sol["los"]
     warnings += sol["warnings"]
@@ -492,7 +546,8 @@ def _angles(r_body: np.ndarray, side: int) -> tuple[np.ndarray, np.ndarray, np.n
 
 
 STROKE_COLUMNS = ["stroke", "t_s", "period_s", "speed_kmh", "contact_frac", "sweep_cm", "out_cm", "fore_aft_cm",
-                  "lift_cm", "edge_deg", "splay_deg", "push_speed_mps", "push_rate_spm", "dist_per_push_m"]
+                  "lift_cm", "edge_deg", "outside_deg", "outside_frac", "splay_deg", "push_speed_mps",
+                  "push_rate_spm", "dist_per_push_m"]
 
 
 def _stroke_table(st, t, pos, r_body, contact, stroke_id, side, ok) -> pd.DataFrame:
@@ -518,6 +573,8 @@ def _stroke_table(st, t, pos, r_body, contact, stroke_id, side, ok) -> pd.DataFr
             "fore_aft_cm": 100 * float(np.ptp(pos[sel, 0])),
             "lift_cm": 100 * float(z.max()),
             "edge_deg": float(np.percentile(edge[sel][c], 95)) if c.any() else np.nan,
+            "outside_deg": float(np.percentile(-edge[sel][c], 95)) if c.any() else np.nan,
+            "outside_frac": float(np.mean(edge[sel][c] < -EDGE_FLAT_DEG)) if c.any() else np.nan,
             "splay_deg": float(np.median(splay[sel][c])) if c.any() else np.nan,
             "push_speed_mps": float(vy[c].max()) if c.any() else np.nan,
             "push_rate_spm": row["push_rate_spm"],
@@ -535,6 +592,8 @@ def stroke_motion(sess: Session, result: Result | None = None, tag=None, p: Para
     body sway); out_cm: outward from set-down to the widest point;
     fore_aft_cm: forward-backward range; lift_cm: highest point in the air;
     edge_deg: inside edge (95th percentile while the wheels are down);
+    outside_deg: outside edge, the same way; outside_frac: share of the
+    contact on the outside edge (more than ``EDGE_FLAT_DEG`` over);
     splay_deg: toe out (median while the wheels are down); push_speed_mps:
     fastest outward speed of the skate while the wheels are down.
     """
@@ -584,14 +643,16 @@ def describe(fm: FootMotion) -> list[str]:
     lines = [
         f"{fm.name}: {len(s)} strokes shown, {'left' if fm.side > 0 else 'right'} foot",
         f"  mount         forward {np.round(mt.forward, 2)}, left {np.round(mt.left, 2)}, up {np.round(mt.up, 2)}"
-        f" (sensor axes; up from {mt.up_from}, strokes agree {mt.agreement:.2f})",
+        f" (sensor axes; strokes agree {mt.agreement:.2f})",
+        f"  flat          from {mt.up_from}",
         f"  wheel check   yaw corrected {mt.yaw_fix_deg:+.0f}°; skate yaw follows the direction of travel "
         f"during contact with r = {mt.wheel_corr:.2f}",
     ]
     if len(s):
         med = s.median(numeric_only=True)
         lines.append(f"  per stroke    sweep {med.sweep_cm:.0f} cm, outward {med.out_cm:.0f} cm, lift {med.lift_cm:.1f} cm, "
-                     f"edge {med.edge_deg:.0f}°, toe-out {med.splay_deg:.0f}° (medians)")
+                     f"inside edge {med.edge_deg:.0f}°, outside edge {med.outside_deg:.0f}° "
+                     f"({100 * med.outside_frac:.0f} % of contact), toe-out {med.splay_deg:.0f}° (medians)")
     lines += [f"  warning: {w}" for w in fm.warnings]
     return lines
 
@@ -625,7 +686,8 @@ def page_data(fm: FootMotion, p: Params = Params()) -> dict:
         "stroke": _b64(fm.stroke[idx].astype("<i2")),
         "strokes": {c: [None if v is None else round(float(v), 3) for v in strokes[c]] for c in STROKE_COLUMNS},
         "typical": fm.typical,
-        "skate": {"wheel_x": list(WHEEL_X), "wheel_r": WHEEL_R, "tag": TAG_ON_SKATE.tolist()},
+        "skate": {"wheel_x": list(WHEEL_X), "wheel_r": WHEEL_R, "tag": TAG_ON_SKATE.tolist(),
+                  "edge_flat_deg": EDGE_FLAT_DEG},
         "summary": {
             "push_rate_spm": fm.result.summary.get("push_rate_spm"),
             "distance_km": fm.result.summary.get("distance_km"),

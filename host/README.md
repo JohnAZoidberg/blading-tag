@@ -178,7 +178,7 @@ Use `--raw-at SECONDS` to pick the window.
 ## 3D replay of the skate
 
 ```sh
-bladetag viz3d sessions/session-20261108-1* -o strokes3d.html --open guting
+bladetag viz3d sessions/session-20261108-1* -o strokes3d.html --open 114922
 ```
 
 Writes one page with every skating session given: a 3D skate (three 110 mm
@@ -213,14 +213,23 @@ How it works (`src/bladetag/viz3d.py`):
    the skate can't pitch then. The orientation is corrected for the 3–5° of
    pitch it showed during contact (interpolated through the air phases) and
    the path is integrated again.
-6. **Drawing:** the measured path is the tag's, on the front of the boot, so
+6. **Edges:** while the wheels are down, the wheels, the trail and the
+   typical loop are coloured by the skate's roll: outside edge, flat, inside
+   edge. "Flat" is how the skate sat while you stood still, averaged over
+   every stop that day with the same tag on the same foot (stops differ by
+   3–5°), so rolls within 4° of it count as neither edge. On the riverside
+   legs the skate set down on its outside edge (~10°) for about half the
+   contact, then rolled onto the inside edge for the push (30–40°): a double
+   push. On the road legs that outside phase was mostly missing.
+7. **Drawing:** the measured path is the tag's, on the front of the boot, so
    the skate is drawn with its tag on that path: when the heel lifts first,
    the tag barely rises while the back wheel comes up. The lowest wheel is
    kept on the road while the wheels are down and above it in the air.
 
 `viz3d.stroke_motion(sess)` gives the same numbers per stroke as a table
 (`stroke` = row in `analyze().strokes`): sideways sweep, outward reach,
-fore-aft range, lift, inside edge, toe out and peak outward speed. On the
+fore-aft range, lift, inside edge, outside edge and the share of the contact
+on it, toe out and peak outward speed. On the
 first skate: sweep 0.7–1 m (it includes body sway), inside edge 30–38°, toe
 out ~12°, and lift only 1 cm or less. The simulator's 7 cm lift comes out at
 6.4 cm, so the recovery really does stay that low.
