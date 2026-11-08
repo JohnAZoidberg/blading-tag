@@ -83,13 +83,18 @@ class RecorderService : Service(), TagLink.Listener {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        saveOnCrash()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> if (current == null) {
                 begin(intent.getStringArrayExtra(EXTRA_ADDRESSES)?.toList().orEmpty(),
                     intent.getBooleanExtra(EXTRA_GPS, true), label(intent))
             }
-            ACTION_STOP -> end()
+            ACTION_STOP -> end(intent.getStringExtra(EXTRA_REASON) ?: EndReason.STOP)
             ACTION_SPLIT -> split()
             ACTION_STANDBY -> if (current == null && standby == null) {
                 arm(intent.getStringArrayExtra(EXTRA_ADDRESSES)?.toList().orEmpty(),
@@ -347,21 +352,12 @@ class RecorderService : Service(), TagLink.Listener {
             current = Recording(dir, meta, old.links, logs, gps).apply { lastFix = old.lastFix }
         }
         // A packet being appended right now retries into the new log (onRecord).
-        save(old, startElapsed)
+        save(old, startElapsed, EndReason.SPLIT)
         Log.i(TAG, "split: saved ${old.dir}, now recording to $dir")
     }
 
-    /** Closes a session's files and records its end. */
-    private fun save(rec: Recording, endElapsedNs: Long) {
-        rec.logs.values.forEach { it.close() }
-        rec.gps?.close()
-        synchronized(rec.meta) {
-            rec.meta.endElapsedNs = endElapsedNs
-            writeSessionJson(rec.dir, rec.meta)
-        }
-    }
-
-    private fun end() {
+    /** [reason]: an [EndReason]; [end] passes the first one if asked twice. */
+    private fun end(reason: String) {
         val rec = current
         if (rec == null) {
             // Stop with nothing recording ends standby too.
@@ -379,7 +375,7 @@ class RecorderService : Service(), TagLink.Listener {
         val finish = {
             main.removeCallbacks(tick)
             main.removeCallbacks(liveTick)
-            save(rec, SystemClock.elapsedRealtimeNanos())
+            save(rec, SystemClock.elapsedRealtimeNanos(), reason)
             wakeLock?.takeIf { it.isHeld }?.release()
             current = null
             Log.i(TAG, "recording saved to ${rec.dir}")
@@ -402,7 +398,7 @@ class RecorderService : Service(), TagLink.Listener {
         // Killed without a stop (e.g. swiped away on some OEM ROMs): keep what we have.
         current?.let { rec ->
             rec.links.forEach { it.stop {} }
-            save(rec, SystemClock.elapsedRealtimeNanos())
+            save(rec, SystemClock.elapsedRealtimeNanos(), EndReason.SERVICE_DESTROYED)
             current = null
         }
         wakeLock?.takeIf { it.isHeld }?.release()
@@ -435,7 +431,7 @@ class RecorderService : Service(), TagLink.Listener {
             // Only the recording this link belongs to (not a later one).
             if (current?.links?.contains(link) != true) return@post
             Log.i(TAG, "${link.address} was stopped on the tag, ending the recording")
-            end()
+            end(EndReason.TAG_BUTTON)
         }
     }
 
@@ -500,7 +496,8 @@ class RecorderService : Service(), TagLink.Listener {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, RecorderService::class.java)
-            .setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
+            .setAction(ACTION_STOP).putExtra(EXTRA_REASON, EndReason.NOTIFICATION),
+            PendingIntent.FLAG_IMMUTABLE)
         val split = PendingIntent.getService(this, 2, Intent(this, RecorderService::class.java)
             .setAction(ACTION_SPLIT), PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, CHANNEL)
@@ -553,6 +550,8 @@ class RecorderService : Service(), TagLink.Listener {
         const val EXTRA_GPS = "gps"
         const val EXTRA_ACTIVITY = "activity"
         const val EXTRA_GEAR = "gear"
+        /** ACTION_STOP: the [EndReason], [EndReason.STOP] if not given. */
+        const val EXTRA_REASON = "reason"
 
         @Volatile var current: Recording? = null
             private set
@@ -560,6 +559,43 @@ class RecorderService : Service(), TagLink.Listener {
         /** Non-null while standby is armed (also during a recording it started). */
         @Volatile var standby: Standby? = null
             private set
+
+        /** Closes a session's files and records its end. */
+        private fun save(rec: Recording, endElapsedNs: Long, reason: String, detail: String? = null) {
+            rec.logs.values.forEach { it.close() }
+            rec.gps?.close()
+            synchronized(rec.meta) {
+                rec.meta.endElapsedNs = endElapsedNs
+                rec.meta.endReason = reason
+                rec.meta.endDetail = detail
+                writeSessionJson(rec.dir, rec.meta)
+            }
+        }
+
+        private var crashHandlerSet = false
+
+        /**
+         * On an uncaught exception anywhere in the process, end the session
+         * being recorded with [EndReason.CRASH] before the app dies, so it
+         * keeps its end time and says what happened.
+         */
+        private fun saveOnCrash() {
+            if (crashHandlerSet) return
+            crashHandlerSet = true
+            val next = Thread.getDefaultUncaughtExceptionHandler()
+            Thread.setDefaultUncaughtExceptionHandler { thread, e ->
+                try {
+                    current?.let { rec ->
+                        current = null
+                        save(rec, SystemClock.elapsedRealtimeNanos(), EndReason.CRASH,
+                            "${e.javaClass.simpleName}: ${e.message}")
+                    }
+                } catch (t: Throwable) {
+                    Log.e(TAG, "saving the session after a crash failed", t)
+                }
+                next?.uncaughtException(thread, e)
+            }
+        }
 
         fun sessionsDir(c: Context) = File(c.getExternalFilesDir(null), "sessions").apply { mkdirs() }
 

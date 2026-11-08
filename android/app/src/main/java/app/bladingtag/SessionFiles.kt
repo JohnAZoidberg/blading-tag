@@ -134,6 +134,31 @@ enum class ActivityKind(val label: String, val gear: String, val gearHint: Strin
     }
 }
 
+/** session.json "end_reason" values (PROTOCOL.md §2.2) and how the app words them. */
+object EndReason {
+    const val STOP = "stop"
+    const val NOTIFICATION = "notification"
+    const val TAG_BUTTON = "tag_button"
+    const val SPLIT = "split"
+    const val SERVICE_DESTROYED = "service_destroyed"
+    const val CRASH = "crash"
+    const val KILLED = "killed"
+
+    fun label(reason: String?): String? = when (reason) {
+        null -> null
+        STOP -> "stopped"
+        NOTIFICATION -> "stopped from the notification"
+        TAG_BUTTON -> "stopped on the tag"
+        SPLIT -> "split"
+        "duration" -> "time limit"
+        "link_lost" -> "tag lost"
+        SERVICE_DESTROYED -> "stopped by Android"
+        CRASH -> "app crashed"
+        KILLED -> "app killed"
+        else -> reason
+    }
+}
+
 class SessionMeta(
     val recorderVersion: String,
     val startUtcMs: Long,
@@ -141,6 +166,10 @@ class SessionMeta(
     val tags: List<TagMeta>,
 ) {
     var endElapsedNs: Long? = null
+    /** Why it ended, one of [EndReason]'s keys; written with [endElapsedNs]. */
+    var endReason: String? = null
+    /** More about [endReason], e.g. the crash. */
+    var endDetail: String? = null
     var notes = ""
     var activity = ActivityKind.UNKNOWN
     /** The shoes, skates or bike, as typed; "" if not given. */
@@ -154,6 +183,8 @@ class SessionMeta(
         sb.append("  \"start_utc\": ${q(isoUtc(startUtcMs))},\n")
         sb.append("  \"start_elapsed_ns\": $startElapsedNs,\n")
         endElapsedNs?.let { sb.append("  \"end_elapsed_ns\": $it,\n") }
+        endReason?.let { sb.append("  \"end_reason\": ${q(it)},\n") }
+        endDetail?.let { sb.append("  \"end_detail\": ${q(it)},\n") }
         sb.append("  \"tags\": [")
         tags.forEachIndexed { i, t ->
             sb.append(if (i == 0) "\n" else ",\n")
@@ -221,6 +252,9 @@ class SessionJson(
     val notes: String,
     val activity: ActivityKind = ActivityKind.UNKNOWN,
     val gear: String = "",
+    /** session.json "end_reason" (see [EndReason]), null if not given. */
+    val endReason: String? = null,
+    val endDetail: String? = null,
 ) {
     class Tag(val address: String, val position: String, val simulated: Boolean)
 
@@ -254,7 +288,20 @@ class SessionJson(
                 notes = o.optString("notes", ""),
                 activity = ActivityKind.of(o.optString("activity", "")),
                 gear = o.optString("gear", "").trim(),
+                endReason = o.optString("end_reason", "").ifEmpty { null },
+                endDetail = o.optString("end_detail", "").ifEmpty { null },
             )
+        }
+
+        /**
+         * Records why a session that has no end ended, learnt afterwards
+         * (the process was killed). Every other field stays as it is.
+         */
+        fun setEndReason(dir: File, reason: String, detail: String?) {
+            val o = JSONObject(File(dir, "session.json").readText())
+            o.put("end_reason", reason)
+            detail?.let { o.put("end_detail", it) }
+            writeSessionJson(dir, o.toString(2) + "\n")
         }
 
         /**

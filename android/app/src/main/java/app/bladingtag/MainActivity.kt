@@ -666,8 +666,9 @@ class MainActivity : Activity() {
 
     private fun refreshSessions() {
         io.execute {
-            val list = Sessions.list(this)
             val active = RecorderService.current?.dir
+            Sessions.explainUnfinished(this, active)
+            val list = Sessions.list(this)
             ui.post { renderSessions(list.filter { it.dir != active }) }
         }
     }
@@ -680,7 +681,11 @@ class MainActivity : Activity() {
         }
         for (s in list) {
             val d = s.durationS
-            val dur = if (d == null) "unfinished" else "%d:%02d:%02d".format(d / 3600, d / 60 % 60, d % 60)
+            val why = s.json?.let { j ->
+                EndReason.label(j.endReason)?.let { r -> j.endDetail?.let { "$r: ${it.take(60)}" } ?: r }
+            }
+            val dur = (if (d == null) "unfinished" else "%d:%02d:%02d".format(d / 3600, d / 60 % 60, d % 60)) +
+                why?.let { " · $it" }.orEmpty()
             val feet = s.json?.tags?.joinToString(" + ") {
                 if (it.simulated) "simulated" else Protocol.positionLabel(it.position).lowercase()
             }?.let { " · $it" }.orEmpty()

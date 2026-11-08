@@ -183,6 +183,33 @@ class ProtocolTest {
         dir.deleteRecursively()
     }
 
+    @Test fun endReason() {
+        val m = SessionMeta("0.1.0", 1_794_061_530_123L, 1L, listOf(TagMeta("C0:BB:4A:A7:0D:57")))
+        assertFalse(m.toJson().contains("end_reason"))
+        assertNull(SessionJson.parse(m.toJson()).endReason)
+        m.endElapsedNs = 2L
+        m.endReason = EndReason.CRASH
+        m.endDetail = "NoSuchElementException: \"x\""
+        val j = SessionJson.parse(m.toJson())
+        assertEquals("crash", j.endReason)
+        assertEquals("NoSuchElementException: \"x\"", j.endDetail)
+        assertEquals("app crashed", EndReason.label(j.endReason))
+        assertEquals("stopped on the tag", EndReason.label("tag_button"))
+        assertEquals("from-the-future", EndReason.label("from-the-future"))
+
+        // Learnt afterwards for a session without an end: nothing else changes.
+        val dir = Files.createTempDirectory("session").toFile()
+        m.endElapsedNs = null; m.endReason = null; m.endDetail = null; m.gear = "Orange Tiger"
+        writeSessionJson(dir, m)
+        SessionJson.setEndReason(dir, EndReason.KILLED, "app updated")
+        val k = SessionJson.read(dir)!!
+        assertEquals("killed", k.endReason)
+        assertEquals("app updated", k.endDetail)
+        assertNull(k.endElapsedNs)
+        assertEquals("Orange Tiger", k.gear)
+        dir.deleteRecursively()
+    }
+
     @Test fun bodyLocations() {
         Protocol.BODY_LOCATIONS.forEachIndexed { i, l -> assertEquals(i, l.value) }
         assertEquals("backpack", Protocol.positionName(7))

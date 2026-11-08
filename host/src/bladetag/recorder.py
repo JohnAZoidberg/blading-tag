@@ -195,6 +195,14 @@ class Recorder:
             self.log("recording started")
 
         deadline = time.monotonic() + self.opts.duration_s if self.opts.duration_s else None
+
+        def asked_to_end() -> str | None:
+            if stop.is_set():
+                return "stop"
+            if deadline is not None and time.monotonic() >= deadline:
+                return "duration"
+            return None
+
         while True:
             waits = [asyncio.ensure_future(stop.wait()), asyncio.ensure_future(self._lost.wait()),
                      asyncio.ensure_future(self._tag_stopped.wait())]
@@ -204,25 +212,29 @@ class Recorder:
             for w in pending:
                 w.cancel()
             self._taglog.flush()
-            if stop.is_set() or (deadline is not None and time.monotonic() >= deadline):
+            if reason := asked_to_end():
                 break
             if self._tag_stopped.is_set():
                 self.log("tag stopped recording on its own (button?); session ends here")
+                reason = "tag_button"
                 break
             if self._lost.is_set():
                 st = await self._reconnect(stop, deadline)
                 if st is None:
-                    if not stop.is_set() and (deadline is None or time.monotonic() < deadline):
+                    reason = asked_to_end()
+                    if reason is None:
                         self.log("could not reconnect; giving up")
+                        reason = "link_lost"
                     break
                 if st.state != p.State.RECORDING:
                     self.log("tag stopped recording on its own (link lost too long); session ends here")
+                    reason = "link_lost"
                     break
 
-        await self._finish()
+        await self._finish(reason)
         return self.stats
 
-    async def _finish(self) -> None:
+    async def _finish(self, reason: str) -> None:
         self._stopping = True
         st = self.stats.last_status
         if self.link.is_connected and st is not None and st.state == p.State.READY:
@@ -238,4 +250,4 @@ class Recorder:
             await self.link.disconnect()
         if self.stats.last_status:
             self.writer.tags[self.link.address].update_from_status(self.stats.last_status)
-        self.writer.close()
+        self.writer.close(end_reason=reason)

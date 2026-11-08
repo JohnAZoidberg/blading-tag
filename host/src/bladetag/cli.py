@@ -214,6 +214,10 @@ def cmd_dump(a):
     print(f"recorder  {m['recorder']['name']} {m['recorder']['version']}, start {m['start_utc']}")
     if m.get("end_elapsed_ns"):
         print(f"length    {(m['end_elapsed_ns'] - m['start_elapsed_ns']) / 1e9:.1f} s")
+    if m.get("end_reason"):
+        print(f"ended     {m['end_reason']}" + (f" ({m['end_detail']})" if m.get("end_detail") else ""))
+    elif not m.get("end_elapsed_ns"):
+        print("ended     unfinished (recorder died before saving the end)")
     print(f"activity  {s.activity}" + (f", gear: {s.gear}" if s.gear else ""))
     if m.get("notes"):
         print(f"notes     {m['notes']}")

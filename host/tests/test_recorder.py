@@ -48,6 +48,7 @@ def test_record_and_stop(tmp_path):
     assert t.statuses[-1][1].samples_recorded == len(t.raw)
     fit = fit_clocks(t)
     assert fit.rate_hz == pytest.approx(200 * 1.004, rel=1e-3)
+    assert load_session(tmp_path / "s").meta["end_reason"] == "stop"
 
 
 def test_link_loss_resumes_without_data_loss(tmp_path):
@@ -142,6 +143,7 @@ def test_tag_stopping_on_its_own_ends_the_recording(tmp_path):
     t = load_session(tmp_path / "s").tags[0]
     assert t.statuses[-1][1].state == p.State.READY
     assert t.gaps() == [] and t.statuses[-1][1].samples_recorded == len(t.raw)
+    assert load_session(tmp_path / "s").meta["end_reason"] == "tag_button"
 
 
 def test_stop_while_reconnecting(tmp_path):
@@ -160,6 +162,7 @@ def test_stop_while_reconnecting(tmp_path):
 
     run(go())
     assert len(load_session(tmp_path / "s").tags[0].raw) > 500
+    assert load_session(tmp_path / "s").meta["end_reason"] == "stop"
 
 
 def test_duration_ends_reconnecting(tmp_path):
@@ -174,6 +177,7 @@ def test_duration_ends_reconnecting(tmp_path):
         return await asyncio.wait_for(task, 2.0)
 
     run(go())
+    assert load_session(tmp_path / "s").meta["end_reason"] == "duration"
 
 
 def test_session_json_has_the_session_while_recording(tmp_path):

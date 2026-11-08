@@ -396,6 +396,28 @@ wall-clock time.
   `"Brooks Ghost 15"`; missing or `""` means not given. Readers compare it
   as written, after trimming spaces. Both fields can be changed after
   recording (`bladetag label`, the app's edit dialog).
+- `end_elapsed_ns` is missing (or `null`) while recording, and in a session
+  whose recorder died before it could save the end.
+- `end_reason` says why the session ended; missing means not known
+  (sessions from before the field, or still recording):
+  - `"stop"`: Stop in the recorder (the app's Stop button, Ctrl-C).
+  - `"notification"`: Stop in the Android notification.
+  - `"tag_button"`: a tag stopped recording by itself while connected,
+    normally its button.
+  - `"split"`: split by the user; the recording goes on in the next session.
+  - `"duration"`: the host's `--duration` ran out.
+  - `"link_lost"`: the host couldn't reconnect, or the tag had given up
+    after losing the link.
+  - `"service_destroyed"`: Android destroyed the recording service without
+    a Stop.
+  - `"crash"`: the recorder crashed. Written as it crashed (then with
+    `end_elapsed_ns`) or, like `"killed"`, afterwards.
+  - `"killed"`: the process died without saving (reinstalled, force
+    stopped, killed by Android). The Android app adds this afterwards from
+    Android's exit record, so there's no `end_elapsed_ns`.
+
+  `end_detail` is optional free text about it, e.g. the exception or
+  `"app updated"`. Readers show unknown reasons as they are.
 - `simulated` is `true` for fake data from a simulator (the Android app's
   simulated tag, `bladetag record fake`, `bladetag simulate`), so test data
   isn't mistaken for a real activity. A session is simulated if any of its

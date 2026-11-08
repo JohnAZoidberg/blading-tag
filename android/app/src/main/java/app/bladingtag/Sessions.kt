@@ -1,11 +1,17 @@
 package app.bladingtag
 
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import org.json.JSONObject
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -26,6 +32,57 @@ object Sessions {
             ?: emptyArray())
             .sortedByDescending { it.name }
             .map { summarize(it) }
+
+    /**
+     * Sessions left without an end, because the process died with no chance
+     * to save (reinstalled, killed by Android, force stopped), get an
+     * end_reason afterwards from Android's record of why the process exited:
+     * the first exit after the session started. Android keeps only the last
+     * few, so old sessions may stay unexplained. [active] is being recorded.
+     */
+    fun explainUnfinished(c: Context, active: File?) {
+        val open = (RecorderService.sessionsDir(c).listFiles { f -> f.isDirectory && f.name.startsWith("session-") }
+            ?: emptyArray())
+            .filter { it != active }
+            .mapNotNull { dir ->
+                val o = runCatching { JSONObject(File(dir, "session.json").readText()) }.getOrNull()
+                    ?: return@mapNotNull null
+                if (!o.isNull("end_elapsed_ns") || o.optString("end_reason").isNotEmpty()) return@mapNotNull null
+                val start = runCatching { utc().parse(o.getString("start_utc"))!!.time }.getOrNull()
+                    ?: return@mapNotNull null
+                dir to start
+            }
+        if (open.isEmpty()) return
+        val exits = c.getSystemService(ActivityManager::class.java)
+            .getHistoricalProcessExitReasons(c.packageName, 0, 0)
+            .sortedBy { it.timestamp }
+        for ((dir, start) in open) {
+            val exit = exits.firstOrNull { it.timestamp > start } ?: continue
+            val (reason, detail) = exitReason(exit)
+            runCatching { SessionJson.setEndReason(dir, reason, detail) }
+        }
+    }
+
+    private fun utc() = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+        .apply { timeZone = TimeZone.getTimeZone("UTC") }
+
+    /** The [EndReason] and its detail for how the process ended. */
+    private fun exitReason(e: ApplicationExitInfo): Pair<String, String?> = when (e.reason) {
+        ApplicationExitInfo.REASON_CRASH -> EndReason.CRASH to null
+        ApplicationExitInfo.REASON_CRASH_NATIVE -> EndReason.CRASH to "native"
+        else -> EndReason.KILLED to when (e.reason) {
+            ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "app updated"
+            ApplicationExitInfo.REASON_LOW_MEMORY -> "low memory"
+            ApplicationExitInfo.REASON_USER_REQUESTED -> "force stopped"
+            ApplicationExitInfo.REASON_ANR -> "not responding"
+            ApplicationExitInfo.REASON_SIGNALED -> "signal ${e.status}"
+            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "too much resource use"
+            ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "permission changed"
+            ApplicationExitInfo.REASON_EXIT_SELF -> "exited"
+            ApplicationExitInfo.REASON_FREEZER -> "frozen"
+            else -> "reason ${e.reason}"
+        }
+    }
 
     private fun summarize(dir: File): Summary {
         val files = dir.listFiles().orEmpty()

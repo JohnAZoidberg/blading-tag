@@ -170,8 +170,11 @@ class SessionWriter:
         tmp.write_text(json.dumps(self.meta, indent=2) + "\n")
         tmp.replace(self.folder / "session.json")
 
-    def close(self, end_elapsed_ns: int | None = None) -> None:
+    def close(self, end_elapsed_ns: int | None = None, end_reason: str | None = None) -> None:
+        """``end_reason``: why it ended, see PROTOCOL.md §2.2 (e.g. "stop", "tag_button")."""
         self.meta["end_elapsed_ns"] = end_elapsed_ns if end_elapsed_ns is not None else time.monotonic_ns()
+        if end_reason:
+            self.meta["end_reason"] = end_reason
         for log in self._logs.values():
             log.close()
         if self._gps:
