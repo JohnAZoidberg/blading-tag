@@ -39,10 +39,17 @@ enum proto_state {
 	PROTO_STATE_RECORDING = 1,
 };
 
+/* Where on the body the tag is worn. */
 enum proto_position {
 	PROTO_POS_UNKNOWN = 0,
-	PROTO_POS_LEFT = 1,
-	PROTO_POS_RIGHT = 2,
+	PROTO_POS_LEFT_FOOT = 1,
+	PROTO_POS_RIGHT_FOOT = 2,
+	PROTO_POS_LEFT_WRIST = 3,
+	PROTO_POS_RIGHT_WRIST = 4,
+	PROTO_POS_LEFT_POCKET = 5,
+	PROTO_POS_RIGHT_POCKET = 6,
+	PROTO_POS_BACKPACK = 7,
+	PROTO_POS_LAST = PROTO_POS_BACKPACK,
 };
 
 enum proto_opcode {

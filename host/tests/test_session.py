@@ -17,7 +17,7 @@ INFO = bytes.fromhex("010001003f000f1f401f0000")
 
 def status(state=p.State.RECORDING, **kw):
     d = dict(state=state, flags=0, battery_mv=3000, session_id=7, odr_hz=200, accel_range_g=16,
-             position=p.Position.LEFT, gyro_range_dps=2000, samples_recorded=0,
+             position=p.Position.LEFT_FOOT, gyro_range_dps=2000, samples_recorded=0,
              samples_dropped=0, buffer_fill=0, tag_time_us=0)
     d.update(kw)
     return p.Status(**d)
@@ -80,7 +80,7 @@ def test_roundtrip(tmp_path):
     write_session(folder)
     meta = json.loads((folder / "session.json").read_text())
     assert meta["tags"][0]["file"] == "tag-C0BB4AA70D57.bin"
-    assert meta["tags"][0]["position"] == "left"
+    assert meta["tags"][0]["position"] == "left_foot"
     s = load_session(folder)
     t = s.tag("left")
     assert t.info.buffer_capacity == 8000

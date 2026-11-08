@@ -92,7 +92,7 @@ class ProtocolTest {
 
     @Test fun sessionJson() {
         val t = TagMeta("C0:BB:4A:A7:0D:57").apply {
-            position = "left"; infoHex = "01000100 3f000f1f 401f0000"
+            position = "left_foot"; infoHex = "01000100 3f000f1f 401f0000"
             sessionId = 3; odrHz = 200; accelRangeG = 16; gyroRangeDps = 2000
         }
         val m = SessionMeta("0.1.0", 1_794_061_530_123L, 123456789012L, listOf(t))
@@ -108,8 +108,8 @@ class ProtocolTest {
 
     @Test fun editSessionJson() {
         val dir = Files.createTempDirectory("session").toFile()
-        val left = TagMeta("C0:BB:4A:A7:0D:57").apply { position = "left"; sessionId = 3; odrHz = 200 }
-        val other = TagMeta("C0:BB:4A:A7:0D:58").apply { position = "right" }
+        val left = TagMeta("C0:BB:4A:A7:0D:57").apply { position = "left_foot"; sessionId = 3; odrHz = 200 }
+        val other = TagMeta("C0:BB:4A:A7:0D:58").apply { position = "right" } // from before body locations
         val m = SessionMeta("0.1.0", 1_794_061_530_123L, 123456789012L, listOf(left, other))
         writeSessionJson(dir, m)
 
@@ -117,13 +117,13 @@ class ProtocolTest {
         assertEquals("", j.notes)
         assertEquals(123456789012L, j.startElapsedNs)
         assertNull(j.endElapsedNs)
-        assertEquals(listOf("left", "right"), j.tags.map { it.position })
+        assertEquals(listOf("left_foot", "right_foot"), j.tags.map { it.position })
 
         // Only the named tag changes; other fields survive the rewrite.
-        SessionJson.edit(dir, "crossovers \"fast\"\nline 2", mapOf("C0:BB:4A:A7:0D:57" to "right"))
+        SessionJson.edit(dir, "crossovers \"fast\"\nline 2", mapOf("C0:BB:4A:A7:0D:57" to "backpack"))
         j = SessionJson.read(dir)!!
         assertEquals("crossovers \"fast\"\nline 2", j.notes)
-        assertEquals(listOf("right", "right"), j.tags.map { it.position })
+        assertEquals(listOf("backpack", "right_foot"), j.tags.map { it.position })
         assertEquals(123456789012L, j.startElapsedNs)
         val text = File(dir, "session.json").readText()
         assertTrue(text, text.contains("\"session_id\": 3"))
@@ -131,6 +131,14 @@ class ProtocolTest {
         assertTrue(text, text.contains("\"file\": \"tag-C0BB4AA70D57.bin\""))
         assertNull(SessionJson.read(File(dir, "missing")))
         dir.deleteRecursively()
+    }
+
+    @Test fun bodyLocations() {
+        Protocol.BODY_LOCATIONS.forEachIndexed { i, l -> assertEquals(i, l.value) }
+        assertEquals("backpack", Protocol.positionName(7))
+        assertEquals("unknown", Protocol.positionName(8))
+        assertEquals("Left foot", Protocol.positionLabel("left"))
+        assertEquals("Right pants pocket", Protocol.positionLabel("right_pocket"))
     }
 
     @Test fun closedLogRefusesAppend() {

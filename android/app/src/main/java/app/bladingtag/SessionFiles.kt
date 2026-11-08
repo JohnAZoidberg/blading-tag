@@ -206,7 +206,8 @@ class SessionJson(
                 endElapsedNs = long("end_elapsed_ns"),
                 tags = (0 until (tags?.length() ?: 0)).map { i ->
                     val t = tags!!.getJSONObject(i)
-                    Tag(t.getString("address"), t.optString("position", "unknown"))
+                    Tag(t.getString("address"),
+                        Protocol.normalizePosition(t.optString("position", "unknown")))
                 },
                 notes = o.optString("notes", ""),
             )
@@ -214,7 +215,7 @@ class SessionJson(
 
         /**
          * Sets the notes and the tag positions ([positions]: address ->
-         * "left"/"right"/"unknown") of a finished session. Every other field
+         * body location name, e.g. "left_wrist") of a finished session. Every other field
          * stays as it is, including ones this app doesn't know.
          */
         fun edit(dir: File, notes: String, positions: Map<String, String>) {

@@ -10,8 +10,9 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
 ## Using it
 
 1. Wake the tag by moving the skate. It shows up under **Tags** with its
-   state, foot and battery. **Blink** flashes its LED so you can tell two tags
-   apart, and **Left foot** / **Right foot** store the position on the tag.
+   state, body location and battery. **Blink** flashes its LED so you can
+   tell two tags apart, and **Body location…** stores where the tag is worn
+   (foot, wrist, pants pocket, backpack) on the tag.
    **Stop** ends a recording that something else started (another phone,
    the laptop, or the tag's button) and drops what the tag still buffers.
    **Sleep** puts a tag that isn't recording into System OFF. It stops
@@ -23,10 +24,17 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    button. Untick **Record GPS** to record without location. The session
    then has no `gps.csv`, so there is no speed or distance per push. The
    choice is remembered.
-3. **Stop recording** sends STOP, waits for the tag to flush its buffer, and
+3. **Save and start new session** (also in the notification) saves the
+   session so far and keeps recording into a new one, to separate movement
+   patterns. The tags stay connected and only the files change, so nothing
+   is lost at the cut. **Description…** sets a free-text description
+   (session.json `notes`) for the session being recorded.
+4. **Stop recording** sends STOP, waits for the tag to flush its buffer, and
    saves the session.
-4. Under **Sessions**, **Share** zips a session into `Downloads/blading-tag/`
-   and opens the share sheet. **Delete** removes it from the phone.
+5. Under **Sessions**, **Edit** changes a session's description and each
+   tag's body location, **Share** zips a session into
+   `Downloads/blading-tag/` and opens the share sheet, and **Delete** removes
+   it from the phone.
 
 If the link drops mid-session, the app reconnects as soon as the tag is back
 in range. The tag buffers in the meantime (PROTOCOL.md §1.9). If the tag is

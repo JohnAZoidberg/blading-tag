@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 from scipy import signal
 
+from .protocol import normalize_position
 from .session import Session, TagData, load_session
 from .timesync import ClockFit, fit_clocks
 
@@ -77,12 +78,12 @@ def gps_frame(sess: Session) -> pd.DataFrame | None:
 def load(path: str | Path, tag: str | None = None) -> tuple[pd.DataFrame, float, pd.DataFrame | None]:
     """Notebook helper: (samples, true sample rate in Hz, GPS or None).
 
-    ``tag`` is "left", "right" or an address; the first tag by default.
+    ``tag`` is a body location ("left_foot", ...) or an address; the first tag by default.
     """
     sess = load_session(path)
     t = sess.tags[0]
     if tag:
-        t = next(x for x in sess.tags if tag in (x.meta.position, x.meta.address))
+        t = next(x for x in sess.tags if normalize_position(tag) in (x.meta.position, x.meta.address))
     clock = fit_clocks(t)
     return sample_frame(sess, t, clock), clock.rate_hz, gps_frame(sess)
 

@@ -23,12 +23,12 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.widget.Button
+import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import java.util.concurrent.Executors
@@ -250,7 +250,7 @@ class MainActivity : Activity() {
         for (l in rec.links) {
             val s = l.status
             sb.append("\n").append(if (l.address == SimulatedTag.ADDRESS) "simulated" else l.address)
-            s?.let { sb.append("  ").append(Protocol.positionName(it.position)) }
+            s?.let { sb.append("  ").append(Protocol.positionLabel(Protocol.positionName(it.position))) }
             sb.append("\n  ")
             sb.append(when {
                 !l.connected && l.packets == 0L -> "connecting…"
@@ -326,7 +326,8 @@ class MainActivity : Activity() {
     private fun rowDescription(f: Found): String {
         if (f.address == SimulatedTag.ADDRESS) return "Fake 200 Hz data, no hardware needed"
         val a = f.adv ?: return "${f.address}  ${f.rssi} dBm"
-        val parts = mutableListOf(Protocol.stateName(a.state), Protocol.positionName(a.position),
+        val parts = mutableListOf(Protocol.stateName(a.state),
+            Protocol.positionLabel(Protocol.positionName(a.position)),
             "${a.batteryMv} mV", "${f.rssi} dBm")
         if (a.version != Protocol.VERSION) parts.add(0, "protocol v${a.version}, update needed")
         return parts.joinToString(" · ")
@@ -369,8 +370,11 @@ class MainActivity : Activity() {
                     into.addView(this)
                 }
             b(buttons, "Blink", Protocol.identify(5), "Blinking")
-            b(buttons, "Left foot", Protocol.setPosition(1), "Set to left")
-            b(buttons, "Right foot", Protocol.setPosition(2), "Set to right")
+            buttons.addView(Button(this).apply {
+                text = "Body location…"
+                isAllCaps = false
+                setOnClickListener { pickBodyLocation(f) }
+            })
             row.addView(buttons)
             // Own line: more buttons don't fit, and it keeps the ones that
             // end something apart from the harmless ones.
@@ -391,6 +395,19 @@ class MainActivity : Activity() {
             row.addView(power)
         }
         return row
+    }
+
+    /** Stores on the tag where it is worn. */
+    private fun pickBodyLocation(f: Found) {
+        val locations = Protocol.BODY_LOCATIONS
+        AlertDialog.Builder(this)
+            .setTitle("Where is the tag worn?")
+            .setSingleChoiceItems(locations.map { it.label }.toTypedArray(), f.adv?.position ?: -1) { d, i ->
+                d.dismiss()
+                oneShot(f.address, Protocol.setPosition(locations[i].value), "Set to ${locations[i].label.lowercase()}")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     /** Connect just long enough to send one Control command. */
@@ -475,7 +492,8 @@ class MainActivity : Activity() {
         for (s in list) {
             val d = s.durationS
             val dur = if (d == null) "unfinished" else "%d:%02d:%02d".format(d / 3600, d / 60 % 60, d % 60)
-            val feet = s.json?.tags?.joinToString(" + ") { it.position }?.let { " · $it" }.orEmpty()
+            val feet = s.json?.tags?.joinToString(" + ") { Protocol.positionLabel(it.position).lowercase() }
+                ?.let { " · $it" }.orEmpty()
             sessionList.addView(TextView(this).apply {
                 text = "${s.dir.name.removePrefix("session-")}\n$dur · ${s.tags} tag$feet · " +
                     "${s.gpsFixes} GPS · ${size(s.bytes)}"
@@ -547,7 +565,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    /** Description and foot of each tag for a saved session. */
+    /** Description and body location of each tag for a saved session. */
     private fun edit(s: Sessions.Summary, json: SessionJson) {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -556,30 +574,27 @@ class MainActivity : Activity() {
         box.addView(TextView(this).apply { text = "Description"; textSize = 15f })
         val field = notesField(json.notes)
         box.addView(field)
-        val positions = listOf("left" to "Left foot", "right" to "Right foot", "unknown" to "Unknown")
-        // Per tag: the radio button id -> position.
+        val locations = Protocol.BODY_LOCATIONS
         val choices = json.tags.map { t ->
             box.addView(TextView(this).apply {
                 text = if (t.address == SimulatedTag.ADDRESS) "Simulated tag" else "Tag ${t.address}"
                 textSize = 15f
             }, lp(dp(16)))
-            val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
-            val ids = HashMap<Int, String>()
-            for ((value, label) in positions) {
-                val rb = RadioButton(this).apply { id = View.generateViewId(); text = label }
-                ids[rb.id] = value
-                group.addView(rb)
-                if (value == t.position) group.check(rb.id)
+            val spinner = Spinner(this).apply {
+                adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                    locations.map { it.label })
+                setSelection(locations.indexOfFirst { it.name == t.position }.coerceAtLeast(0))
             }
-            Triple(t, group, ids)
+            box.addView(spinner)
+            t to spinner
         }
         AlertDialog.Builder(this)
             .setTitle(s.dir.name)
             .setView(ScrollView(this).apply { addView(box) })
             .setPositiveButton("Save") { _, _ ->
                 val notes = field.text.toString().trim()
-                val feet = choices.associate { (t, group, ids) ->
-                    t.address to (ids[group.checkedRadioButtonId] ?: t.position)
+                val feet = choices.associate { (t, spinner) ->
+                    t.address to locations[spinner.selectedItemPosition].name
                 }
                 io.execute {
                     val r = runCatching { SessionJson.edit(s.dir, notes, feet) }

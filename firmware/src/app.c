@@ -152,7 +152,7 @@ static void settings_init(void)
 		return;
 	}
 	settings_load_subtree("blading");
-	if (app.position > PROTO_POS_RIGHT) {
+	if (app.position > PROTO_POS_LAST) {
 		app.position = PROTO_POS_UNKNOWN;
 	}
 	LOG_INF("session_id %u, position %u", app.session_id, app.position);

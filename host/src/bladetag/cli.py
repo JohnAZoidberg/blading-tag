@@ -245,7 +245,7 @@ def cmd_analyze(a):
         _die("session has no tags")
     tags = s.tags
     if a.tag:
-        tags = [t for t in s.tags if a.tag in (t.meta.position, t.meta.address)]
+        tags = [t for t in s.tags if p.normalize_position(a.tag) in (t.meta.position, t.meta.address)]
         if not tags:
             _die(f"no tag {a.tag!r}")
     for tag in tags:
@@ -282,7 +282,7 @@ def cmd_explore(a):
     s = load_session(a.session)
     tags = s.tags
     if a.tag:
-        tags = [t for t in s.tags if a.tag in (t.meta.position, t.meta.address)]
+        tags = [t for t in s.tags if p.normalize_position(a.tag) in (t.meta.position, t.meta.address)]
     if not tags:
         _die(f"no tag {a.tag!r}" if a.tag else "session has no tags")
     try:
@@ -379,9 +379,9 @@ def main(argv=None):
     c.add_argument("seconds", type=int, nargs="?", default=5)
     c.set_defaults(fn=cmd_identify)
 
-    c = sub.add_parser("position", help="store which foot the tag is on")
+    c = sub.add_parser("position", help="store where on the body the tag is worn")
     c.add_argument("address", nargs="?", help=addr_help)
-    c.add_argument("position", choices=["left", "right", "unknown"])
+    c.add_argument("position", choices=[x.label for x in p.Position])
     c.set_defaults(fn=cmd_position)
 
     c = sub.add_parser("stop", help="stop a recording that was left running")

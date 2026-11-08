@@ -65,7 +65,7 @@ ZTEST(proto, test_adv_mfg)
 	static const uint8_t expect[] = {0xff, 0xff, 0x01, 0x01, 0x02, 0x86, 0x0b};
 	uint8_t out[PROTO_ADV_MFG_LEN];
 
-	zassert_equal(proto_encode_adv_mfg(out, PROTO_STATE_RECORDING, PROTO_POS_RIGHT, 2950),
+	zassert_equal(proto_encode_adv_mfg(out, PROTO_STATE_RECORDING, PROTO_POS_RIGHT_FOOT, 2950),
 		      sizeof(expect));
 	zassert_mem_equal(out, expect, sizeof(expect));
 }
@@ -115,7 +115,7 @@ ZTEST(proto, test_control_errors)
 	zassert_equal(proto_parse_control((uint8_t[]){0x02, 0x00}, 2, &cmd),
 		      PROTO_ERR_BAD_LENGTH);
 	zassert_equal(proto_parse_control((uint8_t[]){0x03}, 1, &cmd), PROTO_ERR_BAD_LENGTH);
-	zassert_equal(proto_parse_control((uint8_t[]){0x04, 3}, 2, &cmd), PROTO_ERR_BAD_PARAM);
+	zassert_equal(proto_parse_control((uint8_t[]){0x04, 8}, 2, &cmd), PROTO_ERR_BAD_PARAM);
 	zassert_equal(proto_parse_control((uint8_t[]){0x05, 1}, 2, &cmd), PROTO_ERR_BAD_LENGTH);
 	zassert_equal(proto_parse_control((uint8_t[]){0x42}, 1, &cmd),
 		      PROTO_ERR_UNKNOWN_OPCODE);
@@ -124,7 +124,9 @@ ZTEST(proto, test_control_errors)
 	zassert_ok(proto_parse_control((uint8_t[]){0x03, 10}, 2, &cmd));
 	zassert_equal(cmd.identify_s, 10);
 	zassert_ok(proto_parse_control((uint8_t[]){0x04, 2}, 2, &cmd));
-	zassert_equal(cmd.position, PROTO_POS_RIGHT);
+	zassert_equal(cmd.position, PROTO_POS_RIGHT_FOOT);
+	zassert_ok(proto_parse_control((uint8_t[]){0x04, 7}, 2, &cmd));
+	zassert_equal(cmd.position, PROTO_POS_BACKPACK);
 	zassert_ok(proto_parse_control((uint8_t[]){0x05}, 1, &cmd));
 }
 

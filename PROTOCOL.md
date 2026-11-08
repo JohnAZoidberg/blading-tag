@@ -125,14 +125,22 @@ advertise. It wakes into READY on motion or a button press.
 
 ### Position
 
-The tag stores which foot it is mounted on, and keeps it across reboots and
-updates.
+The tag stores where on the body it is worn, and keeps it across reboots and
+updates. The label is what session.json and the tools use.
 
-| Value | Position |
-|---|---|
-| 0 | unknown (default) |
-| 1 | left |
-| 2 | right |
+| Value | Label | Body location |
+|---|---|---|
+| 0 | `unknown` | unknown (default) |
+| 1 | `left_foot` | left foot (skate) |
+| 2 | `right_foot` | right foot (skate) |
+| 3 | `left_wrist` | left wrist |
+| 4 | `right_wrist` | right wrist |
+| 5 | `left_pocket` | left pants pocket |
+| 6 | `right_pocket` | right pants pocket |
+| 7 | `backpack` | backpack |
+
+Values 3–7 were added later. Older firmware answers SET_POSITION with them
+with BAD_PARAM.
 
 ### 1.5 Control (write with response)
 
@@ -148,7 +156,7 @@ response**:
 | `0x01` | START | `u16 odr_hz, u8 accel_range_g, u16 gyro_range_dps` (5 bytes, total length 6). Length 1 (opcode only) uses the defaults. A value of `0` uses the default for that field. Defaults: 200 Hz, ±16 g, ±2000 °/s. | READY |
 | `0x02` | STOP | none | RECORDING (no-op success in READY) |
 | `0x03` | IDENTIFY | `u8 seconds` (0 = stop). Blinks the LED. | any |
-| `0x04` | SET_POSITION | `u8 position` (0/1/2) | READY |
+| `0x04` | SET_POSITION | `u8 position` (0–7, see [Position](#position)) | READY |
 | `0x05` | SLEEP | none. Disconnects, then goes to System OFF. | READY |
 
 Error codes:
@@ -197,7 +205,7 @@ The tag notifies Status:
 | 4 | u16 | session_id | increments on every START; persists across reboots |
 | 6 | u16 | odr_hz | current or last setting |
 | 8 | u8 | accel_range_g | 2, 4, 8 or 16 |
-| 9 | u8 | position | 0/1/2 |
+| 9 | u8 | position | see [Position](#position) |
 | 10 | u16 | gyro_range_dps | 125 … 2000 |
 | 12 | u32 | samples_recorded | this session |
 | 16 | u32 | samples_dropped | this session (buffer overflow) |
@@ -358,7 +366,7 @@ wall-clock time.
   "tags": [
     {
       "address": "C0:BB:4A:A7:0D:57",
-      "position": "left",
+      "position": "left_foot",
       "file": "tag-C0BB4AA70D57.bin",
       "info_hex": "01000100 3f000f1f 401f0000",
       "session_id": 3,
@@ -371,7 +379,11 @@ wall-clock time.
 }
 ```
 
-- `position` is `"left"`, `"right"` or `"unknown"`.
+- `position` is a label from [Position](#position). Sessions recorded before
+  body locations existed say `"left"` or `"right"`; readers take those as
+  `"left_foot"` and `"right_foot"`.
+- `notes` is a free-text description, empty by default. The Android app lets
+  you edit it, and the foot/body location, after recording.
 - `info_hex` is the raw Info characteristic. Spaces are optional.
 - Readers ignore fields they don't know.
 

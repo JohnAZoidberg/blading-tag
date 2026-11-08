@@ -104,7 +104,7 @@ int proto_parse_control(const uint8_t *buf, size_t len, struct proto_cmd *cmd)
 		if (len != 1) {
 			return PROTO_ERR_BAD_LENGTH;
 		}
-		if (buf[0] > PROTO_POS_RIGHT) {
+		if (buf[0] > PROTO_POS_LAST) {
 			return PROTO_ERR_BAD_PARAM;
 		}
 		cmd->position = buf[0];

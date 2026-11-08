@@ -45,9 +45,15 @@ class State(IntEnum):
 
 
 class Position(IntEnum):
+    """Where on the body the tag is worn."""
     UNKNOWN = 0
-    LEFT = 1
-    RIGHT = 2
+    LEFT_FOOT = 1
+    RIGHT_FOOT = 2
+    LEFT_WRIST = 3
+    RIGHT_WRIST = 4
+    LEFT_POCKET = 5
+    RIGHT_POCKET = 6
+    BACKPACK = 7
 
     @property
     def label(self) -> str:
@@ -55,7 +61,16 @@ class Position(IntEnum):
 
     @classmethod
     def from_label(cls, label: str) -> "Position":
-        return cls[label.upper()]
+        return cls[normalize_position(label).upper()]
+
+
+# Sessions and scripts from before body locations said just "left"/"right" (feet).
+_LEGACY_POSITIONS = {"left": "left_foot", "right": "right_foot"}
+
+
+def normalize_position(label: str) -> str:
+    """"left" -> "left_foot" etc.; current labels are returned as they are."""
+    return _LEGACY_POSITIONS.get(label, label)
 
 
 class Opcode(IntEnum):

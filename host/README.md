@@ -26,7 +26,7 @@ numpy, scipy and pandas. Use `.[dev]` to also get pytest.
 ```sh
 bladetag scan                     # tags in range: state, position, battery
 bladetag info [ADDR]              # Info + Status
-bladetag position [ADDR] left     # store which foot the tag is on
+bladetag position [ADDR] left_foot  # where it's worn: left_foot, right_wrist, backpack, …
 bladetag record [ADDR] --plot     # record into ./sessions/session-YYYYMMDD-HHMMSS/
 bladetag identify [ADDR] 5        # blink the LED
 bladetag stop [ADDR]              # stop a recording left running

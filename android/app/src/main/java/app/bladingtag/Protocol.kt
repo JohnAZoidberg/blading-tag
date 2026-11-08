@@ -50,11 +50,34 @@ object Protocol {
         else -> "state $s"
     }
 
+    /** Where on the body a tag is worn (PROTOCOL.md "Position"). */
+    class BodyLocation(val value: Int, val name: String, val label: String)
+
+    /** Indexed by wire value. [BodyLocation.name] is what session.json says. */
+    val BODY_LOCATIONS = listOf(
+        BodyLocation(0, "unknown", "Unknown"),
+        BodyLocation(1, "left_foot", "Left foot"),
+        BodyLocation(2, "right_foot", "Right foot"),
+        BodyLocation(3, "left_wrist", "Left wrist"),
+        BodyLocation(4, "right_wrist", "Right wrist"),
+        BodyLocation(5, "left_pocket", "Left pants pocket"),
+        BodyLocation(6, "right_pocket", "Right pants pocket"),
+        BodyLocation(7, "backpack", "Backpack"),
+    )
+
     /** Position as used in session.json. */
-    fun positionName(p: Int) = when (p) {
-        1 -> "left"
-        2 -> "right"
-        else -> "unknown"
+    fun positionName(p: Int) = BODY_LOCATIONS.getOrNull(p)?.name ?: "unknown"
+
+    /** Sessions from before body locations say "left"/"right": those are feet. */
+    fun normalizePosition(name: String) = when (name) {
+        "left" -> "left_foot"
+        "right" -> "right_foot"
+        else -> name
+    }
+
+    /** "left_foot" (or old "left") -> "Left foot"; unknown names as they are. */
+    fun positionLabel(name: String) = normalizePosition(name).let { n ->
+        BODY_LOCATIONS.firstOrNull { it.name == n }?.label ?: n
     }
 
     /** ATT application error codes from Control writes. */

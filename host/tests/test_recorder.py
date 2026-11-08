@@ -115,7 +115,7 @@ def test_control_errors(tmp_path):
         with pytest.raises(ControlError) as e:
             await link.write_control(b"\x42")
         assert e.value.code == p.ErrorCode.UNKNOWN_OPCODE
-        await link.write_control(p.cmd_set_position(p.Position.RIGHT))
+        await link.write_control(p.cmd_set_position(p.Position.RIGHT_FOOT))
         await link.write_control(p.cmd_start())
         with pytest.raises(ControlError) as e:
             await link.write_control(p.cmd_start())
@@ -124,7 +124,7 @@ def test_control_errors(tmp_path):
         await link.disconnect()
 
     run(go())
-    assert tag.position == p.Position.RIGHT
+    assert tag.position == p.Position.RIGHT_FOOT
 
 
 def test_tag_stopping_on_its_own_ends_the_recording(tmp_path):

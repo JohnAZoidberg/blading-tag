@@ -90,10 +90,22 @@ def test_samples_per_packet():
 
 
 def test_advert_roundtrip():
-    a = p.Advert(1, p.State.READY, p.Position.LEFT, 3010)
+    a = p.Advert(1, p.State.READY, p.Position.LEFT_FOOT, 3010)
     assert p.Advert.parse(a.pack()) == a
 
 
 def test_units():
     assert 2048 * p.accel_scale_g(16) == pytest.approx(1.0)
     assert 16.384 * p.gyro_scale_dps(2000) == pytest.approx(1.0)
+
+
+def test_body_locations():
+    assert p.Position(7).label == "backpack"
+    assert p.Position.from_label("right_pocket") == p.Position.RIGHT_POCKET
+    # Sessions from before body locations say just "left"/"right": feet.
+    assert p.Position.from_label("left") == p.Position.LEFT_FOOT
+    assert p.normalize_position("right") == "right_foot"
+    assert p.normalize_position("left_wrist") == "left_wrist"
+
+    from bladetag.session import TagMeta
+    assert TagMeta("C0:BB:4A:A7:0D:57", position="left").position == "left_foot"

@@ -81,6 +81,7 @@ class TagMeta:
     gyro_range_dps: int | None = None
 
     def __post_init__(self):
+        self.position = p.normalize_position(self.position)
         if not self.file:
             self.file = tag_filename(self.address)
 
@@ -310,6 +311,7 @@ class Session:
     def tag(self, position: str | None = None) -> TagData:
         if position is None:
             return self.tags[0]
+        position = p.normalize_position(position)
         for t in self.tags:
             if t.meta.position == position:
                 return t
