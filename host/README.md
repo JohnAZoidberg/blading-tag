@@ -217,6 +217,67 @@ first skate: sweep 0.7–1 m (it includes body sway), inside edge 30–38°, toe
 out ~12°, and lift only 1 cm or less. The simulator's 7 cm lift comes out at
 6.4 cm, so the recovery really does stay that low.
 
+## Comparing skating sessions
+
+```sh
+bladetag report sessions/session-20261108-1* -o report.html --title "Riverside, 8 Nov"
+bladetag report sessions -o all.html --csv strokes.csv   # every skating session in the folder
+```
+
+Measures every stroke of every skating session given (`src/bladetag/skating.py`)
+and writes one self-contained page (`report.py`, `report.html`; data
+embedded, works offline) with:
+
+- **Findings in words**: out and back on the same road compared, start vs end
+  of the longest session, soft or hard strides, and what to change in the next
+  recording to answer what this one couldn't (e.g. foot and direction
+  confounded). Then *quick answers*: does speed go with push rate, with
+  distance per push, with a wider or harder push, and so on, each with a
+  button that plots it.
+- **Any measure against any other**: one dot per stroke, a fit and Spearman r
+  per session, optionally with each session's median removed.
+- **Correlation matrix**, *within a session* (each session's median removed
+  first: what a stroke-to-stroke change does) or *pooled* (also picks up
+  whatever differed between sessions: wind, foot, fatigue, road). Click a
+  cell to plot it.
+- **Along the way**: any measure over the whole outing, sessions in order.
+- **Map**: strokes coloured by that measure, set off to the right of the
+  direction of travel, so out and back sit side by side like lanes.
+- **Same place, compared**: strokes from two sessions within 15 m of each
+  other, going the same or opposite ways. Same road and slope, so what's left
+  is wind, tiredness, the foot and technique.
+- **At one common speed**: each session's medians moved along their
+  within-session fit against speed, since speed changes nearly everything.
+- **Coasting**: speed lost per second while not pushing, which is where wind
+  shows up most directly.
+
+Per stroke, on top of the analysis above: GPS speed, heading, position and
+speed change; **set-down impact** (peak of the 15 Hz low-passed |a| just after
+the wheels land, so road vibration doesn't count); **push-off peak** (the
+same at the end of the contact: the kick, the hardest moment of the stroke);
+**swing speed** (peak rotation rate in the air); **road vibration** (RMS above
+20 Hz while rolling); and the foot path from `viz3d.stroke_motion` (outward
+reach, sideways sweep, push speed, edge, toe out, fore-aft).
+
+The equal-effort wind estimate in the out-and-back finding assumes the same
+power both ways, an 80 kg skater, CdA 0.4 m² and Crr 0.006 (`report.RIDER`).
+It's a lower bound when the slow way also took harder pushes.
+
+What the first out-and-back (2026-11-08, 1137 strokes, tag on the left foot
+out and on the right foot back) showed:
+
+- Speed went with distance per push (r = +0.81 within a session), not with push
+  rate (+0.03). Faster strokes were longer, not quicker.
+- A quicker cadence came with a narrower push (outward reach r = −0.86) and
+  a harder kick (+0.38). Neither the kick (−0.03) nor the landing (−0.06)
+  changed the distance per push; a faster outward push speed did (+0.53).
+- Landings were soft (1.8 g median); the push-off kick was about 6 g.
+- Coming back on the same 2.2 km: 17 % slower at 4 % lower push rate, with
+  19 % wider pushes and 19 % harder kicks. The speed alone means at least
+  ~3 km/h of wind. The tag changed feet at the turn, so left vs right can't be
+  separated from the direction; next time keep one foot for a whole
+  out-and-back.
+
 ## Simulated data
 
 ```sh
@@ -248,12 +309,14 @@ The model is only meant to exercise the code. Don't tune thresholds on it.
 | `walking.py` | strides and gait when walking (zero-velocity updates at foot plants), `compare` |
 | `jlink.py` | J-Link test hook driver for the hardware tests |
 | `analysis.py`, `plots.py` | analysis v1 and its plots |
+| `skating.py` | skating measures per stroke (impact, push-off, GPS), correlations, speed matching, same-place pairs, coasts |
+| `report.py`, `report.html` | `report`: several skating sessions on one page, findings in words |
 | `viz3d.py`, `viz3d_template.html` | `viz3d`: skate path and angles per stroke, the 3D replay page |
 | `liveplot.py` | live plot during recording |
 | `cli.py` | the `bladetag` command |
 
 ```sh
-pytest           # protocol vectors, session round-trip, recorder against the fake tag, analysis vs sim truth, explore, walking, viz3d
+pytest           # protocol vectors, session round-trip, recorder against the fake tag, analysis vs sim truth, explore, walking, viz3d, report
 ```
 
 The hardware tests in `tests/hw/` run against a real tag with a J-Link

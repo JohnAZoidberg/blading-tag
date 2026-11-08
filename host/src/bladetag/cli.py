@@ -339,6 +339,25 @@ def _analyze_skating(a, s, tags):
                 plot_raw(r, a.raw_at, path=_suffixed(a.raw, suffix))
 
 
+def cmd_report(a):
+    from . import report, skating
+
+    paths = report.session_paths(a.sessions)
+    if not paths:
+        _die("no sessions found")
+    df, infos = skating.load_sessions(paths, progress=lambda m: print(m, file=sys.stderr))
+    if df.empty:
+        _die("no skating session with stroke cycles among these")
+    if a.csv:
+        df.drop(columns=["moving"]).to_csv(a.csv, index=False, float_format="%.4g")
+        print(f"wrote {a.csv} ({len(df)} strokes)")
+    rep = report.build(df, infos, a.title or "")
+    for f in rep["findings"]:
+        print(f"\n{f['title']}\n  {f['text']}")
+    report.write_report(a.output, rep)
+    print(f"\nwrote {a.output} (open it in a browser; works offline)")
+
+
 def cmd_explore(a):
     from . import explore as ex
     from . import walking
@@ -611,6 +630,18 @@ def main(argv=None):
     c.add_argument("--tag", help="left, right or an address (default: all)")
     c.add_argument("-o", "--output", default="strokes3d.html", help="page to write (default: strokes3d.html)")
     c.set_defaults(fn=cmd_viz3d)
+
+    c = sub.add_parser("report", help="skating sessions on one page: findings, correlations, map, out vs back",
+                       description="Measure every stroke of every skating session given (push rate, distance per "
+                                   "push, set-down impact, push-off, foot path, GPS speed and heading) and write one "
+                                   "self-contained page that compares them: findings in words, any measure against "
+                                   "any other, the correlation matrix, a map, places skated more than once, and "
+                                   "the sessions at one common speed. A folder of sessions stands for all of them.")
+    c.add_argument("sessions", nargs="+", help="session folders, .zip files, or a folder of sessions")
+    c.add_argument("-o", "--output", default="report.html", help="page to write (default: report.html)")
+    c.add_argument("--csv", metavar="FILE", help="also write every stroke as .csv")
+    c.add_argument("--title", help="page title")
+    c.set_defaults(fn=cmd_report)
 
     a = ap.parse_args(argv)
     a.fn(a)

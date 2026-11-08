@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<!-- Written by `bladetag report` (host/src/bladetag/report.py). Self-contained: no network access. -->
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --neg: #2a78d6; --pos: #e34948; --mid: #f0efec;
+  --q0: #cde2fb; --q1: #9ec5f4; --q2: #6da7ec; --q3: #3987e5; --q4: #256abf; --q5: #184f95; --q6: #0d366b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --neg: #3987e5; --pos: #e66767; --mid: #383835;
+    --q0: #104281; --q1: #184f95; --q2: #256abf; --q3: #3987e5; --q4: #6da7ec; --q5: #9ec5f4; --q6: #cde2fb;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --neg: #3987e5; --pos: #e66767; --mid: #383835;
+  --q0: #104281; --q1: #184f95; --q2: #256abf; --q3: #3987e5; --q4: #6da7ec; --q5: #9ec5f4; --q6: #cde2fb;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 2px; font-weight: 650; }
+h2 { font-size: 16px; margin: 0 0 4px; font-weight: 620; }
+.sub { color: var(--ink2); margin: 0 0 18px; }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 14px 16px; margin: 0 0 16px; }
+.card > p.note { color: var(--ink2); margin: 0 0 10px; font-size: 13px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 0 0 10px; color: var(--ink2); font-size: 13px; }
+select, button { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 6px; padding: 3px 8px; }
+button { cursor: pointer; }
+button.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; font-variant-numeric: tabular-nums; }
+th { color: var(--ink2); font-weight: 560; }
+th:first-child, td:first-child, td.l, th.l { text-align: left; }
+td.wrap { white-space: normal; min-width: 14em; color: var(--ink2); text-align: left; }
+.rbar { display: inline-block; position: relative; width: 120px; height: 10px; vertical-align: -1px; background: var(--grid); border-radius: 2px; }
+.rbar i { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+.rbar b { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
+.tw { overflow-x: auto; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.sw.sq { border-radius: 2px; }
+.findings { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.finding { border: 1px solid var(--ring); border-radius: 8px; padding: 10px 12px; background: var(--page); }
+.finding h3 { font-size: 14px; margin: 0 0 4px; font-weight: 600; }
+.finding p { margin: 0 0 6px; color: var(--ink2); font-size: 13px; }
+.finding button { font-size: 12px; padding: 1px 8px; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink2); margin-top: 6px; }
+.legend span { display: inline-flex; align-items: center; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--ring);
+  border-radius: 6px; padding: 6px 8px; font-size: 12px; line-height: 1.4; box-shadow: 0 2px 8px rgba(0,0,0,0.12); white-space: nowrap; display: none; z-index: 5; }
+.tip b { font-weight: 600; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+svg text { fill: var(--muted); font-size: 11px; }
+svg .t2 { fill: var(--ink2); }
+.ramp { display: inline-block; width: 120px; height: 8px; border-radius: 2px; margin: 0 6px; vertical-align: 0; }
+details summary { cursor: pointer; color: var(--ink2); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; font-size: 13px; margin: 8px 0 0; }
+dt { font-weight: 560; } dd { margin: 0; color: var(--ink2); }
+.warn { color: var(--ink2); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title"></h1>
+  <p class="sub" id="subtitle"></p>
+
+  <section class="card">
+    <h2>Sessions</h2>
+    <div class="tw"><table id="sessions"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>What the strokes say</h2>
+    <p class="note">Correlations are Spearman's rank r between strokes. "Within a session" removes each session's median first,
+      so it shows what changes from one stroke to the next, not what differs between days, feet or wind. Strokes under 5 km/h are left out.</p>
+    <div class="findings" id="findings"></div>
+    <h2 style="margin-top:16px">Quick answers</h2>
+    <div class="tw"><table id="answers"></table></div>
+  </section>
+
+  <section class="card" id="explorer">
+    <h2>Any measure against any other</h2>
+    <p class="note">One dot per stroke of the tag's foot, a straight fit per session. Pick a pair, or a cell in the matrix below.</p>
+    <div class="row">
+      <label>x <select id="sx"></select></label>
+      <label>y <select id="sy"></select></label>
+      <label>colour <select id="sc"><option value="session">session</option><option value="foot">foot</option></select></label>
+      <label><input type="checkbox" id="within"> each session's median removed</label>
+      <button type="button" id="swap">swap x/y</button>
+    </div>
+    <div class="chart" id="scatter"></div>
+    <div class="legend" id="scatter-legend"></div>
+  </section>
+
+  <section class="card">
+    <h2>Correlation matrix</h2>
+    <div class="row">
+      <button type="button" id="m-within" class="on">within a session</button>
+      <button type="button" id="m-pooled">all strokes pooled</button>
+      <span>blue: one goes up as the other goes down · red: both go up together · click a cell to plot it</span>
+    </div>
+    <div class="chart" id="matrix"></div>
+  </section>
+
+  <section class="card">
+    <h2>Along the way</h2>
+    <div class="row">
+      <label>measure <select id="sm"></select></label>
+      <span id="along-note"></span>
+    </div>
+    <div class="chart" id="along"></div>
+    <div class="legend" id="along-legend"></div>
+  </section>
+
+  <section class="card">
+    <h2>Map</h2>
+    <p class="note">Each dot is a stroke, coloured by the measure picked above, set off to the right of the direction of travel
+      like lanes on a road, so going out and coming back sit side by side.</p>
+    <div class="chart" id="map"></div>
+    <div class="legend" id="map-legend"></div>
+  </section>
+
+  <section class="card" id="pairs-card">
+    <h2>Same place, compared</h2>
+    <p class="note">Strokes from two sessions within 15 m of each other. On the same road the surface and slope are the same,
+      so what's left is wind, tiredness, the foot and how you skated.</p>
+    <div class="tw"><table id="pairs"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>At one common speed</h2>
+    <p class="note" id="at-note"></p>
+    <div class="tw"><table id="at"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Coasting</h2>
+    <p class="note">While coasting nothing pushes, so the speed lost per second is rolling resistance plus air drag. Coast at the
+      same spot in both directions at the same speed and the difference is the wind.</p>
+    <div id="coasts"></div>
+  </section>
+
+  <section class="card">
+    <details><summary>What the measures are</summary><dl id="glossary"></dl></details>
+  </section>
+</main>
+<div class="tip" id="tip"></div>
+
+<script type="application/json" id="data">/*__DATA__*/</script>
+<script>
+"use strict";
+const R = JSON.parse(document.getElementById("data").textContent);
+const $ = (id) => document.getElementById(id);
+const S = R.strokes, N = S.session.length;
+const M = Object.fromEntries(R.measures.map((m) => [m.key, m]));
+const SESS = R.sessions.map((s) => s.key);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const sessColor = (k) => `var(--s${(SESS.indexOf(k) % 8) + 1})`;
+const FEET = [...new Set(R.sessions.map((s) => s.foot))];
+const footColor = (f) => `var(--s${(FEET.indexOf(f) % 8) + 1})`;
+const sessFoot = Object.fromEntries(R.sessions.map((s) => [s.key, s.foot]));
+const svgNS = "http://www.w3.org/2000/svg";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function fmt(key, v) {
+  if (v == null || !isFinite(v)) return "–";
+  const m = M[key];
+  if (m && m.pct) return `${Math.round(v * 100)} %`;
+  const a = Math.abs(v);
+  const d = a >= 100 ? 0 : a >= 10 ? 1 : 2;
+  return v.toFixed(d) + (m && m.unit ? ` ${m.unit}` : "");
+}
+const lab = (k) => (M[k] ? M[k].label + (M[k].unit ? ` (${M[k].unit})` : M[k].pct ? " (%)" : "") : k);
+const footName = (f) => (f || "").replace("_", " ");
+
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(svgNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function niceTicks(a, b, n = 5) {
+  if (!(b > a)) return [a];
+  const span = b - a, step0 = span / n, p = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => span / s <= n) || 10 * p;
+  const out = [];
+  for (let v = Math.ceil(a / step) * step; v <= b + 1e-9; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+function quantile(arr, q) {
+  const a = arr.filter((v) => v != null && isFinite(v)).sort((x, y) => x - y);
+  if (!a.length) return NaN;
+  const i = (a.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+  return a[lo] + (a[hi] - a[lo]) * (i - lo);
+}
+const median = (a) => quantile(a, 0.5);
+function fit(xs, ys) {
+  let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (let i = 0; i < xs.length; i++) { const x = xs[i], y = ys[i]; if (x == null || y == null) continue; n++; sx += x; sy += y; sxx += x * x; sxy += x * y; }
+  if (n < 5) return null;
+  const d = n * sxx - sx * sx;
+  if (!d) return null;
+  const b = (n * sxy - sx * sy) / d;
+  return { a: (sy - b * sx) / n, b, n };
+}
+function ranks(a) {
+  const idx = a.map((v, i) => [v, i]).sort((p, q) => p[0] - q[0]);
+  const r = new Array(a.length);
+  for (let i = 0; i < idx.length;) {
+    let j = i; while (j + 1 < idx.length && idx[j + 1][0] === idx[i][0]) j++;
+    for (let k = i; k <= j; k++) r[idx[k][1]] = (i + j) / 2;
+    i = j + 1;
+  }
+  return r;
+}
+function spearman(xs, ys) {
+  const px = [], py = [];
+  for (let i = 0; i < xs.length; i++) if (xs[i] != null && ys[i] != null && isFinite(xs[i]) && isFinite(ys[i])) { px.push(xs[i]); py.push(ys[i]); }
+  if (px.length < 10) return NaN;
+  const rx = ranks(px), ry = ranks(py), n = rx.length;
+  const mx = rx.reduce((a, b) => a + b) / n, my = ry.reduce((a, b) => a + b) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) { const dx = rx[i] - mx, dy = ry[i] - my; sxy += dx * dy; sxx += dx * dx; syy += dy * dy; }
+  return sxy / Math.sqrt(sxx * syy);
+}
+
+// --- tooltip ------------------------------------------------------------------
+const tip = $("tip");
+function showTip(host, x, y, html) {
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  const hr = host.getBoundingClientRect();
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let left = hr.left + window.scrollX + x + 14, top = hr.top + window.scrollY + y - th - 10;
+  if (left + tw > window.scrollX + document.documentElement.clientWidth - 8) left = hr.left + window.scrollX + x - tw - 14;
+  if (top < window.scrollY + 4) top = hr.top + window.scrollY + y + 14;
+  tip.style.left = left + "px"; tip.style.top = top + "px";
+}
+const hideTip = () => { tip.style.display = "none"; };
+function strokeTip(i, extra = []) {
+  const keys = [...new Set([...extra, "speed_kmh", "push_rate_spm", "dist_per_push_m", "pushoff_g", "out_cm"])].filter((k) => S[k]);
+  return `<b>${esc(S.session[i])}</b> · ${footName(sessFoot[S.session[i]])} · ${S.t_min[i].toFixed(1)} min<br>` +
+    keys.map((k) => `${esc(M[k] ? M[k].label : k)}: <b>${fmt(k, S[k][i])}</b>`).join("<br>");
+}
+
+// --- sessions table -------------------------------------------------------------
+function sessionsTable() {
+  const med = (k, s) => median(S[k] ? S[k].filter((_, i) => S.session[i] === s && S.moving[i]) : []);
+  const keys = ["speed_kmh", "push_rate_spm", "dist_per_push_m", "pushoff_g", "out_cm"].filter((k) => S[k]);
+  let h = `<tr><th class="l">session</th><th class="l">foot</th><th class="l">notes</th><th>km</th><th>min</th>` +
+    keys.map((k) => `<th>${esc(M[k].label)}</th>`).join("") + `<th>strokes</th></tr>`;
+  for (const s of R.sessions) {
+    const n = S.session.filter((v, i) => v === s.key && S.moving[i]).length;
+    h += `<tr><td class="l"><span class="sw" style="background:${sessColor(s.key)}"></span>${esc(s.key)}</td>` +
+      `<td class="l">${esc(footName(s.foot))}</td><td class="wrap">${esc([s.notes, s.gear].filter(Boolean).join(" · "))}` +
+      (s.warnings && s.warnings.length ? `<div class="warn">⚠ ${esc(s.warnings.join("; "))}</div>` : "") + `</td>` +
+      `<td>${s.distance_km != null ? s.distance_km.toFixed(2) : "–"}</td><td>${s.moving_min.toFixed(1)}</td>` +
+      keys.map((k) => `<td>${fmt(k, med(k, s.key))}</td>`).join("") + `<td>${n}</td></tr>`;
+  }
+  $("sessions").innerHTML = h;
+}
+
+// --- findings -----------------------------------------------------------------------
+function plotButton(x, y) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = "plot it";
+  b.onclick = () => { setXY(x, y); $("explorer").scrollIntoView({ behavior: "smooth" }); };
+  return b;
+}
+function findingsList() {
+  const box = $("findings");
+  for (const f of R.findings.filter((f) => f.kind !== "pair")) {
+    const d = document.createElement("div");
+    d.className = "finding";
+    d.innerHTML = `<h3>${esc(f.title)}</h3><p>${esc(f.text)}</p>`;
+    if (f.x && f.y && M[f.x] && M[f.y]) d.appendChild(plotButton(f.x, f.y));
+    box.appendChild(d);
+  }
+  const t = $("answers");
+  t.innerHTML = `<tr><th class="l">question</th><th class="l">within a session</th><th>r</th><th></th></tr>`;
+  for (const f of R.findings.filter((f) => f.kind === "pair")) {
+    const tr = document.createElement("tr");
+    const r = f.r, w = Math.min(1, Math.abs(r)) * 50;
+    const col = r >= 0 ? "var(--pos)" : "var(--neg)";
+    tr.innerHTML = `<td class="l">${esc(f.title)}</td><td class="l"><span class="rbar"><i style="left:${r >= 0 ? 50 : 50 - w}%;width:${w}%;background:${col}"></i><b></b></span>` +
+      ` ${esc(f.verdict.replace(/^a /, "").replace(/^no$/, "none"))}${Math.abs(r) >= 0.1 ? (r > 0 ? ", same way" : ", opposite ways") : ""}</td><td>${(r >= 0 ? "+" : "−") + Math.abs(r).toFixed(2)}</td><td></td>`;
+    tr.lastChild.appendChild(plotButton(f.x, f.y));
+    t.appendChild(tr);
+  }
+}
+
+// --- scatter --------------------------------------------------------------------------
+const state = { x: "push_rate_spm", y: "speed_kmh", c: "session", within: false, matrix: "within", m: "dist_per_push_m" };
+function setXY(x, y) { state.x = x; state.y = y; $("sx").value = x; $("sy").value = y; scatter(); }
+
+function values(k, within) {
+  const v = S[k].slice();
+  if (!within) return v;
+  const meds = {};
+  for (const s of SESS) meds[s] = median(v.filter((_, i) => S.session[i] === s && S.moving[i]));
+  return v.map((x, i) => (x == null ? null : x - meds[S.session[i]]));
+}
+
+function frame(host, W, H, pad) {
+  host.innerHTML = "";
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, host);
+  return svg;
+}
+function axes(svg, W, H, pad, xs, ys, xlab, ylab, xfmt = (v) => v, yfmt = (v) => v) {
+  const g = el("g", {}, svg);
+  for (const v of ys.ticks) {
+    const y = ys.s(v);
+    el("line", { x1: pad.l, x2: W - pad.r, y1: y, y2: y, stroke: "var(--grid)", "stroke-width": 1 }, g);
+    el("text", { x: pad.l - 6, y: y + 4, "text-anchor": "end" }, g).textContent = yfmt(v);
+  }
+  for (const v of xs.ticks) {
+    const x = xs.s(v);
+    el("line", { x1: x, x2: x, y1: H - pad.b, y2: H - pad.b + 4, stroke: "var(--axis)" }, g);
+    el("text", { x, y: H - pad.b + 16, "text-anchor": "middle" }, g).textContent = xfmt(v);
+  }
+  el("line", { x1: pad.l, x2: W - pad.r, y1: H - pad.b, y2: H - pad.b, stroke: "var(--axis)" }, g);
+  el("text", { x: (pad.l + W - pad.r) / 2, y: H - 4, "text-anchor": "middle", class: "t2" }, g).textContent = xlab;
+  el("text", { x: 12, y: (pad.t + H - pad.b) / 2, transform: `rotate(-90 12 ${(pad.t + H - pad.b) / 2})`, "text-anchor": "middle", class: "t2" }, g).textContent = ylab;
+}
+function scale(vals, a, b, lo = 0.01, hi = 0.99, padFrac = 0.04) {
+  let v0 = quantile(vals, lo), v1 = quantile(vals, hi);
+  if (!(v1 > v0)) { v0 -= 1; v1 += 1; }
+  const p = (v1 - v0) * padFrac; v0 -= p; v1 += p;
+  const ticks = niceTicks(v0, v1, Math.max(3, Math.round(Math.abs(b - a) / 70)));
+  return { v0, v1, ticks, s: (v) => a + (v - v0) / (v1 - v0) * (b - a) };
+}
+const pctFmt = (k) => (v) => (M[k] && M[k].pct ? Math.round(v * 100) : +v.toFixed(3));
+
+function scatter() {
+  const host = $("scatter");
+  const W = Math.max(320, host.clientWidth), H = Math.min(460, Math.max(300, W * 0.5));
+  const pad = { l: 56, r: 14, t: 10, b: 38 };
+  const within = state.within;
+  const xv = values(state.x, within), yv = values(state.y, within);
+  const idx = [];
+  for (let i = 0; i < N; i++) if (S.moving[i] && xv[i] != null && yv[i] != null) idx.push(i);
+  const xs = scale(idx.map((i) => xv[i]), pad.l, W - pad.r);
+  const ys = scale(idx.map((i) => yv[i]), H - pad.b, pad.t);
+  const svg = frame(host, W, H, pad);
+  const pre = within ? "Δ " : "";
+  axes(svg, W, H, pad, xs, ys, pre + lab(state.x), pre + lab(state.y), pctFmt(state.x), pctFmt(state.y));
+  const clip = el("clipPath", { id: "clipS" }, el("defs", {}, svg));
+  el("rect", { x: pad.l, y: pad.t, width: W - pad.l - pad.r, height: H - pad.t - pad.b }, clip);
+  const g = el("g", { "clip-path": "url(#clipS)" }, svg);
+  const colorOf = (i) => (state.c === "foot" ? footColor(sessFoot[S.session[i]]) : sessColor(S.session[i]));
+  const pts = [];
+  for (const i of idx) {
+    const x = xs.s(xv[i]), y = ys.s(yv[i]);
+    pts.push([x, y, i]);
+    const right = (sessFoot[S.session[i]] || "").startsWith("right");
+    const attrs = { fill: colorOf(i), "fill-opacity": 0.55, stroke: "var(--surface)", "stroke-width": 1 };
+    if (right) el("rect", { x: x - 3, y: y - 3, width: 6, height: 6, ...attrs }, g);
+    else el("circle", { cx: x, cy: y, r: 3.3, ...attrs }, g);
+  }
+  // A fit per group.
+  const groups = state.c === "foot" ? FEET : SESS;
+  const leg = [];
+  for (const k of groups) {
+    const gi = idx.filter((i) => (state.c === "foot" ? sessFoot[S.session[i]] : S.session[i]) === k);
+    if (!gi.length) continue;
+    const f = fit(gi.map((i) => xv[i]), gi.map((i) => yv[i]));
+    const r = spearman(gi.map((i) => xv[i]), gi.map((i) => yv[i]));
+    const col = state.c === "foot" ? footColor(k) : sessColor(k);
+    if (f) {
+      const x0 = quantile(gi.map((i) => xv[i]), 0.05), x1 = quantile(gi.map((i) => xv[i]), 0.95);
+      el("line", { x1: xs.s(x0), y1: ys.s(f.a + f.b * x0), x2: xs.s(x1), y2: ys.s(f.a + f.b * x1), stroke: "var(--surface)", "stroke-width": 5, "stroke-linecap": "round" }, g);
+      el("line", { x1: xs.s(x0), y1: ys.s(f.a + f.b * x0), x2: xs.s(x1), y2: ys.s(f.a + f.b * x1), stroke: col, "stroke-width": 2.5, "stroke-linecap": "round" }, g);
+    }
+    const right = state.c === "foot" ? k.startsWith("right") : (sessFoot[k] || "").startsWith("right");
+    leg.push(`<span><span class="sw${right ? " sq" : ""}" style="background:${col}"></span>${esc(state.c === "foot" ? footName(k) : k + " · " + footName(sessFoot[k]))}` +
+      `&nbsp;<b>r ${isFinite(r) ? (r >= 0 ? "+" : "") + r.toFixed(2) : "–"}</b>${f ? `, slope ${f.b.toPrecision(2)}` : ""}, n ${gi.length}</span>`);
+  }
+  const all = spearman(idx.map((i) => xv[i]), idx.map((i) => yv[i]));
+  leg.push(`<span>all strokes: <b>&nbsp;r ${isFinite(all) ? (all >= 0 ? "+" : "") + all.toFixed(2) : "–"}</b></span>`);
+  leg.push(`<span>● left foot ■ right foot</span>`);
+  $("scatter-legend").innerHTML = leg.join("");
+  hover(host, svg, W, pts, (i) => strokeTip(i, [state.x, state.y]));
+}
+
+function hover(host, svg, W, pts, html, maxD = 30) {
+  const hl = el("circle", { r: 6, fill: "none", stroke: "var(--ink)", "stroke-width": 2, visibility: "hidden" }, svg);
+  svg.addEventListener("pointermove", (e) => {
+    const r = svg.getBoundingClientRect(), k = W / r.width;
+    const mx = (e.clientX - r.left) * k, my = (e.clientY - r.top) * k;
+    let best = null, bd = maxD * maxD;
+    for (const p of pts) { const d = (p[0] - mx) ** 2 + (p[1] - my) ** 2; if (d < bd) { bd = d; best = p; } }
+    if (!best) { hl.setAttribute("visibility", "hidden"); hideTip(); return; }
+    hl.setAttribute("cx", best[0]); hl.setAttribute("cy", best[1]); hl.setAttribute("visibility", "visible");
+    showTip(host, best[0] / k, best[1] / k, html(best[2]));
+  });
+  svg.addEventListener("pointerleave", () => { hl.setAttribute("visibility", "hidden"); hideTip(); });
+}
+
+// --- correlation matrix ------------------------------------------------------------------
+function mix(c1, c2, t) {
+  const p = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  const a = p(c1), b = p(c2);
+  return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
+}
+function matrix() {
+  const host = $("matrix");
+  const keys = R.corr_keys, C = R.corr[state.matrix];
+  const n = keys.length;
+  const W = Math.max(320, host.clientWidth);
+  const labW = Math.min(150, W * 0.3);
+  const cell = Math.max(14, Math.min(40, (W - labW - 10) / n));
+  const H = labW * 0.75 + cell * n + 4;
+  const svg = frame(host, W, H);
+  const top = labW * 0.75;
+  const neg = css("--neg"), pos = css("--pos"), mid = css("--mid");
+  const pts = [];
+  keys.forEach((k, j) => {
+    el("text", { x: labW + j * cell + cell / 2, y: top - 6, transform: `rotate(-50 ${labW + j * cell + cell / 2} ${top - 6})`, class: "t2" }, svg).textContent = M[k] ? M[k].label : k;
+  });
+  keys.forEach((a, i) => {
+    el("text", { x: labW - 6, y: top + i * cell + cell / 2 + 4, "text-anchor": "end", class: "t2" }, svg).textContent = M[a] ? M[a].label : a;
+    keys.forEach((b, j) => {
+      const r = C[i][j];
+      const x = labW + j * cell, y = top + i * cell;
+      const fill = r == null ? mid : r >= 0 ? mix(mid, pos, Math.min(1, r)) : mix(mid, neg, Math.min(1, -r));
+      const rect = el("rect", { x: x + 1, y: y + 1, width: cell - 2, height: cell - 2, rx: 3, fill }, svg);
+      if (i !== j) { rect.style.cursor = "pointer"; rect.addEventListener("click", () => { setXY(b, a); $("explorer").scrollIntoView({ behavior: "smooth" }); }); }
+      if (cell >= 26 && r != null && i !== j) {
+        const t = el("text", { x: x + cell / 2, y: y + cell / 2 + 4, "text-anchor": "middle" }, svg);
+        t.textContent = r.toFixed(1).replace("0.", ".").replace("-.", "−.");
+        t.style.fill = Math.abs(r) > 0.55 ? "#ffffff" : css("--ink2");
+        t.style.pointerEvents = "none";
+      }
+      pts.push([x + cell / 2, y + cell / 2, [a, b, r]]);
+    });
+  });
+  hover(host, svg, W, pts, ([a, b, r]) => `<b>${esc(M[a] ? M[a].label : a)}</b> vs <b>${esc(M[b] ? M[b].label : b)}</b><br>r = ${r == null ? "–" : (r >= 0 ? "+" : "") + r.toFixed(2)} (${state.matrix === "within" ? "within a session" : "pooled"})`, cell * 0.7);
+}
+
+// --- along the way -------------------------------------------------------------------------
+const absT = S.session.map((s, i) => Date.parse(R.sessions[SESS.indexOf(s)].start_utc) / 1000 + S.t_s[i]);
+const t0 = Math.min(...absT);
+function along() {
+  const k = state.m, host = $("along");
+  const W = Math.max(320, host.clientWidth), H = Math.min(320, Math.max(220, W * 0.3));
+  const pad = { l: 56, r: 14, t: 10, b: 38 };
+  const idx = []; for (let i = 0; i < N; i++) if (S.moving[i] && S[k][i] != null) idx.push(i);
+  const xm = idx.map((i) => (absT[i] - t0) / 60);
+  const xs = scale(xm, pad.l, W - pad.r, 0, 1, 0.01);
+  const ys = scale(idx.map((i) => S[k][i]), H - pad.b, pad.t, 0.01, 0.99);
+  const svg = frame(host, W, H);
+  axes(svg, W, H, pad, xs, ys, "minutes since the first session started", lab(k), (v) => v, pctFmt(k));
+  const clip = el("clipPath", { id: "clipA" }, el("defs", {}, svg));
+  el("rect", { x: pad.l, y: pad.t, width: W - pad.l - pad.r, height: H - pad.t - pad.b }, clip);
+  const g = el("g", { "clip-path": "url(#clipA)" }, svg);
+  const pts = [];
+  idx.forEach((i, j) => {
+    const x = xs.s(xm[j]), y = ys.s(S[k][i]);
+    el("circle", { cx: x, cy: y, r: 2, fill: sessColor(S.session[i]), "fill-opacity": 0.3 }, g);
+    pts.push([x, y, i]);
+  });
+  // Rolling median per session (31 strokes).
+  for (const s of SESS) {
+    const si = idx.filter((i) => S.session[i] === s);
+    if (si.length < 10) continue;
+    const w = Math.min(31, Math.max(5, Math.floor(si.length / 6)) | 1);
+    let d = "";
+    for (let j = 0; j < si.length; j++) {
+      const win = si.slice(Math.max(0, j - (w >> 1)), j + (w >> 1) + 1).map((i) => S[k][i]);
+      const x = xs.s((absT[si[j]] - t0) / 60), y = ys.s(median(win));
+      d += (j ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1);
+    }
+    el("path", { d, fill: "none", stroke: "var(--surface)", "stroke-width": 5, "stroke-linejoin": "round" }, g);
+    el("path", { d, fill: "none", stroke: sessColor(s), "stroke-width": 2, "stroke-linejoin": "round" }, g);
+  }
+  $("along-legend").innerHTML = SESS.map((s) => `<span><span class="sw" style="background:${sessColor(s)}"></span>${esc(s)} · ${esc(footName(sessFoot[s]))}</span>`).join("") +
+    `<span>line: running median of ~31 strokes</span>`;
+  $("along-note").textContent = M[k] && M[k].about ? M[k].about : "";
+  hover(host, svg, W, pts, (i) => strokeTip(i, [k]));
+}
+
+// --- map ------------------------------------------------------------------------------------
+function map() {
+  const k = state.m, host = $("map");
+  const idx = []; for (let i = 0; i < N; i++) if (S.moving[i] && S.lat && S.lat[i] != null && S[k][i] != null) idx.push(i);
+  if (!idx.length) { host.innerHTML = `<p class="note">No GPS positions.</p>`; $("map-legend").innerHTML = ""; return; }
+  const lat0 = median(idx.map((i) => S.lat[i])), c = Math.cos(lat0 * Math.PI / 180);
+  const X = (i) => S.lon[i] * c * 111320, Y = (i) => S.lat[i] * 110540;
+  const xsr = idx.map(X), ysr = idx.map(Y);
+  const minx = Math.min(...xsr), maxx = Math.max(...xsr), miny = Math.min(...ysr), maxy = Math.max(...ysr);
+  const W = Math.max(320, host.clientWidth);
+  const spanX = Math.max(maxx - minx, 50), spanY = Math.max(maxy - miny, 50);
+  const H = Math.min(640, Math.max(260, W * spanY / spanX));
+  const pad = 18;
+  const sc = Math.min((W - 2 * pad) / spanX, (H - 2 * pad) / spanY);
+  const ox = (W - sc * (maxx - minx)) / 2, oy = (H - sc * (maxy - miny)) / 2;
+  const svg = frame(host, W, H);
+  const vals = idx.map((i) => S[k][i]);
+  const v0 = quantile(vals, 0.05), v1 = quantile(vals, 0.95);
+  const steps = ["--q0", "--q1", "--q2", "--q3", "--q4", "--q5", "--q6"].map(css);
+  const colorOf = (v) => steps[Math.max(0, Math.min(6, Math.round((v - v0) / ((v1 - v0) || 1) * 6)))];
+  const lane = 5; // px to the right of travel
+  const pts = [];
+  // 100 m scale bar.
+  const bar = 100 * sc >= 30 ? 100 : 500;
+  el("line", { x1: pad, x2: pad + bar * sc, y1: H - 8, y2: H - 8, stroke: "var(--muted)", "stroke-width": 2 }, svg);
+  el("text", { x: pad + bar * sc + 6, y: H - 4 }, svg).textContent = `${bar} m`;
+  idx.forEach((i, j) => {
+    let x = ox + (xsr[j] - minx) * sc, y = oy + (maxy - ysr[j]) * sc;
+    const b = S.bearing_deg ? S.bearing_deg[i] : null;
+    if (b != null) { const r = (b + 90) * Math.PI / 180; x += lane * Math.sin(r); y -= lane * Math.cos(r); }
+    el("circle", { cx: x, cy: y, r: 3, fill: colorOf(S[k][i]) }, svg);
+    pts.push([x, y, i]);
+  });
+  const ramp = `linear-gradient(90deg, ${steps.join(",")})`;
+  $("map-legend").innerHTML = `<span>${esc(lab(k))}: ${fmt(k, v0)}<span class="ramp" style="background:${ramp}"></span>${fmt(k, v1)} (5th to 95th percentile) · north up</span>`;
+  hover(host, svg, W, pts, (i) => strokeTip(i, [k]), 14);
+}
+
+// --- tables --------------------------------------------------------------------------------
+function pairsTable() {
+  if (!R.pairs.length) { $("pairs-card").querySelector(".tw").innerHTML = `<p class="note">No two sessions here cover the same ground.</p>`; return; }
+  const keys = ["speed_kmh", "push_rate_spm", "dist_per_push_m", "contact_frac", "setdown_g", "pushoff_g", "swing_dps", "out_cm", "push_speed_mps", "edge_deg", "splay_deg", "road_vib_g"].filter((k) => M[k]);
+  let h = `<tr><th class="l">measure</th>` + R.pairs.map((p) => `<th>${esc(p.a)} → ${esc(p.b)}<br><span style="font-weight:400">${esc(p.direction)}, ${p.places} strokes, ${(p.overlap_m / 1000).toFixed(1)} km</span></th>`).join("") + `</tr>`;
+  for (const k of keys) {
+    h += `<tr><td class="l">${esc(M[k].label)}</td>` + R.pairs.map((p) => {
+      const a = p[k + "_a"], b = p[k + "_b"];
+      if (a == null || b == null) return "<td>–</td>";
+      const ch = a ? (100 * (b - a) / Math.abs(a)) : NaN;
+      return `<td>${fmt(k, a)} → ${fmt(k, b)} <b>${isFinite(ch) ? (ch >= 0 ? "+" : "−") + Math.abs(ch).toFixed(0) + " %" : ""}</b></td>`;
+    }).join("") + `</tr>`;
+  }
+  $("pairs").innerHTML = h;
+}
+function atTable() {
+  const A = R.at_speed;
+  $("at-note").textContent = `Each session's median moved to ${A.speed_kmh.toFixed(1)} km/h along how the measure changes with speed within a session. ` +
+    `Speed changes almost everything, so this is the fair way to compare sessions skated at different speeds. Distance per push at one speed is the cleanest efficiency number: the same speed with fewer pushes.`;
+  const keys = R.corr_keys.filter((k) => k !== "speed_kmh" && k !== "period_s" && k !== "accel_kmh_s");
+  let h = `<tr><th class="l">measure</th>` + A.rows.map((r) => `<th><span class="sw" style="background:${sessColor(r.session)}"></span>${esc(r.session)}</th>`).join("") + `</tr>`;
+  h += `<tr><td class="l">actual median speed</td>` + A.rows.map((r) => `<td>${fmt("speed_kmh", r.speed_kmh)}</td>`).join("") + `</tr>`;
+  for (const k of keys) h += `<tr><td class="l">${esc(M[k].label)}</td>` + A.rows.map((r) => `<td>${fmt(k, r[k])}</td>`).join("") + `</tr>`;
+  $("at").innerHTML = h;
+}
+function coastsBox() {
+  if (!R.coasts.length) { $("coasts").innerHTML = `<p class="note">No coasting of 3 s or more above 8 km/h in these sessions.</p>`; return; }
+  let h = `<div class="tw"><table><tr><th class="l">session</th><th>at</th><th>for</th><th>speed</th><th>slowing</th><th>heading</th></tr>`;
+  for (const c of R.coasts) h += `<tr><td class="l"><span class="sw" style="background:${sessColor(c.session)}"></span>${esc(c.session)}</td><td>${(c.t_s / 60).toFixed(1)} min</td><td>${c.duration_s.toFixed(1)} s</td><td>${c.speed_kmh.toFixed(1)} km/h</td><td>${c.decel_kmh_s.toFixed(2)} km/h/s</td><td>${Math.round(c.bearing_deg)}°</td></tr>`;
+  $("coasts").innerHTML = h + `</table></div><p class="note">GPS speed is only good to about ±0.5 km/h, so a coast needs about 5 s to say much.</p>`;
+}
+function glossary() {
+  $("glossary").innerHTML = R.measures.filter((m) => m.about).map((m) => `<dt>${esc(m.label)}</dt><dd>${esc(m.about)}</dd>`).join("");
+}
+
+// --- wiring ---------------------------------------------------------------------------------
+function options(sel, keys, v) {
+  sel.innerHTML = keys.map((k) => `<option value="${k}">${esc(lab(k))}</option>`).join("");
+  sel.value = v;
+}
+function drawAll() { scatter(); matrix(); along(); map(); }
+function init() {
+  $("title").textContent = R.title;
+  const n = S.session.filter((_, i) => S.moving[i]).length;
+  $("subtitle").textContent = `${R.sessions.length} session${R.sessions.length > 1 ? "s" : ""}, ${n} strokes of the tag's foot, ` +
+    `${R.sessions.reduce((a, s) => a + (s.distance_km || 0), 0).toFixed(1)} km`;
+  const keys = R.measures.map((m) => m.key).filter((k) => S[k]);
+  if (!S[state.x]) state.x = keys[1]; if (!S[state.y]) state.y = keys[0];
+  options($("sx"), keys, state.x); options($("sy"), keys, state.y);
+  options($("sm"), keys.filter((k) => k !== "t_min"), state.m);
+  $("sx").onchange = (e) => { state.x = e.target.value; scatter(); };
+  $("sy").onchange = (e) => { state.y = e.target.value; scatter(); };
+  $("sc").onchange = (e) => { state.c = e.target.value; scatter(); };
+  $("within").onchange = (e) => { state.within = e.target.checked; scatter(); };
+  $("swap").onclick = () => setXY(state.y, state.x);
+  $("sm").onchange = (e) => { state.m = e.target.value; along(); map(); };
+  for (const w of ["within", "pooled"]) $("m-" + w).onclick = () => {
+    state.matrix = w; $("m-within").classList.toggle("on", w === "within"); $("m-pooled").classList.toggle("on", w === "pooled"); matrix();
+  };
+  sessionsTable(); findingsList(); pairsTable(); atTable(); coastsBox(); glossary();
+  drawAll();
+  let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(drawAll, 120); }).observe(document.querySelector("main"));
+  window.bladetag = { R, state, drawAll };
+}
+init();
+</script>
+</body>
+</html>
