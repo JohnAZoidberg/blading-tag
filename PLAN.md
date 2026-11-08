@@ -227,6 +227,17 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
 - Is 200 Hz enough, or does push onset need more? Check against the raw data
   from phase 4.
 - Frame vs. cuff mount: compare both in an early session.
+- **When should a new image confirm itself?** Today `main.c` confirms as soon
+  as Bluetooth is up. An image that gets that far but then can't be reached
+  (no advertising, broken connections) is kept, and only a J-Link can fix it.
+  That happened once, with the advertising restart loop fixed in c6902e3.
+  Proposal: confirm on the first BLE connection instead, which proves a host
+  can reach the tag. `host/ota.py` already reconnects after the reset and
+  waits for "confirmed", so the update flow doesn't change. ("Advertising
+  started" isn't enough: in c6902e3 it started and then kept restarting.)
+  Cost: if the tag resets or sleeps before anyone connects, the update is
+  lost. Waking from System OFF is a reset, so idle sleep and the 2 s button
+  hold would have to wait (or warn) while the image isn't confirmed.
 
 Settled:
 
