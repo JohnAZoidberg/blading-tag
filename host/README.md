@@ -173,13 +173,20 @@ The model is only meant to exercise the code. Don't tune thresholds on it.
 | `faketag.py` | in-process fake tag implementing the protocol state machine |
 | `sim.py` | synthetic skating sessions |
 | `explore.py` | raw-signal exploration: per-sample table, overview, spectra |
+| `explore_html.py`, `explore_overview.html` | `explore --html`: the overview as one self-contained page |
+| `walking.py` | stride length when walking (zero-velocity updates at foot plants) |
+| `jlink.py` | J-Link test hook driver for the hardware tests |
 | `analysis.py`, `plots.py` | analysis v1 and its plots |
 | `liveplot.py` | live plot during recording |
 | `cli.py` | the `bladetag` command |
 
 ```sh
-pytest           # protocol vectors, session round-trip, recorder against the fake tag, analysis vs sim truth, explore
+pytest           # protocol vectors, session round-trip, recorder against the fake tag, analysis vs sim truth, explore, walking
 ```
+
+The hardware tests in `tests/hw/` run against a real tag with a J-Link
+(`make build-test ota-test test-hw` from the repo root) and are skipped
+otherwise. See [tests/hw/README.md](tests/hw/README.md).
 
 ## Not done yet
 

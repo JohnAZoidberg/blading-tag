@@ -9,11 +9,12 @@ a coin-cell board about the size of a coin, with a motion sensor
 skate with your Android phone in your pocket. The phone records the tag's data
 together with GPS, and you look at the results afterwards.
 
-> **Status: early.** The firmware streams the motion data over Bluetooth and
-> updates over Bluetooth. The laptop recorder works with a real tag. The
-> Android app and the analysis are built but only tested with simulated data,
-> and there hasn't been a real skate session yet. See [PLAN.md](PLAN.md) for
-> details and progress.
+> **Status: early.** The firmware streams the motion data over Bluetooth,
+> updates over Bluetooth, and goes to sleep when it's not used. The laptop
+> recorder and the Android app both record from a real tag, so far on walks
+> with the tag on the ankle. The analysis runs on those recordings, but there
+> hasn't been a real skate session yet to tune it on. See [PLAN.md](PLAN.md)
+> for details and progress.
 
 ## What it will do
 

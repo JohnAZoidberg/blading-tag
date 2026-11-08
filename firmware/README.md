@@ -19,10 +19,9 @@ What it does:
 - Advertises state, position and battery. Advertising is every 1 s in READY,
   and every ~100 ms while recording without a link, so the app reconnects
   quickly.
-- Goes to System OFF on SLEEP or a 2 s button hold. ADXL367 motion or the
-  button is meant to wake it. **This is still being debugged**, see
-  [Power states: status](#power-states-status). The 10 min idle sleep is off
-  (`CONFIG_BLADING_IDLE_SLEEP_S=0`) until it works.
+- Goes to System OFF on SLEEP, a 2 s button hold, or after 10 min idle
+  (`CONFIG_BLADING_IDLE_SLEEP_S`; off in test builds). ADXL367 motion or the
+  button wakes it. See [Power states: status](#power-states-status).
 - Accepts firmware updates over BLE (MCUboot + mcumgr/SMP), and confirms its
   image once Bluetooth is up.
 

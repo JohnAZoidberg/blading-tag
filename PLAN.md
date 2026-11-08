@@ -117,8 +117,8 @@ while advertising in READY. That's cheap because the tag sleeps after 10 min
 idle (`BLADING_IDLE_SLEEP_S`). The ~10 mA TX peaks are harder on an
 old or cold coin cell.
 
-The factory firmware is not power-optimised. Take the coin cell out between
-uses until our firmware is on the tag.
+The factory firmware is not power-optimised, so take the coin cell out of a
+tag that still runs it. Our firmware sleeps on its own after 10 min idle.
 
 ## Interfaces
 
@@ -146,9 +146,12 @@ Built the same way as `../hid-remapper-private`:
   - `make build`: pristine sysbuild of MCUboot + app
   - `make ota`: `host/ota.py` (uv script, smpclient). It uploads in test
     mode, resets, and checks that the new image runs and confirmed itself
-  - `make flash`: `nrfutil` over J-Link (recovery only); `make recover`
-    unlocks and erases a tag whose debug port is protected
-  - `make build-test ota-test test-hw`: hardware tests (firmware/README.md)
+  - `make image-state`, `make reset`: show the image slots, reset over SMP
+  - `make flash`: `nrfutil` over J-Link, MCUboot (erasing the chip) and then
+    the signed app (recovery only)
+  - `make recover`: unlock and erase a tag whose debug port is protected
+  - `make build-test ota-test test-hw`: hardware tests, with firmware that
+    has the J-Link test hook (`firmware/test.conf`); see firmware/README.md
 - **OTA from the phone:** nRF Connect Device Manager with `dfu_application.zip`.
 - **OTA config:**
   - `prj.conf`: `CONFIG_NCS_SAMPLE_MCUMGR_BT_OTA_DFU=y`; the app calls
@@ -202,7 +205,8 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
 - [ ] **5. Android logger**: Kotlin foreground service. Connects, starts and
       stops recording, logs IMU + GPS, exports files. First test the stream
       with nRF Connect.
-      *Built and tested with the simulated tag. Still to do: a real tag.*
+      *Built and recording from the real tag: two walks with GPS on
+      2026-11-07, tag on the ankle. Still to do: a skate session.*
 - [ ] **6. Analysis v1**: push detection and push rate, push/glide split,
       distance per push, fatigue drift over the session.
       *Built and checked on simulated sessions. Still to do: tune the

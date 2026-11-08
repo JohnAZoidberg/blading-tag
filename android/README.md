@@ -15,8 +15,8 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    **Stop** ends a recording that something else started (another phone,
    the laptop, or the tag's button) and drops what the tag still buffers.
    **Sleep** puts a tag that isn't recording into System OFF. It stops
-   advertising and drops off the list until its button wakes it (later also
-   motion; see [../firmware/README.md](../firmware/README.md#power-states-status)).
+   advertising and drops off the list until moving the tag or pressing its
+   button wakes it (see [../firmware/README.md](../firmware/README.md#power-states-status)).
 2. Tick one tag, or two, and press **Start recording**. Stand still for 2 s,
    then skate. The phone can go in your pocket with the screen off. The
    recording runs in a foreground service, and its notification has a Stop
@@ -73,7 +73,8 @@ phone, which `make pull` reads over adb.
 - Tested on a Fairphone 6 (Android 16) with the simulated tag: a recording
   with the screen off had no gaps, and the files decode with `host/`'s
   `bladetag.protocol`.
-- **Not tested against a real tag yet.** Firmware 0.2.0 implements the
-  protocol and works with the laptop recorder, so `GattTag` is next.
+- Records from the real tag: two walks with GPS on 2026-11-07 (tag on the
+  ankle), plus Stop on a recording the laptop started. No skate session
+  yet.
 - Not done yet: live push rate, firmware updates from the app (use nRF
   Connect Device Manager for now), START parameters other than the defaults.
