@@ -52,6 +52,8 @@ class MainActivity : Activity() {
     private val io = Executors.newSingleThreadExecutor()
     private val found = LinkedHashMap<String, Found>()
     private val selected = LinkedHashSet<String>()
+    /** Set once the user ticks or unticks a tag; stops [autoSelect]. */
+    private var userPicked = false
     private val rowText = HashMap<String, TextView>()
     /** Per tag: the Stop and Sleep buttons, enabled by advertised state. */
     private val powerButtons = HashMap<String, Pair<Button, Button>>()
@@ -395,6 +397,7 @@ class MainActivity : Activity() {
                     b.isChecked = false
                     toast("At most two tags")
                 } else if (on) selected.add(f.address) else selected.remove(f.address)
+                userPicked = true
                 startButton.isEnabled = selected.isNotEmpty()
                 standbyButton.isEnabled = selected.any { it != SimulatedTag.ADDRESS }
             }
@@ -484,6 +487,7 @@ class MainActivity : Activity() {
         RecorderService.start(this, selected.toList(), gps = gpsBox.isChecked && hasLocation())
         rememberTags()
         selected.clear()
+        userPicked = false
         ui.postDelayed({ refresh() }, 200)
     }
 
@@ -496,12 +500,27 @@ class MainActivity : Activity() {
         RecorderService.standby(this, tags, gps = gpsBox.isChecked && hasLocation())
         rememberTags()
         selected.clear()
+        userPicked = false
         ui.postDelayed({ refresh() }, 200)
     }
 
-    /** Tick the same tags again next time they show up. */
+    /** Prefer the same tags next time, see [autoSelect]. */
     private fun rememberTags() {
         prefs().edit().putStringSet(PREF_TAGS, selected.filter { it != SimulatedTag.ADDRESS }.toSet()).apply()
+    }
+
+    /**
+     * Tick tags as they show up, so the usual case is just pressing Start.
+     * At most two; a tag used last time takes the place of one that wasn't.
+     */
+    private fun autoSelect(addr: String) {
+        if (userPicked) return
+        val remembered = prefs().getStringSet(PREF_TAGS, emptySet())!!
+        if (selected.size < 2) selected.add(addr)
+        else if (addr in remembered) selected.firstOrNull { it !in remembered }?.let {
+            selected.remove(it)
+            selected.add(addr)
+        }
     }
 
     // ---- scanning -----------------------------------------------------------
@@ -510,7 +529,7 @@ class MainActivity : Activity() {
         override fun onScanResult(callbackType: Int, r: ScanResult) {
             val addr = r.device.address
             val f = found.getOrPut(addr) {
-                if (addr in prefs().getStringSet(PREF_TAGS, emptySet())!! && selected.size < 2) selected.add(addr)
+                autoSelect(addr)
                 Found(addr, r.scanRecord?.deviceName ?: r.device.name ?: "BladeTag-" +
                     addr.takeLast(5).replace(":", ""))
             }

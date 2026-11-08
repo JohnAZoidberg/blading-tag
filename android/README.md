@@ -18,7 +18,9 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    **Sleep** puts a tag that isn't recording into System OFF. It stops
    advertising and drops off the list until moving the tag or pressing its
    button wakes it (see [../firmware/README.md](../firmware/README.md#power-states-status)).
-2. Tick one tag, or two, and press **Start recording**. Stand still for 2 s,
+2. Tags in range are ticked as they show up (at most two, preferring the
+   ones used last time), so usually you just press **Start recording**.
+   Tick or untick to choose others. Stand still for 2 s,
    then skate. The phone can go in your pocket with the screen off. The
    recording runs in a foreground service, and its notification has a Stop
    button. Untick **Record GPS** to record without location. The session
@@ -41,7 +43,7 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    tag ends the session, and the app goes back to waiting. **Leave standby**
    (in the app or the notification) ends it. Arm it while the app is open:
    Android only lets a foreground service use GPS from the background if it
-   was started from the foreground. The ticked tags are remembered.
+   was started from the foreground.
 6. Under **Sessions**, **Edit** changes a session's description and each
    tag's body location, **Share** zips a session into
    `Downloads/blading-tag/` and opens the share sheet, and **Delete** removes
