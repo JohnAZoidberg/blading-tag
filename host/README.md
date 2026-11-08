@@ -276,12 +276,12 @@ out and on the right foot back) showed:
 
 - Speed went with distance per push (r = +0.81 within a session), not with push
   rate (+0.03). Faster strokes were longer, not quicker.
-- A quicker cadence came with a narrower push (outward reach r = −0.86) and
+- A quicker cadence came with a narrower push (outward reach r = −0.85) and
   a harder kick (+0.38). Neither the kick (−0.03) nor the landing (−0.06)
-  changed the distance per push; a faster outward push speed did (+0.53).
+  changed the distance per push; a faster outward push speed did (+0.52).
 - Landings were soft (1.8 g median); the push-off kick was about 6 g.
 - Coming back on the same 2.2 km: 17 % slower at 4 % lower push rate, with
-  19 % wider pushes and 19 % harder kicks. The speed alone means at least
+  17 % wider pushes and 19 % harder kicks. The speed alone means at least
   ~3 km/h of wind. The tag changed feet at the turn, so left vs right can't be
   separated from the direction; next time keep one foot for a whole
   out-and-back.
