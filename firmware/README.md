@@ -55,6 +55,7 @@ and MCUboot reverts to the previous image.
 |---|---|
 | Green blip every 2 s | Recording, connected |
 | Yellow blip every 1 s | Recording into the buffer, no link |
+| Red blip every 1 s | Same, but the buffer is full: samples are being dropped |
 | Blue blinking | IDENTIFY |
 | Short press | Start recording (green flash) or stop (red flash) |
 | Hold 2 s (red flash), release | System OFF |

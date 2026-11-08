@@ -14,6 +14,7 @@ static const struct gpio_dt_spec leds[] = {
 
 static struct k_spinlock lock;
 static enum led_mode mode;
+static bool dropping;
 static int64_t flash_until;
 static uint8_t flash_colors;
 static int64_t identify_until;
@@ -48,7 +49,9 @@ static void tick_fn(struct k_work *work)
 		int64_t ph = now % period;
 
 		if (ph < BLIP_MS) {
-			colors = mode == LED_MODE_RECORDING ? LED_GREEN : LED_YELLOW;
+			colors = mode == LED_MODE_RECORDING ? LED_GREEN
+				 : dropping		     ? LED_RED
+							     : LED_YELLOW;
 			next = BLIP_MS - ph;
 		} else {
 			next = period - ph;
@@ -76,6 +79,18 @@ void led_set_mode(enum led_mode m)
 	mode = m;
 	k_spin_unlock(&lock, key);
 	k_work_reschedule(&tick_work, K_NO_WAIT);
+}
+
+void led_set_dropping(bool d)
+{
+	k_spinlock_key_t key = k_spin_lock(&lock);
+	bool changed = dropping != d;
+
+	dropping = d;
+	k_spin_unlock(&lock, key);
+	if (changed) {
+		k_work_reschedule(&tick_work, K_NO_WAIT);
+	}
 }
 
 void led_flash(uint8_t colors, uint16_t ms)

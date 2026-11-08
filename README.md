@@ -70,7 +70,9 @@ Some details:
 
 The other LED patterns: a green blip every 2 s means recording and connected,
 a yellow blip every 1 s means recording without a connection (into the
-buffer), and blue blinking means the app asked the tag to identify itself.
+buffer), a red blip every 1 s means the same but the buffer is full and
+samples are being lost, and blue blinking means the app asked the tag to
+identify itself (the app does that for 2 s when it joins a recording).
 
 ## Repo layout
 

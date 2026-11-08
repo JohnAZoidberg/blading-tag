@@ -224,6 +224,8 @@ static void state_changed_locked(void)
 	if (app.state == PROTO_STATE_RECORDING) {
 		mode = app.connected ? LED_MODE_RECORDING : LED_MODE_BUFFERING;
 	}
+	/* imu_batch() sets it again if the buffer is still full. */
+	led_set_dropping(false);
 	led_set_mode(mode);
 	ble_adv_refresh();
 	if (app.connected) {
@@ -253,6 +255,11 @@ static void imu_batch(const struct imu6 *s, uint32_t n, uint32_t index, uint64_t
 	samples_recorded += n + lost;
 	samples_dropped += (n - stored) + lost;
 	k_mutex_unlock(&sb_lock);
+
+	if (stored < n) {
+		/* Only visible while buffering without a link. */
+		led_set_dropping(true);
+	}
 
 	app_kick();
 }
