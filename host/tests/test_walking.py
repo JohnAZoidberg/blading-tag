@@ -8,10 +8,20 @@ from bladetag.explore import ACCEL, GYRO
 G = 9.80665
 
 
-def synthetic_walk(stride_m=1.4, period_s=1.1, n_strides=20, fs=200.0, rest_s=3.0, seed=0):
+def _realistic_pitch(u):
+    """Toes down to about -60° after toe-off, up to +20° at u = 0.8, where
+    the heel strikes. 0 at both ends, as the foot is flat in stance."""
+    return np.radians(np.sin(np.pi * u) ** 2 * (-201 + 324 * u))
+
+
+def synthetic_walk(stride_m=1.4, period_s=1.1, n_strides=20, fs=200.0, rest_s=3.0, seed=0,
+                   realistic=False):
     """An ankle tag: planted for 60 % of each stride, then it swings forward
     by ``stride_m``, lifting 10 cm and pitching up to 35°, mounted at a
-    random angle, with sensor noise and a gyro bias."""
+    random angle, with sensor noise and a gyro bias.
+
+    With ``realistic``, the pitch follows :func:`_realistic_pitch` instead
+    and the heel strikes with a 3 g jolt at 80 % of the swing."""
     rng = np.random.default_rng(seed)
     t = np.arange(0, rest_s + n_strides * period_s + 0.7 * period_s, 1 / fs)
     swing = 0.4 * period_s
@@ -25,8 +35,16 @@ def synthetic_walk(stride_m=1.4, period_s=1.1, n_strides=20, fs=200.0, rest_s=3.
         u, w = ph / swing, 2 * np.pi / swing
         acc_w[k, 0] = stride_m / swing**2 * 2 * np.pi * np.sin(2 * np.pi * u)
         acc_w[k, 2] = 0.05 * w**2 * np.cos(2 * np.pi * u)
-        theta[k] = 0.6 * np.sin(np.pi * u) ** 2
+        # Rotating about +y turns the toes down, so toes-up pitch is -theta.
+        theta[k] = -_realistic_pitch(u) if realistic else 0.6 * np.sin(np.pi * u) ** 2
         omega[k] = 0.6 * np.pi / swing * np.sin(2 * np.pi * u)
+    if realistic:
+        omega = np.gradient(theta, 1 / fs)
+        ph = (t - rest_s) % period_s - 0.6 * period_s
+        hit = np.nonzero((t >= rest_s) & (np.abs(ph - 0.8 * swing) < 0.5 / fs)
+                         & ((t - rest_s) // period_s < n_strides))[0]
+        acc_w[hit, 2] += 3 * G       # up, then down again: no net change in speed
+        acc_w[hit + 1, 2] -= 3 * G
     f_w = acc_w + [0, 0, G]
     c, s = np.cos(theta), np.sin(theta)
     # Pitch about y: body = Ry(theta)^T world.
@@ -54,6 +72,21 @@ def test_stride_length_from_synthetic_walk():
     assert st["period_s"].median() == pytest.approx(1.1, abs=0.02)
     assert st["dz_m"].abs().median() < 0.05
     assert st["speed_kmh"].median() == pytest.approx(1.4 / 1.1 * 3.6, rel=0.05)
+
+
+def test_gait_measures_from_synthetic_walk():
+    df, fs = synthetic_walk(realistic=True)
+    st = walking.strides(df, fs)
+    assert len(st) >= 18
+    assert st["stride_m"].median() == pytest.approx(1.4, rel=0.05)
+    u = np.linspace(0, 1, 1001)
+    assert st["strike_deg"].median() == pytest.approx(np.degrees(_realistic_pitch(0.8)), abs=3)
+    assert st["toeoff_deg"].median() == pytest.approx(np.degrees(_realistic_pitch(u)).min(), abs=3)
+    assert st["impact_g"].median() > 3
+    assert st["lift_cm"].median() == pytest.approx(10, abs=1.5)
+    # Swing from the fastest pitch-down to the jolt, about 0.15-0.8 of the 0.44 s swing.
+    assert 0.25 < st["swing_s"].median() < 0.4
+    assert 60 < st["stance_pct"].median() < 80
 
 
 def test_strides_dont_cross_gaps():
@@ -90,3 +123,25 @@ def test_html_has_step_panel_data():
     assert len(meta["strides"]["t"]) == len(st)
     assert np.median(meta["strides"]["step"]) == pytest.approx(0.7, rel=0.03)
     assert "strides" not in payload(df, fs)[0]
+
+
+def test_compare_at_common_speed():
+    a = walking.strides(synthetic_walk(realistic=True, n_strides=30)[0], 200.0)
+    b = walking.strides(synthetic_walk(realistic=True, n_strides=30, seed=1)[0], 200.0)
+    c = walking.strides(synthetic_walk(realistic=True, n_strides=30, stride_m=1.2, seed=2)[0], 200.0)
+    per, groups, speed = walking.compare([("A", "a1", a), ("A", "a2", b), ("B", "c", c)], band_kmh=2)
+    assert list(groups["group"]) == ["A", "B"]
+    assert list(groups["sessions"]) == [2, 1]
+    assert groups.loc[0, "strike_deg"] == pytest.approx(20, abs=3)
+    assert groups.loc[0, "sd_strike_deg"] < 1
+    assert "sd_strike_deg" not in groups.columns or pd.isna(groups.loc[1, "sd_strike_deg"])
+    # Shorter strides at the same period are slower, so far from the common speed.
+    assert per.loc[2, "stride_m"] < per.loc[0, "stride_m"]
+    text = walking.format_compare(per, groups, speed)
+    assert "between walks" in text and "a2" in text
+
+
+def test_at_speed_needs_enough_strides():
+    st = walking.strides(synthetic_walk(realistic=True)[0], 200.0)
+    r = walking.at_speed(st, 20.0)
+    assert r["n"] == 0 and np.isnan(r["strike_deg"])

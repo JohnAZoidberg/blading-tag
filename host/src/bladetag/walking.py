@@ -95,9 +95,11 @@ def strides(df: pd.DataFrame, fs: float, still: np.ndarray | None = None, p: Par
     Columns: t_s (the plant it starts at), period_s, stride_m (horizontal
     distance to the next plant), step_m (half of that), speed_kmh, dz_m
     (height change over the stride; should be about 0 on the flat, so it
-    shows how well the integration worked).
+    shows how well the integration worked), and the gait measures from
+    :func:`_gait`: stance_pct, swing_s, strike_deg, toeoff_deg, impact_g,
+    lift_cm, swing_dps.
     """
-    cols = ["t_s", "period_s", "stride_m", "step_m", "speed_kmh", "dz_m"]
+    cols = ["t_s", "period_s", "stride_m", "step_m", "speed_kmh", "dz_m", *GAIT_COLUMNS]
     if len(df) < 2:
         return pd.DataFrame(columns=cols)
     still = still_mask(df, fs) if still is None else still
@@ -122,10 +124,67 @@ def strides(df: pd.DataFrame, fs: float, still: np.ndarray | None = None, p: Par
         aw = np.einsum("kij,kj->ki", rs, acc[i0:i1 + 1]) - [0.0, 0.0, G]
         v = np.concatenate([[np.zeros(3)], np.cumsum(0.5 * (aw[1:] + aw[:-1]) * dt, axis=0)])
         v -= np.outer(np.linspace(0, 1, len(v)), v[-1])
-        disp = (0.5 * (v[1:] + v[:-1]) * dt).sum(axis=0)
+        pos = np.concatenate([[np.zeros(3)], np.cumsum(0.5 * (v[1:] + v[:-1]) * dt, axis=0)])
+        disp = pos[-1]
         length = float(np.hypot(disp[0], disp[1]))
-        rows.append((t[i0], period, length, length / 2, length / period * 3.6, float(disp[2])))
+        gait = _gait(rs, v, pos, df["a_mag"].to_numpy()[i0:i1 + 1], df["g_mag"].to_numpy()[i0:i1 + 1], dt)
+        rows.append((t[i0], period, length, length / 2, length / period * 3.6, float(disp[2]), *gait))
     return pd.DataFrame(rows, columns=cols)
+
+
+GAIT_COLUMNS = ["stance_pct", "swing_s", "strike_deg", "toeoff_deg", "impact_g", "lift_cm", "swing_dps"]
+
+
+def _gait(rs: np.ndarray, v: np.ndarray, pos: np.ndarray, a_mag: np.ndarray, g_mag: np.ndarray,
+          dt: float) -> tuple[float, ...]:
+    """Gait measures for one stride, from plant to plant (mid-stance to
+    mid-stance), in the level frame of :func:`strides`.
+
+    The foot's pitch is tracked as the angle of its forward direction (the
+    direction of travel, since the foot is flat at the plant) above the
+    horizontal: positive is toes up. Gyro drift over the stride is removed
+    by making the pitch 0 again at the next plant.
+
+    * Toe-off is where the foot pitches down fastest before the swing, heel
+      strike the biggest |a| (the impact) after the fastest point of the
+      swing. Between them is the swing; the rest of the stride is stance.
+    * strike_deg: pitch at heel strike. About +15 to +25° for a heel strike,
+      near 0 flat-footed, negative landing on the forefoot.
+    * toeoff_deg: lowest pitch around toe-off (negative, heel up).
+    * impact_g: |a| at heel strike, a rough measure of how hard the landing
+      is. Sampling at 200 Hz cuts the peak short, so compare it only
+      between sessions with the same rate and the same mounting.
+    * lift_cm: highest point of the tag over the line between the plants.
+    * swing_dps: fastest rotation in the swing.
+
+    The angles describe the foot only when the tag sits on the shoe; on the
+    shin they're the shin's angles, still fine for comparing shoes as long
+    as the tag is worn the same way.
+    """
+    nan = (np.nan,) * len(GAIT_COLUMNS)
+    n = len(v)
+    horiz = np.hypot(pos[-1, 0], pos[-1, 1])
+    if n < 10 or horiz < 0.2:
+        return nan
+    fwd = np.array([pos[-1, 0] / horiz, pos[-1, 1] / horiz, 0.0])
+    # The foot's forward direction, fixed in the body frame at the plant
+    # (where it's level along the direction of travel), followed through the stride.
+    u = np.einsum("kij,j->ki", rs, rs[0].T @ fwd)
+    pitch = np.degrees(np.unwrap(np.arctan2(u[:, 2], u @ fwd)))
+    pitch -= np.linspace(0, 1, n) * pitch[-1]
+    rate = np.gradient(pitch, dt)
+    peak = int(np.argmax(np.hypot(v[:, 0], v[:, 1])))
+    if not 2 < peak < n - 3:
+        return nan
+    to = int(np.argmin(rate[:peak]))
+    hs = peak + int(np.argmax(a_mag[peak:]))
+    swing = (hs - to) * dt
+    period = (n - 1) * dt
+    lo = max(0, to - int(0.1 / dt))
+    toeoff = float(pitch[lo:peak].min())
+    rel = pos[:, 2] - np.linspace(0, 1, n) * pos[-1, 2]
+    return (100 * (1 - swing / period), swing, float(pitch[hs]), toeoff, float(a_mag[hs]),
+            100 * float(rel.max()), float(g_mag[to:hs + 1].max()))
 
 
 def describe(st: pd.DataFrame, gps: pd.DataFrame | None = None) -> list[str]:
@@ -138,6 +197,14 @@ def describe(st: pd.DataFrame, gps: pd.DataFrame | None = None) -> list[str]:
              f" {60 / st['period_s'].median():.1f} strides/min",
              f"    speed         {st['speed_kmh'].median():.1f} km/h median, {st['stride_m'].sum():.0f} m in strides;"
              f" height error {100 * st['dz_m'].median():+.1f} cm per stride (ideally 0)"]
+    g = st.dropna(subset=["strike_deg"])
+    if len(g):
+        m = g.median(numeric_only=True)
+        lines += [f"    gait          stance {m['stance_pct']:.0f} % of the stride, swing {m['swing_s']:.2f} s;"
+                  f" foot pitch {m['strike_deg']:+.0f}° at heel strike, {m['toeoff_deg']:+.0f}° at toe-off"
+                  f" (+ = toes up)",
+                  f"    landing       {m['impact_g']:.1f} g at heel strike; the tag lifts {m['lift_cm']:.0f} cm"
+                  f" in the swing, turning at up to {m['swing_dps']:.0f} dps"]
     if gps is not None and len(gps) >= 2:
         a, b = st["t_s"].to_numpy(), (st["t_s"] + st["period_s"]).to_numpy()
         m = (a >= gps["t_s"].iloc[0]) & (b <= gps["t_s"].iloc[-1])
@@ -148,3 +215,104 @@ def describe(st: pd.DataFrame, gps: pd.DataFrame | None = None) -> list[str]:
             lines.append(f"    vs GPS        {st['stride_m'][m].sum():.0f} m by the tag, {d_gps:.0f} m by GPS speed"
                          f" over the same strides{acc}")
     return lines
+
+
+# --- Comparing sessions (e.g. shoes) -----------------------------------------
+
+COMPARED = {  # column: (label, format)
+    "stride_m": ("stride m", "{:.2f}"),
+    "period_s": ("period s", "{:.3f}"),
+    "stance_pct": ("stance %", "{:.1f}"),
+    "strike_deg": ("strike °", "{:+.1f}"),
+    "toeoff_deg": ("toe-off °", "{:+.1f}"),
+    "impact_g": ("impact g", "{:.2f}"),
+    "lift_cm": ("lift cm", "{:.1f}"),
+    "swing_dps": ("swing dps", "{:.0f}"),
+}
+
+
+def at_speed(st: pd.DataFrame, speed_kmh: float, band_kmh: float = 1.0, min_strides: int = 20) -> dict:
+    """Each measure in :data:`COMPARED` as it would be at ``speed_kmh``.
+
+    Almost everything in a stride changes with speed (faster means longer
+    strides, a steeper heel strike, a harder landing), so two shoes worn at
+    different paces would differ for that reason alone. This takes the
+    strides within ``band_kmh`` of the speed, fits each measure against
+    speed, and gives the median shifted to ``speed_kmh`` along that fit.
+    Returns ``n`` (strides used) too; values are NaN with fewer than
+    ``min_strides``.
+    """
+    w = st.dropna(subset=["strike_deg"])
+    w = w[(w["speed_kmh"] - speed_kmh).abs() <= band_kmh]
+    out = {"n": len(w), "speed_kmh": speed_kmh}
+    for c in COMPARED:
+        if len(w) < min_strides:
+            out[c] = np.nan
+            continue
+        dv = w["speed_kmh"].to_numpy() - speed_kmh
+        y = w[c].to_numpy()
+        slope = np.polyfit(dv, y, 1)[0] if np.ptp(dv) > 0.2 else 0.0
+        out[c] = float(np.median(y - slope * dv))
+    return out
+
+
+def compare(sessions: list[tuple[str, str, pd.DataFrame]], speed_kmh: float | None = None,
+            band_kmh: float = 1.0) -> tuple[pd.DataFrame, pd.DataFrame, float]:
+    """Compare walking sessions at a common speed.
+
+    ``sessions`` is (group, name, strides) per session, e.g. group = the
+    shoes. ``speed_kmh`` defaults to the median speed over all strides.
+    Returns a table per session, one per group (the mean of its sessions,
+    and their spread as ``sd_<column>`` when a group has more than one), and
+    the speed used.
+
+    Sessions, not strides, are the unit to compare: strides in one walk
+    have the same day, route and mood in common, so a difference between
+    two single walks may just be the day. Walk each pair of shoes on the
+    same route more than once, ideally alternating.
+    """
+    if speed_kmh is None:
+        allst = pd.concat([s for _, _, s in sessions]) if sessions else pd.DataFrame()
+        if allst.empty:
+            raise ValueError("no strides to compare")
+        speed_kmh = float(allst.dropna(subset=["strike_deg"])["speed_kmh"].median())
+    rows = [{"group": g, "session": n, **at_speed(s, speed_kmh, band_kmh)} for g, n, s in sessions]
+    per = pd.DataFrame(rows, columns=["group", "session", "n", "speed_kmh", *COMPARED])
+    agg = []
+    for g, d in per.groupby("group", sort=False):
+        d = d.dropna(subset=list(COMPARED), how="all")
+        r = {"group": g, "sessions": len(d), "n": int(d["n"].sum())}
+        r.update({c: d[c].mean() for c in COMPARED})
+        if len(d) > 1:
+            r.update({f"sd_{c}": d[c].std() for c in COMPARED})
+        agg.append(r)
+    return per, pd.DataFrame(agg), speed_kmh
+
+
+def format_compare(per: pd.DataFrame, groups: pd.DataFrame, speed_kmh: float) -> str:
+    cols = list(COMPARED)
+    head = ["", "walks", "strides", *(COMPARED[c][0] for c in cols)]
+
+    def fmt(c, v):
+        return "-" if pd.isna(v) else COMPARED[c][1].format(v)
+
+    lines = [f"Walking measures at {speed_kmh:.1f} km/h (strides within 1 km/h, adjusted along speed):", ""]
+    table = [head]
+    for _, r in groups.iterrows():
+        table.append([str(r["group"]), str(r["sessions"]), str(r["n"]), *(fmt(c, r[c]) for c in cols)])
+        if f"sd_{cols[0]}" in r and not pd.isna(r.get(f"sd_{cols[0]}")):
+            table.append(["  ± between walks", "", "",
+                          *("±" + fmt(c, r[f"sd_{c}"]).lstrip("+") for c in cols)])
+    table.append([])
+    table.append(["per walk"])
+    for _, r in per.iterrows():
+        table.append([f"  {r['group']}: {r['session']}", "", str(r["n"]), *(fmt(c, r[c]) for c in cols)])
+    width = [max(len(row[i]) for row in table if len(row) > i and len(row) == len(head)) for i in range(len(head))]
+    for row in table:
+        if len(row) != len(head):
+            lines.append(" ".join(row))
+            continue
+        lines.append(row[0].ljust(width[0]) + "  " + "  ".join(v.rjust(w) for v, w in zip(row[1:], width[1:])))
+    lines += ["", "+ = toes up. Treat a difference as real only if it's bigger than the spread between"
+              " walks in the same shoes."]
+    return "\n".join(lines)
