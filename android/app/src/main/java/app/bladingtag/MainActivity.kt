@@ -64,6 +64,7 @@ class MainActivity : Activity() {
     private lateinit var noticeButton: Button
     private lateinit var recordingBox: LinearLayout
     private lateinit var recordingText: TextView
+    private lateinit var livePanel: LivePanel
     private lateinit var tagsBox: LinearLayout
     private lateinit var tagList: LinearLayout
     private lateinit var startButton: Button
@@ -103,8 +104,10 @@ class MainActivity : Activity() {
         // While recording
         recordingBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         recordingBox.addView(heading("Recording"))
+        livePanel = LivePanel(this)
+        recordingBox.addView(livePanel, lp(dp(8)))
         recordingText = TextView(this).apply { textSize = 15f; typeface = Typeface.MONOSPACE }
-        recordingBox.addView(recordingText, lp(dp(8)))
+        recordingBox.addView(recordingText, lp(dp(16)))
         recordingBox.addView(Button(this).apply {
             text = "Description…"
             setOnClickListener { editCurrentNotes() }
@@ -222,6 +225,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         stopScan()
         ui.removeCallbacks(tick)
+        ui.removeCallbacks(frame)
         super.onPause()
     }
 
@@ -241,6 +245,15 @@ class MainActivity : Activity() {
     }
 
     private val tick = Runnable { refresh() }
+
+    /** Redraws the motion plots at ~20 fps while a recording is shown. */
+    private val frame = object : Runnable {
+        override fun run() {
+            val rec = RecorderService.current ?: return
+            livePanel.animate(rec)
+            ui.postDelayed(this, FRAME_MS)
+        }
+    }
 
     /** Redraws the live parts; runs every 500 ms while visible. */
     private fun refresh() {
@@ -268,6 +281,8 @@ class MainActivity : Activity() {
         if (rec != null) {
             stopScan()
             recordingText.text = describe(rec)
+            livePanel.update(rec)
+            if (!ui.hasCallbacks(frame)) ui.post(frame)
         } else if (standby != null) {
             // The service scans for the tags; a second scan here would only compete.
             stopScan()
@@ -744,6 +759,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_PERMISSIONS = 1
+        private const val FRAME_MS = 50L
         private const val COLOR_BAD = 0xFFC62828.toInt()
         private val REQUIRED = arrayOf(
             Manifest.permission.BLUETOOTH_SCAN,

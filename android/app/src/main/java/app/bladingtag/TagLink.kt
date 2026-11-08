@@ -51,6 +51,10 @@ abstract class TagLink(val address: String, protected val listener: Listener) {
     @Volatile var missingSamples = 0L; private set
     /** Last accel magnitude in g, as a sanity check (≈1 when still). */
     @Volatile var accelG = Double.NaN; private set
+    /** The last few seconds of motion, for live plots and push rate. */
+    val live = LiveSignal()
+    /** Latest estimate from [live], set once a second by the recorder. */
+    @Volatile var cadence: Cadence? = null
 
     private var lastSeq = -1
     private var nextIndex = -1L
@@ -74,6 +78,7 @@ abstract class TagLink(val address: String, protected val listener: Listener) {
         nextIndex = -1
         firstIndex = -1
         lastIndex = -1
+        live.gap()
     }
 
     protected fun handleInfo(raw: ByteArray) {
@@ -109,7 +114,12 @@ abstract class TagLink(val address: String, protected val listener: Listener) {
         val end = h.sampleIndex + n
         if (nextIndex >= 0 && end <= nextIndex) return
         samples += if (nextIndex >= 0) end - maxOf(h.sampleIndex, nextIndex) else n.toLong()
-        if (nextIndex >= 0 && h.sampleIndex > nextIndex) missingSamples += h.sampleIndex - nextIndex
+        if (nextIndex >= 0 && h.sampleIndex > nextIndex) {
+            missingSamples += h.sampleIndex - nextIndex
+            live.gap()
+        }
+        // Only the samples not seen yet (a resent packet can overlap).
+        val firstNew = if (nextIndex >= 0) maxOf(0L, nextIndex - h.sampleIndex).toInt() else 0
         nextIndex = end
         if (firstIndex < 0) {
             firstIndex = h.sampleIndex
@@ -117,7 +127,11 @@ abstract class TagLink(val address: String, protected val listener: Listener) {
         }
         lastIndex = h.sampleIndex
         lastTsUs = h.timestampUs
-        val range = status?.accelRangeG?.takeIf { it > 0 } ?: 16
+        val st = status
+        val range = st?.accelRangeG?.takeIf { it > 0 } ?: 16
+        val odr = st?.odrHz?.takeIf { it > 0 } ?: 200
+        val gyroRange = st?.gyroRangeDps?.takeIf { it > 0 } ?: 2000
+        for (i in firstNew until n) live.add(Protocol.imu6Sample(raw, i), odr, range, gyroRange)
         val s = Protocol.imu6Sample(raw, n - 1)
         val ax = s[0] * range / 32768.0
         val ay = s[1] * range / 32768.0

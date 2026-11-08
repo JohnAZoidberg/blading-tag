@@ -15,7 +15,8 @@ import kotlin.random.Random
  * builds only). It produces byte-exact Info, Status and Data payloads per
  * PROTOCOL.md, so the session files look like a real recording: 200 Hz
  * IMU6 in 19-sample packets, Status every second, a sample clock that runs
- * 0.4 % fast, and a crude stroke pattern at ~70 pushes/min.
+ * 0.4 % fast, and a crude stroke pattern at 60-80 pushes/min (a stroke of
+ * this foot every 1.5-2 s), slowly drifting so the live push rate moves.
  */
 class SimulatedTag(listener: Listener) : TagLink(ADDRESS, listener) {
 
@@ -29,6 +30,8 @@ class SimulatedTag(listener: Listener) : TagLink(ADDRESS, listener) {
     private var t0Us = 0L
     private var recorded = 0L
     private val rnd = Random(1)
+    /** Stroke phase, in cycles; advanced per sample so the rate can drift smoothly. */
+    private var phaseCycles = 0.0
 
     override fun start() {
         handler.post {
@@ -37,7 +40,7 @@ class SimulatedTag(listener: Listener) : TagLink(ADDRESS, listener) {
             handleInfo(info())
             sessionId++
             recording = true
-            seq = 0; index = 0; recorded = 0
+            seq = 0; index = 0; recorded = 0; phaseCycles = 0.0
             t0Us = tagNowUs()
             resetSequence()
             handleStatus(SystemClock.elapsedRealtimeNanos(), status())
@@ -81,7 +84,8 @@ class SimulatedTag(listener: Listener) : TagLink(ADDRESS, listener) {
         repeat(PER_PACKET) { i ->
             val t = (index + i) / NOMINAL_HZ
             // Push phase: a sideways accel pulse and some roll, then glide.
-            val phase = (t * STROKES_PER_S) % 1.0
+            phaseCycles += STROKES_PER_S * (1 + 0.14 * sin(2 * PI * t / 90)) / NOMINAL_HZ
+            val phase = phaseCycles % 1.0
             val push = if (phase < 0.4) sin(phase / 0.4 * PI) else 0.0
             val vib = rnd.nextDouble(-0.08, 0.08)
             fun g(v: Double) = (v * 2048).toInt().coerceIn(-32768, 32767).toShort()
@@ -90,7 +94,7 @@ class SimulatedTag(listener: Listener) : TagLink(ADDRESS, listener) {
             b.putShort(g(1.5 * push + vib))
             b.putShort(g(1.0 + 0.6 * push + vib))
             b.putShort(dps(120 * push * sin(phase / 0.4 * 2 * PI)))
-            b.putShort(dps(15 * sin(2 * PI * t * STROKES_PER_S)))
+            b.putShort(dps(15 * sin(2 * PI * phaseCycles)))
             b.putShort(dps(5 * vib))
         }
         seq = (seq + 1) and 0xFFFF
@@ -122,6 +126,7 @@ class SimulatedTag(listener: Listener) : TagLink(ADDRESS, listener) {
         private const val RATE_HZ = NOMINAL_HZ * 1.004
         private const val PER_PACKET = 19
         private const val PACKET_MS = 50L
-        private const val STROKES_PER_S = 70 / 60.0
+        /** Of this foot; pushes alternate feet, so 35/min is 70 pushes/min. */
+        private const val STROKES_PER_S = 35 / 60.0
     }
 }

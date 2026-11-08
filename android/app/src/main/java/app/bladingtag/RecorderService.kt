@@ -65,6 +65,10 @@ class RecorderService : Service(), TagLink.Listener {
         val startElapsedNs get() = meta.startElapsedNs
         @Volatile var lastFix: Location? = null
         @Volatile var stopping = false
+        /** Distance from GPS speed, like gps_frame() in the host analysis. */
+        @Volatile var distanceM = 0.0
+        /** Push rate and speed once a second (main thread). */
+        val trend = Trend()
     }
 
     /** Armed standby: which tags to watch and record, and whether to record GPS. */
@@ -128,6 +132,7 @@ class RecorderService : Service(), TagLink.Listener {
         links.forEach { it.start() }
         Log.i(TAG, "recording to $dir with ${addresses.size} tag(s), gps=${gps != null}")
         main.postDelayed(tick, TICK_MS)
+        main.postDelayed(liveTick, LIVE_TICK_MS)
     }
 
     private fun fgsTypes(location: Boolean): Int {
@@ -251,6 +256,12 @@ class RecorderService : Service(), TagLink.Listener {
         val lm = getSystemService(LocationManager::class.java)
         val l = LocationListener { loc ->
             val rec = current ?: return@LocationListener
+            rec.lastFix?.let { prev ->
+                // Trapezoid on speed between fixes; GPS position jitter would
+                // add distance while standing still.
+                val dt = (loc.elapsedRealtimeNanos - prev.elapsedRealtimeNanos) / 1e9
+                if (dt > 0 && loc.hasSpeed() && prev.hasSpeed()) rec.distanceM += (loc.speed + prev.speed) / 2 * dt
+            }
             rec.lastFix = loc
             rec.gps?.append(GpsLog.Fix(
                 elapsedNs = loc.elapsedRealtimeNanos,
@@ -276,6 +287,26 @@ class RecorderService : Service(), TagLink.Listener {
             getSystemService(NotificationManager::class.java)
                 .notify(NOTIFICATION_ID, notification(summary(rec)))
             main.postDelayed(this, TICK_MS)
+        }
+    }
+
+    /** Push rate from each tag's last seconds, and GPS speed, into the trend. */
+    private val liveTick = object : Runnable {
+        override fun run() {
+            val rec = current ?: return
+            val rates = rec.links.mapNotNull { l ->
+                l.cadence = l.live.cadence()
+                l.cadence?.takeIf { it.valid }?.pushesPerMin
+            }
+            val fix = rec.lastFix
+            val fresh = fix != null && fix.hasSpeed() &&
+                SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos < 5_000_000_000L
+            rec.trend.add(
+                (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1e9f,
+                if (rates.isEmpty()) Float.NaN else rates.average().toFloat(),
+                if (fresh) fix!!.speed * 3.6f else Float.NaN,
+            )
+            main.postDelayed(this, LIVE_TICK_MS)
         }
     }
 
@@ -331,6 +362,7 @@ class RecorderService : Service(), TagLink.Listener {
         var pending = rec.links.size
         val finish = {
             main.removeCallbacks(tick)
+            main.removeCallbacks(liveTick)
             save(rec, SystemClock.elapsedRealtimeNanos())
             wakeLock?.takeIf { it.isHeld }?.release()
             current = null
@@ -435,7 +467,13 @@ class RecorderService : Service(), TagLink.Listener {
                 else -> l.status?.let { Protocol.stateName(it.state) } ?: "connecting"
             }
         }
-        return "%d:%02d:%02d · %s".format(secs / 3600, secs / 60 % 60, secs % 60, tags)
+        val sb = StringBuilder("%d:%02d:%02d".format(secs / 3600, secs / 60 % 60, secs % 60))
+        val push = rec.trend.lastPushesPerMin
+        val speed = rec.trend.lastSpeedKmh
+        if (!push.isNaN()) sb.append(" · %.0f pushes/min".format(push))
+        if (!speed.isNaN()) sb.append(" · %.1f km/h".format(speed))
+        if (rec.distanceM > 0) sb.append(" · %.2f km".format(rec.distanceM / 1000))
+        return sb.append(" · ").append(tags).toString()
     }
 
     private fun notification(text: String): Notification {
@@ -486,6 +524,7 @@ class RecorderService : Service(), TagLink.Listener {
         private const val CHANNEL = "recording"
         private const val NOTIFICATION_ID = 1
         private const val TICK_MS = 5_000L
+        private const val LIVE_TICK_MS = 1_000L
         private const val SCAN_RESTART_MS = 20 * 60_000L
         private const val SCAN_RETRY_MS = 10_000L
         const val ACTION_START = "app.bladingtag.START"
