@@ -53,11 +53,18 @@ stop:
 	$(ADB_S) shell am force-stop $(APP)
 
 # Copies every session folder that isn't here yet (an unfinished one, i.e.
-# still recording, is copied as far as it got).
+# still recording, is copied as far as it got, and again next time). For
+# the ones already here it copies session.json, so edits made in the app
+# (notes, activity, gear, body location) arrive. One way: the phone wins,
+# local edits to session.json are overwritten.
 pull:
 	@mkdir -p $(SESSIONS)
 	@for s in $$($(ADB_S) shell ls $(PHONE_SESSIONS) </dev/null | tr -d '\r'); do \
-	  if [ -e "$(SESSIONS)/$$s/session.json" ] && grep -q end_elapsed_ns "$(SESSIONS)/$$s/session.json"; then \
+	  j="$(SESSIONS)/$$s/session.json"; \
+	  if [ -e "$$j" ] && grep -qE '"end_(elapsed_ns": *[0-9]|reason")' "$$j"; then \
+	    $(ADB_S) pull -q $(PHONE_SESSIONS)/$$s/session.json "$$j.phone" </dev/null || exit 1; \
+	    if cmp -s "$$j" "$$j.phone"; then rm "$$j.phone"; \
+	    else mv "$$j.phone" "$$j"; echo "$$s  (session.json updated)"; fi; \
 	    continue; \
 	  fi; \
 	  echo "$$s"; $(ADB_S) pull -q $(PHONE_SESSIONS)/$$s $(SESSIONS)/ </dev/null || exit 1; \

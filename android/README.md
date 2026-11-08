@@ -118,7 +118,10 @@ make help     # everything else: log, crash, screenshot, wireless pairing
 ```
 
 Sessions are stored in `Android/data/app.bladingtag/files/sessions/` on the
-phone, which `make pull` reads over adb.
+phone, which `make pull` reads over adb. It copies new sessions, and the
+session.json of the ones you have, so edits made in the app (notes, activity,
+gear, body location) arrive too. The phone wins: don't edit session.json on
+the computer, `make pull` overwrites it.
 
 ## Code
 
