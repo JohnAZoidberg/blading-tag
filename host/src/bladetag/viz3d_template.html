@@ -270,9 +270,9 @@ function makeSkate() {
   const hub = new THREE.MeshStandardMaterial({ color: 0xb8bec7, metalness: 0.6, roughness: 0.35 });
   for (const x of [-0.12, 0, 0.12]) {
     const w = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.024, 36), urethane);
-    w.rotation.x = Math.PI / 2; w.position.set(x, 0, 0.055); g.add(w);
+    w.position.set(x, 0, 0.055); g.add(w);  // cylinder axis is y: the axle runs sideways
     const h = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.026, 18), hub);
-    h.rotation.x = Math.PI / 2; h.position.set(x, 0, 0.055); g.add(h);
+    h.position.set(x, 0, 0.055); g.add(h);
   }
   const alu = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, metalness: 0.7, roughness: 0.3 });
   for (const y of [-0.016, 0.016]) { const f = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.005, 0.05), alu); f.position.set(0, y, 0.085); g.add(f); }
