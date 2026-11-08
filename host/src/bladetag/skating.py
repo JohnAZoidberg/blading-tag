@@ -82,6 +82,8 @@ MEASURES: list[Measure] = [
     Measure("sweep_cm", "Sideways sweep", "cm", "{:.0f}", "sideways range of the foot relative to the skater, body sway included (3D foot path)"),
     Measure("push_speed_mps", "Push speed", "m/s", "{:.2f}", "peak outward speed of the skate while the wheels are down (3D foot path)"),
     Measure("edge_deg", "Edge angle", "°", "{:.0f}", "tilt onto the inside edge, 95th pct while wheels down (3D foot path)"),
+    Measure("outside_deg", "Outside edge", "°", "{:.0f}", "tilt onto the outside edge, 95th pct while wheels down; the double-push set-down (3D foot path)"),
+    Measure("outside_frac", "On outside edge", "", "{:.0%}", "share of the contact more than 4° onto the outside edge; double push when high (3D foot path)"),
     Measure("splay_deg", "Toe-out", "°", "{:.1f}", "skate turned out from the direction of travel (3D foot path)"),
     Measure("fore_aft_cm", "Fore-aft", "cm", "{:.0f}", "forward-backward range of the foot relative to the skater (3D foot path)"),
     Measure("lift_cm", "Lift", "cm", "{:.1f}", "recovery height; only resolves 'stays very low' (3D foot path)"),
@@ -119,8 +121,9 @@ def _gps_slope(gps: pd.DataFrame, t: np.ndarray, half_s: float) -> np.ndarray:
 
 
 def stroke_table(sess: Session, result: Result | None = None, p: Params | None = None,
-                 foot_path: bool = True) -> pd.DataFrame:
-    """One row per stroke cycle of the session's first tag (or ``result``'s)."""
+                 foot_path: bool = True, up_hint: tuple | None = None) -> pd.DataFrame:
+    """One row per stroke cycle of the session's first tag (or ``result``'s).
+    ``up_hint``: "flat" for the edge angles, see ``viz3d.shared_rest_up``."""
     p = p or Params()
     r = result or analyze(sess)
     st = r.strokes.copy()
@@ -175,7 +178,7 @@ def stroke_table(sess: Session, result: Result | None = None, p: Params | None =
             st[c] = np.nan
 
     if foot_path:
-        _join_foot_path(st, sess, r)
+        _join_foot_path(st, sess, r, up_hint)
     for m in MEASURES:
         if m.key not in st:
             st[m.key] = np.nan
@@ -184,18 +187,18 @@ def stroke_table(sess: Session, result: Result | None = None, p: Params | None =
     return st
 
 
-FOOT_PATH = ["out_cm", "sweep_cm", "push_speed_mps", "edge_deg", "splay_deg", "fore_aft_cm", "lift_cm"]
+FOOT_PATH = ["out_cm", "sweep_cm", "push_speed_mps", "edge_deg", "outside_deg", "outside_frac", "splay_deg", "fore_aft_cm", "lift_cm"]
 
 
-def _join_foot_path(st: pd.DataFrame, sess: Session, r: Result) -> None:
+def _join_foot_path(st: pd.DataFrame, sess: Session, r: Result, up_hint: tuple | None = None) -> None:
     """Outward reach, push speed, edge and toe-out from the 3D foot path
     (``viz3d.stroke_motion``), joined on the stroke's row in ``r.strokes``."""
     try:
-        from .viz3d import stroke_motion
+        from .viz3d import foot_motion
     except ImportError:
         return
     try:
-        fm = stroke_motion(sess, r, r.tag)
+        fm = foot_motion(sess, r.tag, result=r, up_hint=up_hint).strokes
     except Exception as e:  # the foot path is extra; never lose the rest over it
         st.attrs["foot_path_error"] = f"foot path: {type(e).__name__}: {e}"
         return
@@ -231,38 +234,46 @@ def load_sessions(paths: list[str | Path], p: Params | None = None, activity: st
     ``labelled_only``."""
     p = p or Params()
     frames, infos, coast_frames = [], [], []
+    items = []
     for path in paths:
         sess = load_session(path)
         if activity and sess.activity != activity and (
                 sess.activity != "unknown" or (labelled_only and path in labelled_only)):
             continue
-        for tag in sess.tags:
-            if "foot" not in tag.meta.position and tag.meta.position != "unknown":
-                continue
+        items += [(path, sess, tag) for tag in sess.tags
+                  if "foot" in tag.meta.position or tag.meta.position == "unknown"]
+    # "Flat" for the edge angles, shared by the day's sessions with the same
+    # tag on the same foot, as on the viz3d page.
+    try:
+        from .viz3d import shared_rest_up
+        hints = shared_rest_up([(sess, tag) for _, sess, tag in items])
+    except Exception:  # the foot path is extra
+        hints = {}
+    for i, (path, sess, tag) in enumerate(items):
+        if progress:
+            progress(f"{Path(path).name} {tag.meta.position}")
+        try:
+            r = analyze(sess, tag)
+        except ValueError as e:
             if progress:
-                progress(f"{Path(path).name} {tag.meta.position}")
-            try:
-                r = analyze(sess, tag)
-            except ValueError as e:
-                if progress:
-                    progress(f"  skipped: {e}")
-                continue
-            st = stroke_table(sess, r, p)
-            if st.empty:
-                continue
-            key = _session_key(sess, len(sess.tags) > 1, tag.meta.position)
-            if any(i.key == key for i in infos):  # two sessions started in the same minute
-                key = f"{key} ({Path(path).name})"
-            st.insert(0, "session", key)
-            frames.append(st)
-            co = coasts(r)
-            if len(co):
-                co.insert(0, "session", key)
-                coast_frames.append(co)
-            sm = {k: v for k, v in r.summary.items() if k != "drift"}
-            infos.append(SessionInfo(key, str(path), sess.meta.get("start_utc", ""), sess.activity,
-                                     sess.gear, sess.meta.get("notes") or "", tag.meta.position, sm,
-                                     r.warnings + ([st.attrs["foot_path_error"]] if "foot_path_error" in st.attrs else [])))
+                progress(f"  skipped: {e}")
+            continue
+        st = stroke_table(sess, r, p, up_hint=hints.get(i))
+        if st.empty:
+            continue
+        key = _session_key(sess, len(sess.tags) > 1, tag.meta.position)
+        if any(inf.key == key for inf in infos):  # two sessions started in the same minute
+            key = f"{key} ({Path(path).name})"
+        st.insert(0, "session", key)
+        frames.append(st)
+        co = coasts(r)
+        if len(co):
+            co.insert(0, "session", key)
+            coast_frames.append(co)
+        sm = {k: v for k, v in r.summary.items() if k != "drift"}
+        infos.append(SessionInfo(key, str(path), sess.meta.get("start_utc", ""), sess.activity,
+                                 sess.gear, sess.meta.get("notes") or "", tag.meta.position, sm,
+                                 r.warnings + ([st.attrs["foot_path_error"]] if "foot_path_error" in st.attrs else [])))
     if not frames:
         return pd.DataFrame(), infos
     df = pd.concat(frames, ignore_index=True)

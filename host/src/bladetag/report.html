@@ -539,7 +539,7 @@ function map() {
 // --- tables --------------------------------------------------------------------------------
 function pairsTable() {
   if (!R.pairs.length) { $("pairs-card").querySelector(".tw").innerHTML = `<p class="note">No two sessions here cover the same ground.</p>`; return; }
-  const keys = ["speed_kmh", "push_rate_spm", "dist_per_push_m", "contact_frac", "setdown_g", "pushoff_g", "swing_dps", "out_cm", "push_speed_mps", "edge_deg", "splay_deg", "road_vib_g"].filter((k) => M[k]);
+  const keys = ["speed_kmh", "push_rate_spm", "dist_per_push_m", "contact_frac", "setdown_g", "pushoff_g", "swing_dps", "out_cm", "push_speed_mps", "edge_deg", "outside_frac", "splay_deg", "road_vib_g"].filter((k) => M[k]);
   let h = `<tr><th class="l">measure</th>` + R.pairs.map((p) => `<th>${esc(p.a)} → ${esc(p.b)}<br><span style="font-weight:400">${esc(p.direction)}, ${p.places} strokes, ${(p.overlap_m / 1000).toFixed(1)} km</span></th>`).join("") + `</tr>`;
   for (const k of keys) {
     h += `<tr><td class="l">${esc(M[k].label)}</td>` + R.pairs.map((p) => {

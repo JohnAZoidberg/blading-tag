@@ -36,6 +36,7 @@ KEY_PAIRS = [
     ("pushoff_g", "push_rate_spm", "Harder kicks at a quicker cadence?"),
     ("setdown_g", "speed_kmh", "Landing harder when faster?"),
     ("edge_deg", "dist_per_push_m", "More edge, more distance per push?"),
+    ("outside_frac", "dist_per_push_m", "More double push, more distance per push?"),
     ("push_rate_spm", "out_cm", "Quicker cadence, narrower push?"),
 ]
 

@@ -274,7 +274,12 @@ the wheels land, so road vibration doesn't count); **push-off peak** (the
 same at the end of the contact: the kick, the hardest moment of the stroke);
 **swing speed** (peak rotation rate in the air); **road vibration** (RMS above
 20 Hz while rolling); and the foot path from `viz3d.stroke_motion` (outward
-reach, sideways sweep, push speed, edge, toe out, fore-aft).
+reach, sideways sweep, push speed, inside and outside edge, toe out,
+fore-aft). **On outside edge** is the share of the contact more than 4° onto
+the outside edge: high in a double push, where the skate lands on its outside
+edge and runs in under the body before rolling over and pushing out. "Flat"
+for the edge angles is shared by the day's sessions with the same tag on the
+same foot (`viz3d.shared_rest_up`), as on the viz3d page.
 
 The equal-effort wind estimate in the out-and-back finding assumes the same
 power both ways, an 80 kg skater, CdA 0.4 m² and Crr 0.006 (`report.RIDER`).
@@ -289,6 +294,9 @@ out and on the right foot back) showed:
   a harder kick (+0.38). Neither the kick (−0.03) nor the landing (−0.06)
   changed the distance per push; a faster outward push speed did (+0.52).
 - Landings were soft (1.8 g median); the push-off kick was about 6 g.
+- On the riverside path about 45 % of the contact was on the outside edge
+  (a double push, the skate moving 10-17 cm inward first); on the road about
+  10 %. More of it went with more distance per push (+0.41).
 - Coming back on the same 2.2 km: 17 % slower at 4 % lower push rate, with
   17 % wider pushes and 19 % harder kicks. The speed alone means at least
   ~3 km/h of wind. The tag changed feet at the turn, so left vs right can't be
