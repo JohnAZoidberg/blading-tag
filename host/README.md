@@ -209,6 +209,14 @@ How it works (`src/bladetag/viz3d.py`):
    motion). That calibrates the skate's yaw on the tag. On the first skate
    (2026-11-08) it corrected +10° on the left foot and −12° on the right,
    and the skate's yaw then follows the direction of travel with r ≈ 0.7.
+5. **Level frame:** all three wheels are on the road while they're down, so
+   the skate can't pitch then. The orientation is corrected for the 3–5° of
+   pitch it showed during contact (interpolated through the air phases) and
+   the path is integrated again.
+6. **Drawing:** the measured path is the tag's, on the front of the boot, so
+   the skate is drawn with its tag on that path: when the heel lifts first,
+   the tag barely rises while the back wheel comes up. The lowest wheel is
+   kept on the road while the wheels are down and above it in the air.
 
 `viz3d.stroke_motion(sess)` gives the same numbers per stroke as a table
 (`stroke` = row in `analyze().strokes`): sideways sweep, outward reach,

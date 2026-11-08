@@ -43,6 +43,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy import signal
+from scipy import ndimage
 from scipy.ndimage import median_filter, uniform_filter1d
 
 from .analysis import Result, analyze
@@ -50,6 +51,12 @@ from .explore import ACCEL, GYRO, sample_frame, still_mask
 from .session import Session
 
 G = 9.80665
+# Skate geometry for the page, in the skate frame (x forward, y left, z up,
+# origin on the road under the middle wheel). The tag sits on the front of
+# the boot, where the data puts it (tilted ~22° forward).
+WHEEL_X = (-0.12, 0.0, 0.12)
+WHEEL_R = 0.055
+TAG_ON_SKATE = np.array([0.075, 0.0, 0.205])
 TEMPLATE = Path(__file__).with_name("viz3d_template.html")
 
 
@@ -74,6 +81,7 @@ class Mount:
     agreement: float     # resultant length of the per-stroke lateral estimates
     yaw_fix_deg: float   # yaw correction from the wheel constraint
     wheel_corr: float = float("nan")  # skate yaw vs. direction of travel during contact
+    pitch_fix_deg: float = float("nan")  # median |pitch| removed while the wheels are down
 
     def matrix(self) -> np.ndarray:
         """Skate -> sensor: columns are the skate's forward, left, up."""
@@ -262,24 +270,11 @@ def _side(position: str) -> tuple[int, str | None]:
     return 1, f"tag position is {position!r}: assumed left foot (outward = left)"
 
 
-def foot_motion(sess: Session, tag=None, p: Params = Params(), result: Result | None = None) -> FootMotion:
-    r = result or analyze(sess, tag)
-    tag = r.tag
-    warnings = list(r.warnings)
-    side, w = _side(tag.meta.position)
-    if w:
-        warnings.append(w)
-    df = sample_frame(sess, tag, r.clock)
-    fs, dt = r.clock.rate_hz, 1 / r.clock.rate_hz
-    t = df["t_s"].to_numpy()
-    acc = df[ACCEL].to_numpy()
-    gyr = df[GYRO].to_numpy()
-    seg = df["segment"].to_numpy()
-    still = still_mask(df, fs)
-    bias = gyr[still].mean(axis=0) if still.sum() > 3 * fs else np.zeros(3)
-    rw = orientation(acc, gyr, fs, seg, bias, p)
+def _solve(r: Result, t, acc, rw, contact, still, side, fs, p: Params) -> dict:
+    """Path, skater frame and mount for one orientation estimate."""
+    dt = 1 / fs
+    warnings = []
     aw = np.einsum("nij,nj->ni", rw, acc) * G - [0.0, 0.0, G]
-    contact = r.signals.contact.astype(bool)
 
     st = r.strokes.reset_index(drop=True)
     n = len(t)
@@ -366,6 +361,61 @@ def foot_motion(sess: Session, tag=None, p: Params = Params(), result: Result | 
         dist = np.zeros(n)
         warnings.append("no GPS: the over-ground view uses no forward speed, and the skate's yaw "
                         "on the tag isn't calibrated")
+    return dict(pos=pos, r_body=r_body, r_world=rw @ mount.matrix(), mount=mount, stroke_id=stroke_id,
+                ok=ok, dist=dist, st=st, i0s=i0s, i1s=i1s, los=los, warnings=warnings)
+
+
+def _level_pitch(rw, r_world, contact, stroke_id, fs, edge_s: float = 0.04, smooth_s: float = 0.1):
+    """Turn the orientation so the skate's pitch is zero while its wheels are
+    down. The first and last ``edge_s`` of each contact are left out (a wheel
+    may already be off the road), and the air phases are interpolated."""
+    f = r_world[:, :, 0]
+    pitch = np.arcsin(np.clip(f[:, 2], -1, 1))
+    good = contact & (stroke_id >= 0)
+    k = max(1, int(edge_s * fs))
+    good = ndimage.binary_erosion(good, np.ones(2 * k + 1, bool))
+    if good.sum() < fs:
+        return rw
+    idx = np.arange(len(rw))
+    e = np.interp(idx, idx[good], pitch[good])
+    e = uniform_filter1d(e, max(1, int(smooth_s * fs)), mode="nearest")
+    fh = f.copy()
+    fh[:, 2] = 0
+    fh /= np.maximum(np.linalg.norm(fh, axis=1, keepdims=True), 1e-9)
+    axis = np.cross([0.0, 0.0, 1.0], fh)            # the skate's left, level
+    return _rotvec_to_matrix(axis * e[:, None]) @ rw
+
+
+def foot_motion(sess: Session, tag=None, p: Params = Params(), result: Result | None = None) -> FootMotion:
+    r = result or analyze(sess, tag)
+    tag = r.tag
+    warnings = list(r.warnings)
+    side, w = _side(tag.meta.position)
+    if w:
+        warnings.append(w)
+    df = sample_frame(sess, tag, r.clock)
+    fs, dt = r.clock.rate_hz, 1 / r.clock.rate_hz
+    t = df["t_s"].to_numpy()
+    acc = df[ACCEL].to_numpy()
+    gyr = df[GYRO].to_numpy()
+    seg = df["segment"].to_numpy()
+    still = still_mask(df, fs)
+    bias = gyr[still].mean(axis=0) if still.sum() > 3 * fs else np.zeros(3)
+    contact = r.signals.contact.astype(bool)
+    rw = orientation(acc, gyr, fs, seg, bias, p)
+    sol = _solve(r, t, acc, rw, contact, still, side, fs, p)
+    # The wheels are on the road while they're down, so the skate's frame is
+    # level front to back: its pitch is an orientation error then. Correct the
+    # orientation for it (interpolated through the air phases) and solve again,
+    # so the gravity removed from the path is right too.
+    pitch0 = np.degrees(np.arcsin(np.clip(sol["r_world"][:, 2, 0], -1, 1)))
+    rw = _level_pitch(rw, sol["r_world"], contact, sol["stroke_id"], fs)
+    sol = _solve(r, t, acc, rw, contact, still, side, fs, p)
+    pos, r_body, mount, stroke_id, ok, dist = (sol[k] for k in ("pos", "r_body", "mount", "stroke_id", "ok", "dist"))
+    st, i0s, i1s, los = sol["st"], sol["i0s"], sol["i1s"], sol["los"]
+    warnings += sol["warnings"]
+    c = contact & (stroke_id >= 0)
+    mount.pitch_fix_deg = float(np.median(np.abs(pitch0[c]))) if c.any() else float("nan")
     quat = _matrix_to_quat(r_body)
 
     strokes = _stroke_table(st, t, pos, r_body, contact, stroke_id, side, ok)
@@ -379,6 +429,22 @@ def foot_motion(sess: Session, tag=None, p: Params = Params(), result: Result | 
     }
     return FootMotion(sess.path.name, meta, side, t, pos, quat, contact, stroke_id, dist,
                       strokes, typical, mount, r, warnings)
+
+
+def model_origin(pos: np.ndarray, r_body: np.ndarray, contact: np.ndarray) -> np.ndarray:
+    """Where to draw the skate (its origin, on the road under the middle
+    wheel) so that the tag on it follows the measured path, and its lowest
+    wheel touches the road while the wheels are down and stays above it in the
+    air. The measured path is the tag's: when the heel lifts first, the tag
+    near the front barely rises while the back wheel comes up."""
+    tag = np.einsum("nij,j->ni", r_body, TAG_ON_SKATE)
+    org = pos - (tag - tag.mean(axis=0))
+    org[:, 2] = pos[:, 2] - (tag[:, 2] - TAG_ON_SKATE[2])
+    axle_z = r_body[:, 2, 1]
+    reach = WHEEL_R * np.sqrt(np.clip(1 - axle_z ** 2, 0, 1))
+    lowest = np.min([np.einsum("ni,i->n", r_body[:, 2, :], [x, 0.0, WHEEL_R]) for x in WHEEL_X], axis=0) - reach
+    org[:, 2] = np.where(contact, -lowest, np.maximum(org[:, 2], -lowest))
+    return org
 
 
 # --- per-stroke numbers -------------------------------------------------------
@@ -474,11 +540,13 @@ def _typical(st, t, pos, r_body, stroke_id, i0s, i1s, los, strokes, p: Params) -
         mm = mats[sl].mean(axis=0)  # (m, 3, 3)
         u, _, vt = np.linalg.svd(mm)
         rot = u @ vt
+        lp = float(np.nanmedian(lift[sl])) if np.isfinite(lift[sl]).any() else None
+        down = phase < lp if lp is not None else np.ones(m, bool)
         out[name] = {
             "strokes": int(len(loops[sl])),
-            "pos": np.round(loops[sl].mean(axis=0), 4).tolist(),
+            "pos": np.round(model_origin(loops[sl].mean(axis=0), rot, down), 4).tolist(),
             "quat": np.round(_matrix_to_quat(rot), 4).tolist(),
-            "lift_phase": float(np.nanmedian(lift[sl])) if np.isfinite(lift[sl]).any() else None,
+            "lift_phase": lp,
         }
     return out
 
@@ -511,7 +579,9 @@ def page_data(fm: FootMotion, p: Params = Params()) -> dict:
     fs = fm.result.clock.rate_hz
     step = max(1, int(round(fs / p.out_hz)))
     idx = np.arange(0, len(fm.t), step)
-    pos_mm = np.clip(np.round(fm.pos[idx] * 1000), -32767, 32767).astype("<i2")
+    from scipy.spatial.transform import Rotation
+    org = model_origin(fm.pos[idx], Rotation.from_quat(fm.quat[idx]).as_matrix(), fm.contact[idx])
+    pos_mm = np.clip(np.round(org * 1000), -32767, 32767).astype("<i2")
     q = np.round(fm.quat[idx] * 32767).astype("<i2")
     strokes = fm.strokes.replace({np.nan: None})
     return {
@@ -527,6 +597,7 @@ def page_data(fm: FootMotion, p: Params = Params()) -> dict:
         "stroke": _b64(fm.stroke[idx].astype("<i2")),
         "strokes": {c: [None if v is None else round(float(v), 3) for v in strokes[c]] for c in STROKE_COLUMNS},
         "typical": fm.typical,
+        "skate": {"wheel_x": list(WHEEL_X), "wheel_r": WHEEL_R, "tag": TAG_ON_SKATE.tolist()},
         "summary": {
             "push_rate_spm": fm.result.summary.get("push_rate_spm"),
             "distance_km": fm.result.summary.get("distance_km"),

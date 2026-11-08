@@ -264,6 +264,9 @@ const travelMat = new THREE.LineDashedMaterial({ color: 0x888888, dashSize: 0.1,
 const travel = new THREE.Line(travelGeo, travelMat); travel.computeLineDistances(); scene.add(travel);
 
 // The skate: 3 × 110 mm wheels on a long frame, a low speed boot, the tag on its front.
+// Origin on the road under the middle wheel. Wheel positions and the tag's
+// place match WHEEL_X, WHEEL_R and TAG_ON_SKATE in viz3d.py, which keeps the
+// wheels above the road with them.
 function makeSkate() {
   const g = new THREE.Group();
   const urethane = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.7 });
@@ -293,8 +296,6 @@ function makeSkate() {
   return g;
 }
 const skate = makeSkate(); scene.add(skate);
-const ghost = makeSkate(); ghost.visible = false; scene.add(ghost);
-ghost.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.0; } });
 
 // Trail with per-vertex colours (wheels down / in the air), fading out.
 const TRAIL = 150;

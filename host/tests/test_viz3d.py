@@ -71,3 +71,17 @@ def test_page_embeds_decodable_data(simulated, tmp_path):
     assert len(base64.b64decode(s["quat"])) == n * 4 * 2
     assert len(s["strokes"]["t_s"]) == len(fm.strokes)
     assert set(s["typical"]) == {"all", "early", "late"}
+
+
+def test_wheels_stay_on_or_above_the_road(simulated):
+    _, fm, _, _ = simulated
+    r = Rotation.from_quat(fm.quat).as_matrix()
+    org = viz3d.model_origin(fm.pos, r, fm.contact)
+    reach = viz3d.WHEEL_R * np.sqrt(1 - r[:, 2, 1] ** 2)
+    lowest = org[:, 2] + np.min([r[:, 2, :] @ [x, 0, viz3d.WHEEL_R] for x in viz3d.WHEEL_X], axis=0) - reach
+    assert lowest.min() > -1e-6
+    assert np.abs(lowest[fm.contact]).max() < 1e-6
+    # Skate level front to back while the wheels are down.
+    _, _, pitch = viz3d._angles(r, fm.side)
+    c = fm.contact & (fm.stroke >= 0)
+    assert np.percentile(np.abs(pitch[c]), 90) < 3
