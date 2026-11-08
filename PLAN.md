@@ -146,7 +146,9 @@ Built the same way as `../hid-remapper-private`:
   - `make build`: pristine sysbuild of MCUboot + app
   - `make ota`: `host/ota.py` (uv script, smpclient). It uploads in test
     mode, resets, and checks that the new image runs and confirmed itself
-  - `make flash`: `nrfutil` over J-Link (recovery only)
+  - `make flash`: `nrfutil` over J-Link (recovery only); `make recover`
+    unlocks and erases a tag whose debug port is protected
+  - `make build-test ota-test test-hw`: hardware tests (firmware/README.md)
 - **OTA from the phone:** nRF Connect Device Manager with `dfu_application.zip`.
 - **OTA config:**
   - `prj.conf`: `CONFIG_NCS_SAMPLE_MCUMGR_BT_OTA_DFU=y`; the app calls
@@ -157,7 +159,7 @@ Built the same way as `../hid-remapper-private`:
 
 **First OTA onto the factory image works without pairing.** The factory SMP
 characteristic accepted unauthenticated writes from both BlueZ and smpclient.
-Tested on 2026-11-07: factory 3.2.99 → 0.1.0 → 0.1.0+1 with `make ota`, each
+Tested on 2026-11-07: factory 3.2.99 → 0.1.0 → 0.1.0+1 → 0.1.0 with `make ota`, each
 step confirmed and still running after a reset, with the previous image kept in
 slot 1. Our own MCUboot is only flashed when recovering with the J-Link. A
 tag updated over BLE keeps the factory MCUboot, which is fine because it uses

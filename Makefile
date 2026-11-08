@@ -1,4 +1,4 @@
-.PHONY: help workspace build build-incremental build-test ota-test test-hw ota ota-confirm image-state reset flash recover clean
+.PHONY: help workspace build build-incremental build-test ota-test test-hw ota image-state reset flash recover clean
 
 # Configuration (override with `make VAR=value target`)
 BOARD ?= nrf54l15tag/nrf54l15/cpuapp

@@ -313,8 +313,9 @@ rest. Sample 1 is (100, −100, 2048, 16, −16, 0).
 ### 1.10 Firmware updates
 
 Over the standard mcumgr SMP service, using the nRF Connect Device Manager app
-or `smpmgr`. The image is uploaded in test mode. The new firmware confirms
-itself after BLE is up. Recording state isn't kept across an update.
+or `make ota` (`host/ota.py`). No pairing is needed. The image is uploaded in
+test mode. The new firmware confirms itself after BLE is up. Recording state
+isn't kept across an update. The signed image must fit in a 664 KiB slot.
 
 ---
 

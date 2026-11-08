@@ -145,6 +145,17 @@ This works on a tag straight out of the box. The factory firmware
 default dev key, which we sign with too. Phones can update with nRF Connect
 Device Manager and `firmware/build/dfu_application.zip`.
 
+OTA notes:
+
+- `smpmgr upgrade` isn't used because it twice reported success without the
+  image ending up pending. `host/ota.py` checks each step instead.
+- The first BLE connect to the tag often fails; `host/ota.py` retries.
+- The signed image must fit in slot1 (664 KiB minus the swap trailer). The
+  tag rejects a bigger upload before writing anything. v1 is about 200 KB.
+- BlueZ caches the GATT table across firmware changes. If new
+  characteristics are missing after an update, run
+  `bluetoothctl remove <address>` and reconnect.
+
 ### Flash layout
 
 The factory MCUboot uses NCS's FLPR partition variant, not the NCS 3.4
