@@ -412,6 +412,31 @@ def cmd_explore(a):
         plt.show()
 
 
+def cmd_viz3d(a):
+    from . import viz3d
+    from .session import load_session
+
+    motions = []
+    for path in a.sessions:
+        s = load_session(path)
+        _warn_simulated(s)
+        if s.activity not in ("skating", "unknown"):
+            print(f"{path}: skipped, it's a {s.activity} session (the 3D view is for skating)", file=sys.stderr)
+            continue
+        for tag in _tags(s, a.tag):
+            try:
+                fm = viz3d.foot_motion(s, tag)
+            except ValueError as e:
+                print(f"{path}: skipped, {e}", file=sys.stderr)
+                continue
+            print("\n".join(viz3d.describe(fm)))
+            motions.append(fm)
+    if not motions:
+        _die("nothing to show: no skating session with stroke cycles")
+    out = viz3d.write_html(motions, a.output)
+    print(f"wrote {out} (open it in a browser; three.js and the fonts load from a CDN)")
+
+
 def cmd_label(a):
     from .session import set_labels
 
@@ -577,6 +602,15 @@ def main(argv=None):
     c.add_argument("--export", metavar="FILE", help="write every sample as .csv or .parquet")
     c.add_argument("--strides", metavar="CSV", help="write each walking stride (length, period, speed) as .csv")
     c.set_defaults(fn=cmd_explore)
+
+    c = sub.add_parser("viz3d", help="3D replay of how the skate moved, stroke by stroke",
+                       description="Work out the skate's path and angles relative to the skater for every stroke "
+                                   "and write a page that replays them in 3D, with the typical stroke early vs "
+                                   "late in the session. Several sessions go into one page.")
+    c.add_argument("sessions", nargs="+", help="session folders or .zip files")
+    c.add_argument("--tag", help="left, right or an address (default: all)")
+    c.add_argument("-o", "--output", default="strokes3d.html", help="page to write (default: strokes3d.html)")
+    c.set_defaults(fn=cmd_viz3d)
 
     a = ap.parse_args(argv)
     a.fn(a)

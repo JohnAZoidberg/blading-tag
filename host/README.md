@@ -175,6 +175,48 @@ rate and contact share over the session. `--raw` shows ~10 s of raw signal
 with the detected contact phases and cycle starts, to check the detection.
 Use `--raw-at SECONDS` to pick the window.
 
+## 3D replay of the skate
+
+```sh
+bladetag viz3d sessions/session-20261108-1* -o strokes3d.html
+```
+
+Writes one page with every skating session given: a 3D skate (three 110 mm
+wheels, the tag on the boot) replaying each stroke at ¼ speed, a timeline of
+GPS speed with a dot per stroke (sideways sweep, inside edge, toe out, push
+rate, distance per push or lift), and the typical stroke from the first 20 %
+of the session drawn over the one from the last 20 %, with a table of the
+changes. Views: *skater frame* (the skate relative to you, as a camera riding
+alongside sees it), *over ground* (the road streams past at the real speed)
+and *typical stroke*. Space plays and pauses, ←/→ jump a stroke, and clicking
+the timeline jumps there. three.js and the fonts load from a CDN.
+
+How it works (`src/bladetag/viz3d.py`):
+
+1. **Orientation:** a Mahony filter on gyro and low-passed accelerometer,
+   then a tilt correction so the world-frame acceleration averaged over 3 s
+   is vertical. Pushing biases the plain filter by ~15°.
+2. **Path per stroke** (set-down to set-down, from the analysis above): the
+   acceleration is integrated twice. Horizontally the stroke is taken as
+   periodic and the skater's own speed is removed. Vertically only the air
+   phase is integrated; the wheels are on the road otherwise.
+3. **Skater frame:** the path's long axis is sideways, and the way the skate
+   moves while its wheels are down is outward (which foot the tag is on gives
+   the sign). This also gives the tag's mount on the skate, with no setup:
+   on 4 sessions every stroke agreed to 0.97 or better.
+4. **Wheel check:** wheels only roll along the skate, so while they're down
+   the skate points where it's going (GPS speed plus its own sideways
+   motion). That calibrates the skate's yaw on the tag. On the first skate
+   (2026-11-08) it corrected +10° on the left foot and −12° on the right,
+   and the skate's yaw then follows the direction of travel with r ≈ 0.7.
+
+`viz3d.stroke_motion(sess)` gives the same numbers per stroke as a table
+(`stroke` = row in `analyze().strokes`): sideways sweep, outward reach,
+fore-aft range, lift, inside edge, toe out and peak outward speed. On the
+first skate: sweep 0.7–1 m (it includes body sway), inside edge 30–38°, toe
+out ~12°, and lift only 1 cm or less. The simulator's 7 cm lift comes out at
+6.4 cm, so the recovery really does stay that low.
+
 ## Simulated data
 
 ```sh
@@ -206,11 +248,12 @@ The model is only meant to exercise the code. Don't tune thresholds on it.
 | `walking.py` | strides and gait when walking (zero-velocity updates at foot plants), `compare` |
 | `jlink.py` | J-Link test hook driver for the hardware tests |
 | `analysis.py`, `plots.py` | analysis v1 and its plots |
+| `viz3d.py`, `viz3d_template.html` | `viz3d`: skate path and angles per stroke, the 3D replay page |
 | `liveplot.py` | live plot during recording |
 | `cli.py` | the `bladetag` command |
 
 ```sh
-pytest           # protocol vectors, session round-trip, recorder against the fake tag, analysis vs sim truth, explore, walking
+pytest           # protocol vectors, session round-trip, recorder against the fake tag, analysis vs sim truth, explore, walking, viz3d
 ```
 
 The hardware tests in `tests/hw/` run against a real tag with a J-Link
