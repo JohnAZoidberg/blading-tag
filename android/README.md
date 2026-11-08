@@ -15,8 +15,8 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    session.json (`activity`, `gear`), are remembered for next time, carry
    over to Standby and to **Save and start new session**, and can be changed
    afterwards with **Edit**. The field offers the names typed before for
-   that activity. The live screen still shows push rate for every activity
-   for now.
+   that activity. The live screen's big number follows the activity:
+   pushes/min, steps/min or rpm.
 1. Wake the tag by moving the skate. It shows up under **Tags** with its
    state, body location and battery. **Blink** flashes its LED so you can
    tell two tags apart, and **Body location…** stores where the tag is worn
