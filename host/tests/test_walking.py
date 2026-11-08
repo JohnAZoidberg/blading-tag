@@ -145,3 +145,27 @@ def test_at_speed_needs_enough_strides():
     st = walking.strides(synthetic_walk(realistic=True)[0], 200.0)
     r = walking.at_speed(st, 20.0)
     assert r["n"] == 0 and np.isnan(r["strike_deg"])
+
+
+def test_cli_label_compare_and_analyze(tmp_path, capsys):
+    import shutil
+
+    from bladetag import sim
+    from bladetag.cli import main
+    from bladetag.session import load_session
+
+    src = tmp_path / "sim"
+    sim.write_session(src, sim.SkaterModel(duration_s=60, seed=2), sim.LinkModel(), with_gps=True)
+    assert load_session(src).activity == "skating"
+    a, b = tmp_path / "a", tmp_path / "b"
+    shutil.copytree(src, a)
+    shutil.copytree(src, b)
+    main(["label", str(a), str(b), "--activity", "walking", "--gear", "Shoe A"])
+    assert (load_session(a).activity, load_session(b).gear) == ("walking", "Shoe A")
+    # A skating session finds no strides, so there's nothing at any speed.
+    with pytest.raises(SystemExit):
+        main(["compare", str(src)])
+    main(["analyze", str(a)])
+    assert "strides" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        main(["analyze", str(src), "--activity", "cycling"])

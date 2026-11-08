@@ -31,6 +31,16 @@ GPS_COLUMNS = [
 ]
 
 
+ACTIVITIES = p.ACTIVITIES
+
+
+def normalize_activity(label: str | None) -> str:
+    label = (label or "unknown").strip().lower()
+    if label not in ACTIVITIES:
+        raise ValueError(f"unknown activity {label!r}, expected one of {', '.join(ACTIVITIES)}")
+    return label
+
+
 class RecordKind(IntEnum):
     DATA = 1
     STATUS = 2
@@ -123,6 +133,8 @@ class SessionWriter:
             "end_elapsed_ns": None,
             "tags": [],
             "notes": "",
+            "activity": "unknown",
+            "gear": "",
         }
         self.tags: dict[str, TagMeta] = {}
         self._logs: dict[str, TagLog] = {}
@@ -320,6 +332,20 @@ class Session:
     def utc_at(self, elapsed_ns: float) -> datetime:
         return self.start_utc + timedelta(microseconds=(elapsed_ns - self.start_elapsed_ns) / 1e3)
 
+    @property
+    def activity(self) -> str:
+        """"skating", "walking", "cycling" or "unknown" (also for labels this
+        version doesn't know)."""
+        try:
+            return normalize_activity(self.meta.get("activity"))
+        except ValueError:
+            return "unknown"
+
+    @property
+    def gear(self) -> str:
+        """The shoes, skates or bike, as typed; "" if not given."""
+        return (self.meta.get("gear") or "").strip()
+
     def tag(self, position: str | None = None) -> TagData:
         if position is None:
             return self.tags[0]
@@ -386,3 +412,23 @@ def _parse_gps(raw: bytes) -> np.ndarray | None:
             if v not in ("", None):
                 out[c][i] = float(v)
     return out
+
+
+def set_labels(path: str | Path, activity: str | None = None, gear: str | None = None,
+               notes: str | None = None) -> dict:
+    """Change ``activity``, ``gear`` or ``notes`` in a session folder's
+    session.json (not in a .zip). Returns the new metadata."""
+    f = Path(path) / "session.json"
+    if not f.is_file():
+        raise FileNotFoundError(f"no session.json in {path} (a .zip can't be changed; unpack it first)")
+    meta = json.loads(f.read_text())
+    if activity is not None:
+        meta["activity"] = normalize_activity(activity)
+    if gear is not None:
+        meta["gear"] = gear.strip()
+    if notes is not None:
+        meta["notes"] = notes
+    tmp = f.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(meta, indent=2) + "\n")
+    tmp.replace(f)
+    return meta

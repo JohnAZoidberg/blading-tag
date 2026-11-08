@@ -7,7 +7,7 @@ import pytest
 
 from bladetag import protocol as p
 from bladetag.session import (
-    RECORD_HEADER, RecordKind, SessionWriter, iter_records, load_session, tag_filename,
+    RECORD_HEADER, RecordKind, SessionWriter, iter_records, load_session, set_labels, tag_filename,
 )
 from bladetag.timesync import fit_clocks
 
@@ -91,6 +91,29 @@ def test_roundtrip(tmp_path):
     assert t.gaps() == [] and t.seq_gaps() == 0
     assert len(t.statuses) == 1
     assert s.utc_at(s.start_elapsed_ns + 1_500_000_000).isoformat() == "2026-11-07T14:25:31.500000+00:00"
+
+
+def test_activity_and_gear(tmp_path):
+    folder = tmp_path / "s"
+    write_session(folder, n_packets=5)
+    s = load_session(folder)
+    assert (s.activity, s.gear) == ("unknown", "")
+    set_labels(folder, activity="Walking", gear=" Brooks Ghost 15 ")
+    s = load_session(folder)
+    assert (s.activity, s.gear) == ("walking", "Brooks Ghost 15")
+    assert len(s.tags[0].raw) == 5 * 19
+    set_labels(folder, gear="")
+    assert load_session(folder).activity == "walking"
+    with pytest.raises(ValueError):
+        set_labels(folder, activity="swimming")
+    # Sessions from before the fields, and labels from a newer version.
+    meta = json.loads((folder / "session.json").read_text())
+    del meta["activity"], meta["gear"]
+    (folder / "session.json").write_text(json.dumps(meta))
+    assert (load_session(folder).activity, load_session(folder).gear) == ("unknown", "")
+    meta["activity"] = "rowing"
+    (folder / "session.json").write_text(json.dumps(meta))
+    assert load_session(folder).activity == "unknown"
 
 
 def test_zip(tmp_path):

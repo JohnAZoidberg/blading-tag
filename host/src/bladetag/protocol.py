@@ -64,6 +64,11 @@ class Position(IntEnum):
         return cls[normalize_position(label).upper()]
 
 
+#: What a session is (session.json "activity", PROTOCOL.md 2.2). "unknown"
+#: for sessions without the field. Not sent to the tag.
+ACTIVITIES = ("skating", "walking", "cycling", "unknown")
+
+
 # Sessions and scripts from before body locations said just "left"/"right" (feet).
 _LEGACY_POSITIONS = {"left": "left_foot", "right": "right_foot"}
 

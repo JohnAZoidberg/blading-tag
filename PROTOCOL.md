@@ -376,7 +376,9 @@ wall-clock time.
       "simulated": false
     }
   ],
-  "notes": ""
+  "notes": "",
+  "activity": "walking",
+  "gear": "Brooks Ghost 15"
 }
 ```
 
@@ -386,6 +388,14 @@ wall-clock time.
 - `notes` is a free-text description, empty by default. The Android app lets
   you edit it, and the foot/body location, after recording.
 - `info_hex` is the raw Info characteristic. Spaces are optional.
+- `activity` is what the session is: `"skating"`, `"walking"` or
+  `"cycling"`. Missing, or a label the reader doesn't know, means
+  `"unknown"` (every session from before the field). It belongs to the
+  session, not the tag; nothing is sent to the tag.
+- `gear` is free text naming the shoes, skates or bike, e.g.
+  `"Brooks Ghost 15"`; missing or `""` means not given. Readers compare it
+  as written, after trimming spaces. Both fields can be changed after
+  recording (`bladetag label`, the app's edit dialog).
 - `simulated` is `true` for fake data from a simulator (the Android app's
   simulated tag, `bladetag record fake`, `bladetag simulate`), so test data
   isn't mistaken for a real activity. A session is simulated if any of its

@@ -289,14 +289,15 @@ def compare(sessions: list[tuple[str, str, pd.DataFrame]], speed_kmh: float | No
     return per, pd.DataFrame(agg), speed_kmh
 
 
-def format_compare(per: pd.DataFrame, groups: pd.DataFrame, speed_kmh: float) -> str:
+def format_compare(per: pd.DataFrame, groups: pd.DataFrame, speed_kmh: float, band_kmh: float = 1.0) -> str:
     cols = list(COMPARED)
     head = ["", "walks", "strides", *(COMPARED[c][0] for c in cols)]
 
     def fmt(c, v):
         return "-" if pd.isna(v) else COMPARED[c][1].format(v)
 
-    lines = [f"Walking measures at {speed_kmh:.1f} km/h (strides within 1 km/h, adjusted along speed):", ""]
+    lines = [f"Walking measures at {speed_kmh:.1f} km/h (strides within {band_kmh:g} km/h,"
+             f" adjusted along speed):", ""]
     table = [head]
     for _, r in groups.iterrows():
         table.append([str(r["group"]), str(r["sessions"]), str(r["n"]), *(fmt(c, r[c]) for c in cols)])

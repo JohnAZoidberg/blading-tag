@@ -122,9 +122,9 @@ between shoes means something only if it's clearly bigger than that.
 
 **Next steps:**
 
-- [ ] `bladetag compare SESSION... [--by gear|session] [--speed KMH]
-      [--csv FILE]`, printing `walking.format_compare()`; groups by `gear`,
-      falling back to the folder name.
+- [x] `bladetag compare SESSION... [--by gear|session|activity]
+      [--speed KMH] [--csv FILE]`; groups by `gear`, falling back to the
+      folder name.
 - [ ] Same comparison in `explore --html`, or a small HTML report: each
       measure against speed, one colour per pair, so it's visible whether
       the shoes differ at all speeds or only at some.
@@ -163,8 +163,8 @@ that from the data.
 
 ## Order of work
 
-- [ ] **1. Protocol**: document `activity` and `gear` in PROTOCOL.md §2.2.
-- [ ] **2. Host**: read/write `activity` and `gear`, `record --activity
+- [x] **1. Protocol**: document `activity` and `gear` in PROTOCOL.md §2.2.
+- [x] **2. Host**: read/write `activity` and `gear`, `record --activity
       --gear`, `bladetag label`, `bladetag compare`, `analyze` dispatch and
       `--activity`.
 - [ ] **3. Android**: activity picker and gear field, session.json fields,

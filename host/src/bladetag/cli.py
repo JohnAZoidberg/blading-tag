@@ -12,6 +12,7 @@ import threading
 from pathlib import Path
 
 from . import protocol as p
+from .protocol import ACTIVITIES
 
 
 def _die(msg: str) -> None:
@@ -128,6 +129,8 @@ def cmd_record(a):
     folder = SessionWriter.new_folder(Path(a.out))
     writer = SessionWriter(folder)
     writer.meta["notes"] = a.notes or ""
+    writer.meta["activity"] = a.activity
+    writer.meta["gear"] = (a.gear or "").strip()
     opts = RecordOptions(a.odr, a.accel_range, a.gyro_range, a.duration)
 
     ring = None
@@ -211,6 +214,7 @@ def cmd_dump(a):
     print(f"recorder  {m['recorder']['name']} {m['recorder']['version']}, start {m['start_utc']}")
     if m.get("end_elapsed_ns"):
         print(f"length    {(m['end_elapsed_ns'] - m['start_elapsed_ns']) / 1e9:.1f} s")
+    print(f"activity  {s.activity}" + (f", gear: {s.gear}" if s.gear else ""))
     if m.get("notes"):
         print(f"notes     {m['notes']}")
     for t in s.tags:
@@ -243,19 +247,69 @@ def cmd_dump(a):
         print(f"gps       {len(s.gps)} fixes")
 
 
+def _tags(s, which: str | None):
+    if not s.tags:
+        _die("session has no tags")
+    if not which:
+        return s.tags
+    tags = [t for t in s.tags if p.normalize_position(which) in (t.meta.position, t.meta.address)]
+    if not tags:
+        _die(f"no tag {which!r}")
+    return tags
+
+
+def _walk(s, tag):
+    """(strides, gps frame) for one tag, as in `explore`."""
+    from . import explore as ex
+    from . import walking
+    from .timesync import fit_clocks
+
+    clock = fit_clocks(tag)
+    df = ex.sample_frame(s, tag, clock)
+    return walking.strides(df, clock.rate_hz), ex.gps_frame(s)
+
+
 def cmd_analyze(a):
-    from .analysis import analyze, format_summary
     from .session import load_session
 
     s = load_session(a.session)
     _warn_simulated(s)
-    if not s.tags:
-        _die("session has no tags")
-    tags = s.tags
-    if a.tag:
-        tags = [t for t in s.tags if p.normalize_position(a.tag) in (t.meta.position, t.meta.address)]
-        if not tags:
-            _die(f"no tag {a.tag!r}")
+    tags = _tags(s, a.tag)
+    activity = a.activity or s.activity
+    if activity == "walking":
+        return _analyze_walking(a, s, tags)
+    if activity == "cycling":
+        _die("there's no cycling analysis yet (it waits for a first ride, see PLAN-activities.md);"
+             f" `bladetag explore {a.session}` shows the raw signal and cadence")
+    if activity == "unknown":
+        _die(f"the session doesn't say what activity it is. Use --activity skating|walking, set it with"
+             f" `bladetag label {a.session} --activity ...`, or look at it with `bladetag explore`")
+    _analyze_skating(a, s, tags)
+
+
+def _analyze_walking(a, s, tags):
+    from . import walking
+
+    if a.plot or a.show or a.raw:
+        _die("--plot/--show/--raw are for skating; for walking use `bladetag explore --html`")
+    for tag in tags:
+        st, gps = _walk(s, tag)
+        suffix = f"-{tag.meta.position}" if len(tags) > 1 else ""
+        if a.json:
+            g = st.dropna(subset=["strike_deg"])
+            print(json.dumps({"activity": "walking", "gear": s.gear, "tag": tag.meta.address,
+                              "strides": len(st), **{c: g[c].median() for c in g.columns if c != "t_s"}},
+                             indent=2, default=float))
+        else:
+            print(f"tag {tag.meta.address} ({tag.meta.position}), walking" + (f" in {s.gear}" if s.gear else ""))
+            print("\n".join(walking.describe(st, gps)))
+        if a.csv:
+            st.to_csv(_suffixed(a.csv, suffix), index=False, float_format="%.4f")
+
+
+def _analyze_skating(a, s, tags):
+    from .analysis import analyze, format_summary
+
     for tag in tags:
         r = analyze(s, tag, method=a.method)
         if a.json:
@@ -289,6 +343,8 @@ def cmd_explore(a):
 
     s = load_session(a.session)
     _warn_simulated(s)
+    if a.strides and s.activity not in ("walking", "unknown"):
+        _die(f"--strides is for walking, and this session is {s.activity}")
     tags = s.tags
     if a.tag:
         tags = [t for t in s.tags if p.normalize_position(a.tag) in (t.meta.position, t.meta.address)]
@@ -325,13 +381,15 @@ def cmd_explore(a):
         cad = ex.cadence_track(df, fs)
         print(f"tag {name}")
         summary = ex.describe(df, fs, tag.meta.accel_range_g, tag.meta.gyro_range_dps, gps, cad, still)
-        st = walking.strides(df, fs, still)
-        summary += walking.describe(st, gps)
+        st = None
+        if s.activity in ("walking", "unknown"):
+            st = walking.strides(df, fs, still)
+            summary += walking.describe(st, gps)
         print("\n".join(summary))
         suffix = f"-{tag.meta.position}" if len(tags) > 1 else ""
         if a.export:
             ex.export(df, _suffixed(a.export, suffix))
-        if a.strides:
+        if a.strides and st is not None:
             st.to_csv(_suffixed(a.strides, suffix), index=False, float_format="%.4f")
         if a.html:
             from .explore_html import write_overview_html
@@ -348,6 +406,49 @@ def cmd_explore(a):
         import matplotlib.pyplot as plt
 
         plt.show()
+
+
+def cmd_label(a):
+    from .session import set_labels
+
+    if a.activity is None and a.gear is None and a.notes is None:
+        _die("nothing to change: give --activity, --gear or --notes")
+    for path in a.sessions:
+        try:
+            m = set_labels(path, a.activity, a.gear, a.notes)
+        except (FileNotFoundError, ValueError) as e:
+            _die(str(e))
+        print(f"{path}: {m.get('activity', 'unknown')}" + (f", {m['gear']}" if m.get("gear") else ""))
+
+
+def cmd_compare(a):
+    from . import walking
+    from .session import load_session
+
+    runs = []
+    for path in a.sessions:
+        s = load_session(path)
+        if s.simulated:
+            print(f"note: {path} is SIMULATED", file=sys.stderr)
+        if s.activity not in ("walking", "unknown"):
+            print(f"skipping {path}: it's {s.activity}, and compare is for walking", file=sys.stderr)
+            continue
+        name = Path(path).name.removesuffix(".zip")
+        group = {"gear": s.gear or name, "activity": s.activity, "session": name}[a.by]
+        feet = [t for t in _tags(s, a.tag) if t.meta.position.endswith("_foot") or t.meta.position == "unknown"]
+        for tag in feet:
+            st, _ = _walk(s, tag)
+            label = f"{name} ({tag.meta.position})" if len(feet) > 1 else name
+            runs.append((group, label, st))
+    if not runs:
+        _die("no walking sessions to compare")
+    try:
+        per, groups, speed = walking.compare(runs, a.speed, a.band)
+    except ValueError as e:
+        _die(str(e))
+    print(walking.format_compare(per, groups, speed, a.band))
+    if a.csv:
+        per.to_csv(a.csv, index=False, float_format="%.4f")
 
 
 def _suffixed(path: str, suffix: str) -> str:
@@ -380,6 +481,8 @@ def main(argv=None):
     c.add_argument("-d", "--duration", type=float, help="stop after this many seconds")
     c.add_argument("-p", "--plot", action="store_true", help="live plot")
     c.add_argument("-n", "--notes", help="free text for session.json")
+    c.add_argument("-a", "--activity", choices=ACTIVITIES, default="unknown", help="what you're doing")
+    c.add_argument("-g", "--gear", help="the shoes, skates or bike, e.g. 'Brooks Ghost 15'")
     c.add_argument("--fake-speed", type=float, default=1.0, help=argparse.SUPPRESS)
     c.set_defaults(fn=cmd_record)
 
@@ -427,7 +530,31 @@ def main(argv=None):
     c.add_argument("--no-table", action="store_true", help="skip the per-km table")
     c.add_argument("--method", choices=["auto", "setdown", "gyro"], default="auto",
                    help="cycle boundaries: wheel set-down (vibration) or |gyro| peaks")
+    c.add_argument("-a", "--activity", choices=ACTIVITIES[:-1],
+                   help="analyze as this activity (default: the session's own)")
     c.set_defaults(fn=cmd_analyze)
+
+    c = sub.add_parser("label", help="set a session's activity, gear (shoes, skates, bike) or notes",
+                       description="Change session.json in session folders, e.g. to mark old sessions"
+                                   " (they're all 'unknown') or to fix a typo in the gear.")
+    c.add_argument("sessions", nargs="+", help="session folders")
+    c.add_argument("-a", "--activity", choices=ACTIVITIES)
+    c.add_argument("-g", "--gear", help="e.g. 'Brooks Ghost 15'; '' to clear")
+    c.add_argument("-n", "--notes")
+    c.set_defaults(fn=cmd_label)
+
+    c = sub.add_parser("compare", help="walks side by side at one speed, e.g. to compare shoes",
+                       description="Gait measures (stride, stance, foot angle at heel strike and toe-off,"
+                                   " impact, lift) for each walk at a common speed, grouped by gear, with"
+                                   " the spread between walks in the same gear.")
+    c.add_argument("sessions", nargs="+", help="session folders or .zip files")
+    c.add_argument("--by", choices=["gear", "session", "activity"], default="gear",
+                   help="what to group by (default: gear; sessions without one count as their own)")
+    c.add_argument("--speed", type=float, help="km/h to compare at (default: median over all strides)")
+    c.add_argument("--band", type=float, default=1.0, help="use strides within this many km/h (default: 1)")
+    c.add_argument("--tag", help="left, right or an address (default: every foot tag)")
+    c.add_argument("--csv", metavar="FILE", help="write the per-walk table")
+    c.set_defaults(fn=cmd_compare)
 
     c = sub.add_parser("explore", help="look at the raw signal: zoomable overview, spectra, export",
                        description="Print a summary and open a zoomable overview of the raw signal. "

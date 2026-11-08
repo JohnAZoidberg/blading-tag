@@ -187,6 +187,7 @@ def write_session(folder: Path, model: SkaterModel | None = None, link: LinkMode
                   link.buffer_capacity)
     log = w.add_tag(address, info.pack())
     w.tags[address].simulated = True
+    w.meta["activity"] = "skating"   # the model is a skater
     w.save()
 
     def status(state, i, fill=0, dropped=0, extra_us=0):

@@ -29,6 +29,7 @@ bladetag scan                     # tags in range: state, position, battery
 bladetag info [ADDR]              # Info + Status
 bladetag position [ADDR] left_foot  # where it's worn: left_foot, right_wrist, backpack, …
 bladetag record [ADDR] --plot     # record into ./sessions/session-YYYYMMDD-HHMMSS/
+bladetag record [ADDR] -a walking -g "Brooks Ghost 15"   # with the activity and the gear (shoes, skates, bike)
 bladetag identify [ADDR] 5        # blink the LED
 bladetag stop [ADDR]              # stop a recording left running
 bladetag sleep [ADDR]             # System OFF
@@ -90,13 +91,34 @@ the zoomed range (`overview.html#t=230-360`).
 
 **Walking.** When the tag is worn walking, the summary also gives the stride
 length (from one plant of the tag's foot to the next; a step is about half
-of it), the walking speed, and the distance compared with GPS. The HTML page
+of it), the walking speed, the distance compared with GPS, and the gait:
+the share of the stride with the foot on the ground, the foot's pitch at
+heel strike and toe-off, how hard it lands and how high it swings. The HTML page
 gets a step panel and `--strides` writes every stride. It integrates the
 IMU between foot plants, resetting the velocity to zero at each one
 (`src/bladetag/walking.py`). On the first real walks it agreed with GPS to
 1 % where GPS was accurate (±4 m). It only works when the foot actually stops:
 gliding skates never do, and their road vibration keeps them from being
-mistaken for a planted foot, so skating sessions report no strides.
+mistaken for a planted foot, so skating sessions report no strides. Only
+sessions marked walking (or not marked at all) get the stride section.
+
+**Comparing shoes.** Mark the walks with the shoes they were done in, then
+put them side by side:
+
+```sh
+bladetag label sessions/session-20261109-* --activity walking --gear "Brooks Ghost 15"
+bladetag compare sessions/session-2026111*          # grouped by gear
+bladetag compare SESSIONS... --speed 5 --csv walks.csv
+```
+
+`compare` gives stride length, stance share, foot angle at heel strike and
+toe-off, impact and lift for each walk at one common speed (strides within
+1 km/h of it, each measure shifted along its fit against speed, since nearly
+everything in a stride changes with pace), the mean per pair of shoes, and
+the spread between walks in the same pair. A difference between shoes only
+means something if it's clearly bigger than that spread: record 2–3 walks
+per pair on the same route, alternating, with the tag in the same spot on
+the shoe. See [PLAN-activities.md](../PLAN-activities.md#comparing-gear-eg-shoes).
 
 Note down what you did and when (stand still, 10 easy strides, 10 hard
 strides, ...), so the ranges can be found again afterwards. Times are
@@ -121,6 +143,12 @@ bladetag analyze SESSION --plot overview.png --raw raw.png --csv strokes.csv
 
 `SESSION` is a session folder or its `.zip` export, from either this recorder
 or the Android app.
+
+`analyze` follows the session's activity: skating gets the push analysis
+below, walking the stride and gait summary (`--csv` writes every stride).
+Sessions recorded before the activity existed are `unknown`; give
+`--activity skating` or mark them with `bladetag label SESSION --activity
+skating`. There's no cycling analysis yet.
 
 What it does (`src/bladetag/analysis.py`):
 
@@ -175,7 +203,7 @@ The model is only meant to exercise the code. Don't tune thresholds on it.
 | `sim.py` | synthetic skating sessions |
 | `explore.py` | raw-signal exploration: per-sample table, overview, spectra |
 | `explore_html.py`, `explore_overview.html` | `explore --html`: the overview as one self-contained page |
-| `walking.py` | stride length when walking (zero-velocity updates at foot plants) |
+| `walking.py` | strides and gait when walking (zero-velocity updates at foot plants), `compare` |
 | `jlink.py` | J-Link test hook driver for the hardware tests |
 | `analysis.py`, `plots.py` | analysis v1 and its plots |
 | `liveplot.py` | live plot during recording |
