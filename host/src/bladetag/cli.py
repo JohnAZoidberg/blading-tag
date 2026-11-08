@@ -342,10 +342,11 @@ def _analyze_skating(a, s, tags):
 def cmd_report(a):
     from . import report, skating
 
-    paths = report.session_paths(a.sessions)
+    paths, from_folder = report.session_paths(a.sessions)
     if not paths:
         _die("no sessions found")
-    df, infos = skating.load_sessions(paths, progress=lambda m: print(m, file=sys.stderr))
+    df, infos = skating.load_sessions(paths, progress=lambda m: print(m, file=sys.stderr),
+                                      labelled_only=from_folder)
     if df.empty:
         _die("no skating session with stroke cycles among these")
     if a.csv:

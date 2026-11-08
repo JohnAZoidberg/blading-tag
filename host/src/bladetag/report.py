@@ -251,14 +251,17 @@ def write_report(path: str | Path, report: dict) -> None:
     Path(path).write_text(page, encoding="utf-8")
 
 
-def session_paths(args: list[str]) -> list[Path]:
-    """Session folders/zips from the arguments; a folder full of sessions
-    stands for all of them."""
-    out = []
+def session_paths(args: list[str]) -> tuple[list[Path], set[Path]]:
+    """Session folders/zips from the arguments, and which of them came from
+    a folder full of sessions (those count only if labelled skating, so
+    unlabelled walks in the folder stay out)."""
+    out, from_folder = [], set()
     for a in args:
         p = Path(a)
         if p.is_dir() and not (p / "session.json").exists():
-            out += sorted(q for q in p.iterdir() if (q / "session.json").exists() or q.suffix == ".zip")
+            found = sorted(q for q in p.iterdir() if (q / "session.json").exists() or q.suffix == ".zip")
+            out += found
+            from_folder |= set(found)
         else:
             out.append(p)
-    return out
+    return out, from_folder

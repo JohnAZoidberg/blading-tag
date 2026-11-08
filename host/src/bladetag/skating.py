@@ -224,15 +224,17 @@ class SessionInfo:
 
 
 def load_sessions(paths: list[str | Path], p: Params | None = None, activity: str = "skating",
-                  progress=None) -> tuple[pd.DataFrame, list[SessionInfo]]:
+                  progress=None, labelled_only: set | None = None) -> tuple[pd.DataFrame, list[SessionInfo]]:
     """Stroke tables of every skating session in ``paths``, concatenated, with
-    a ``session`` column. Sessions of another activity are skipped
-    (``unknown`` ones are taken, so old recordings still work)."""
+    a ``session`` column. Sessions of another activity are skipped.
+    ``unknown`` ones are taken (old recordings) unless they're in
+    ``labelled_only``."""
     p = p or Params()
     frames, infos, coast_frames = [], [], []
     for path in paths:
         sess = load_session(path)
-        if activity and sess.activity not in (activity, "unknown"):
+        if activity and sess.activity != activity and (
+                sess.activity != "unknown" or (labelled_only and path in labelled_only)):
             continue
         for tag in sess.tags:
             if "foot" not in tag.meta.position and tag.meta.position != "unknown":

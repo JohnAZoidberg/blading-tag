@@ -221,7 +221,7 @@ out ~12°, and lift only 1 cm or less. The simulator's 7 cm lift comes out at
 
 ```sh
 bladetag report sessions/session-20261108-1* -o report.html --title "Riverside, 8 Nov"
-bladetag report sessions -o all.html --csv strokes.csv   # every skating session in the folder
+bladetag report sessions -o all.html --csv strokes.csv   # every session in the folder labelled skating
 ```
 
 Measures every stroke of every skating session given (`src/bladetag/skating.py`)

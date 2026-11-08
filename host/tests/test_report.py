@@ -18,7 +18,7 @@ def two_sessions(tmp_path_factory):
 
 
 def test_stroke_table_has_every_measure(two_sessions):
-    df, infos = skating.load_sessions(report.session_paths([str(two_sessions)]))
+    df, infos = skating.load_sessions(report.session_paths([str(two_sessions)])[0])
     assert [i.foot for i in infos] == ["left_foot", "right_foot"]
     assert df["session"].nunique() == 2
     m = df[df["moving"]]
@@ -31,7 +31,7 @@ def test_stroke_table_has_every_measure(two_sessions):
 
 
 def test_correlations_and_speed_matching(two_sessions):
-    df, _ = skating.load_sessions(report.session_paths([str(two_sessions)]))
+    df, _ = skating.load_sessions(report.session_paths([str(two_sessions)])[0])
     keys = skating.measures_present(df)
     c = skating.correlations(df, keys)
     for name in ("pooled", "within"):
@@ -46,7 +46,7 @@ def test_correlations_and_speed_matching(two_sessions):
 
 
 def test_route_pairs_find_shared_ground(two_sessions):
-    df, _ = skating.load_sessions(report.session_paths([str(two_sessions)]))
+    df, _ = skating.load_sessions(report.session_paths([str(two_sessions)])[0])
     # Both simulated sessions start at the same spot heading the same way.
     pairs = skating.route_pairs(df)
     assert len(pairs) and (pairs["direction"] == "same way").any()
@@ -61,7 +61,7 @@ def test_wind_estimate():
 
 
 def test_report_page(two_sessions, tmp_path):
-    df, infos = skating.load_sessions(report.session_paths([str(two_sessions)]))
+    df, infos = skating.load_sessions(report.session_paths([str(two_sessions)])[0])
     rep = report.build(df, infos, "test </script> & co")
     assert rep["findings"] and all(f["text"] for f in rep["findings"])
     out = tmp_path / "r.html"
