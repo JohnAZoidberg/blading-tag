@@ -283,7 +283,7 @@ def _solve(r: Result, t, acc, rw, contact, still, side, fs, p: Params) -> dict:
     los = np.searchsorted(t, st["lift_off_s"].fillna(-1).to_numpy())
     world = np.full((n, 3), np.nan)
     stroke_id = np.full(n, -1, dtype=np.int64)
-    psi_k, lat_s, centres, ok = [], [], [], []
+    psi_k, lat_s, centres, ok, segs = [], [], [], [], []
     for k, (i0, i1, lo) in enumerate(zip(i0s, i1s, los)):
         i1 = min(i1, n - 1)
         if i1 - i0 < 10:
@@ -291,7 +291,7 @@ def _solve(r: Result, t, acc, rw, contact, still, side, fs, p: Params) -> dict:
             continue
         lo_rel = int(lo - i0) if i0 < lo < i1 else None
         path = _stroke_path(aw[i0:i1 + 1], lo_rel, dt)
-        world[i0:i1] = path[:-1]
+        segs.append((i0, i1, path))
         stroke_id[i0:i1] = k
         cov = np.cov(path[:, :2].T)
         _, vecs = np.linalg.eigh(cov)
@@ -309,6 +309,7 @@ def _solve(r: Result, t, acc, rw, contact, still, side, fs, p: Params) -> dict:
         ok.append(True)
     if not psi_k:
         raise ValueError("no stroke cycles to show (is this a skating session?)")
+    _stitch(segs, world)
 
     # Heading of the skater, smoothed over strokes, at every sample.
     psi = np.unwrap(np.array(psi_k))
@@ -431,6 +432,26 @@ def foot_motion(sess: Session, tag=None, p: Params = Params(), result: Result | 
                       strokes, typical, mount, r, warnings)
 
 
+def _stitch(segs: list, world: np.ndarray) -> None:
+    """Write the stroke paths into ``world`` so they join up. Each stroke is
+    integrated on its own, so one ends where the next doesn't begin; the
+    joint goes to the midpoint of the two ends, and each stroke's linear drift
+    correction is shared out to meet it (horizontal only; heights are on the
+    road at both ends already)."""
+    joint = [None] * (len(segs) + 1)  # joint[j]: between segs[j-1] and segs[j]
+    for j in range(1, len(segs)):
+        (_, a1, pa), (b0, _, pb) = segs[j - 1], segs[j]
+        if abs(a1 - b0) <= 1:
+            joint[j] = (pa[-1, :2] + pb[0, :2]) / 2
+    for j, (i0, i1, path) in enumerate(segs):
+        path = path.copy()
+        d0 = joint[j] - path[0, :2] if joint[j] is not None else np.zeros(2)
+        d1 = joint[j + 1] - path[-1, :2] if joint[j + 1] is not None else np.zeros(2)
+        u = np.linspace(0, 1, len(path))[:, None]
+        path[:, :2] += (1 - u) * d0 + u * d1
+        world[i0:i1] = path[:-1]
+
+
 def model_origin(pos: np.ndarray, r_body: np.ndarray, contact: np.ndarray) -> np.ndarray:
     """Where to draw the skate (its origin, on the road under the middle
     wheel) so that the tag on it follows the measured path, and its lowest
@@ -439,11 +460,18 @@ def model_origin(pos: np.ndarray, r_body: np.ndarray, contact: np.ndarray) -> np
     near the front barely rises while the back wheel comes up."""
     tag = np.einsum("nij,j->ni", r_body, TAG_ON_SKATE)
     org = pos - (tag - tag.mean(axis=0))
-    org[:, 2] = pos[:, 2] - (tag[:, 2] - TAG_ON_SKATE[2])
     axle_z = r_body[:, 2, 1]
     reach = WHEEL_R * np.sqrt(np.clip(1 - axle_z ** 2, 0, 1))
     lowest = np.min([np.einsum("ni,i->n", r_body[:, 2, :], [x, 0.0, WHEEL_R]) for x in WHEEL_X], axis=0) - reach
-    org[:, 2] = np.where(contact, -lowest, np.maximum(org[:, 2], -lowest))
+    # The tag's height above the road while the wheels are down; in the air
+    # it runs from its value at lift-off to its value at set-down, plus the
+    # measured rise, so the drawing doesn't jump at either end.
+    tag_h = tag[:, 2] - lowest
+    if contact.any():
+        i = np.arange(len(pos))
+        tag_h = np.interp(i, i[contact], tag_h[contact])
+    z = tag_h + pos[:, 2] - tag[:, 2]
+    org[:, 2] = np.maximum(z, -lowest)   # = -lowest while the wheels are down
     return org
 
 

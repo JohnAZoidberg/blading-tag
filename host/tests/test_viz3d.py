@@ -85,3 +85,14 @@ def test_wheels_stay_on_or_above_the_road(simulated):
     _, _, pitch = viz3d._angles(r, fm.side)
     c = fm.contact & (fm.stroke >= 0)
     assert np.percentile(np.abs(pitch[c]), 90) < 3
+
+
+def test_no_jumps_between_strokes_or_at_lift_off(simulated):
+    _, fm, _, _ = simulated
+    r = Rotation.from_quat(fm.quat).as_matrix()
+    org = viz3d.model_origin(fm.pos, r, fm.contact)
+    inside = (fm.stroke[1:] >= 0) & (fm.stroke[:-1] >= 0)
+    step = np.linalg.norm(np.diff(org, axis=0), axis=1)[inside]
+    typical = np.percentile(step, 99)
+    switch = (np.diff(fm.contact.astype(int)) != 0)[inside]
+    assert step[switch].max() < 2 * typical
