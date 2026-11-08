@@ -305,11 +305,8 @@ class MainActivity : Activity() {
 
     private fun describe(rec: RecorderService.Recording): String {
         val sb = StringBuilder()
-        val secs = (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1_000_000_000
-        sb.append("%d:%02d:%02d".format(secs / 3600, secs / 60 % 60, secs % 60))
-        if (rec.stopping) sb.append("  stopping…")
-        if (RecorderService.standby != null) sb.append("\nstandby: back to waiting for the button after this")
-        sb.append("\n")
+        // Elapsed time and "stopping…" are at the top of the live panel.
+        if (RecorderService.standby != null) sb.append("standby: back to waiting for the button after this\n")
         rec.meta.notes.takeIf { it.isNotBlank() }?.let { sb.append(it.lines().first()).append("\n") }
         for (l in rec.links) {
             val s = l.status

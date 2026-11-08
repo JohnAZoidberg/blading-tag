@@ -86,7 +86,9 @@ class LivePanel(context: Context) : LinearLayout(context) {
         }
         speed.first.text = if (kmh.isNaN()) "–" else "%.1f".format(kmh)
         distance.first.text = if (rec.gps == null) "–" else "%.2f".format(rec.distanceM / 1000)
-        perPush.first.text = if (push.isNaN() || kmh.isNaN()) "–" else "%.1f".format(kmh / 3.6f / (push / 60f))
+        // Below walking pace GPS speed is mostly noise, and so would this be.
+        perPush.first.text = if (push.isNaN() || kmh.isNaN() || kmh < MIN_PER_PUSH_KMH) "–"
+            else "%.1f".format(kmh / 3.6f / (push / 60f))
 
         val now = (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1e9f
         // Whole session, but at least 5 minutes wide so the start isn't stretched.
@@ -142,6 +144,7 @@ class LivePanel(context: Context) : LinearLayout(context) {
 
     companion object {
         const val SCOPE_S = 10f
+        const val MIN_PER_PUSH_KMH = 3f
 
         /** Session time on the trend axis: "12 min", or "1:05 h" past an hour. */
         fun clock(s: Float): String {
