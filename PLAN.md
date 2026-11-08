@@ -208,7 +208,13 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
       stops recording, logs IMU + GPS, exports files. First test the stream
       with nRF Connect.
       *Built and recording from the real tag: two walks with GPS on
-      2026-11-07, tag on the ankle. Still to do: a skate session.*
+      2026-11-07, tag on the ankle. Live view while recording (dcacfb8):
+      push rate as the big number, speed, distance, metres per push, trend
+      charts for the session and each tag's last 10 s of gyro/accel; push
+      rate, speed and distance in the notification too. Push rate is a
+      Kotlin port of `explore.cadence_track` and matched the host on every
+      repetitive window of both walks. Seen on the phone with the simulated
+      tag only. Still to do: a skate session, live and recorded.*
 - [ ] **6. Analysis v1**: push detection and push rate, push/glide split,
       distance per push, fatigue drift over the session.
       *Built and checked on simulated sessions. Still to do: tune the
@@ -255,6 +261,23 @@ Known issues and things not tested yet:
 - **The Android app's reconnect after a real link drop** is untested.
 - **Phone OTA** with nRF Connect Device Manager is untested; OTA has only
   been done from the laptop (`make ota`).
+- **The app's live push rate on real skating** is unchecked. On the next
+  skate session, look at the screen a few times and compare with counting
+  pushes for 30 s. Things that could be off:
+  - It doubles the period of the tagged foot (feet alternate). That's right
+    for skating only; walking shows steps/min by luck, cycling would show
+    twice the rpm (see [PLAN-activities.md](PLAN-activities.md)).
+  - The "moving" (gyro RMS > 30 °/s) and "repetitive" (autocorrelation
+    > 0.5) thresholds come from `bladetag explore` and were only checked on
+    walks. Long glides or a relaxed cruise may fall below "repetitive" and
+    show "–".
+  - The 8 s window makes it lag a change in pace by a few seconds.
+  - Afterwards, `host/live_parity.py` on the skate session checks the
+    Kotlin port against the host on that data.
+- **Live view with the real tag** hasn't been looked at: the motion plot
+  after a link drop (it should break the line, not draw resent samples
+  twice), two tags at once, and the battery cost of the screen redrawing at
+  20 fps while it's on (only while visible).
 
 Settled:
 
