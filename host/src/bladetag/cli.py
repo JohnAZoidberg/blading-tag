@@ -215,7 +215,7 @@ def cmd_dump(a):
         print(f"  {len(t.pkt_n)} packets, {len(t.raw)} samples, {len(t.statuses)} status records"
               + (f", {t.unknown_packets} unknown packets" if t.unknown_packets else "")
               + (f", {t.bad_records} bad records" if t.bad_records else "")
-              + (f", {t.duplicate_packets} duplicate packets dropped" if t.duplicate_packets else ""))
+              + (f", {t.duplicate_packets} repeated packets dropped (resends after a reconnect)" if t.duplicate_packets else ""))
         if len(t.raw):
             fit = fit_clocks(t)
             if math.isfinite(fit.rx_residual_ms):

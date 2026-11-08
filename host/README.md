@@ -4,10 +4,11 @@ Python tools that run on a laptop: a BLE recorder with a live plot, and the
 session analysis. Phases 4 and 6 in [../PLAN.md](../PLAN.md). They implement
 both interfaces in [../PROTOCOL.md](../PROTOCOL.md).
 
-> **Status:** the recorder works with a real tag (firmware 0.2.0): every rate
-> from 25 to 800 Hz with no gaps, a forced link drop and reconnect with no
-> samples lost, and joining a recording after the recorder crashed. A real
-> out-of-range drop hasn't been retested since the reconnect fix. The analysis
+> **Status:** the recorder works with a real tag: every rate from 25 to
+> 800 Hz with no gaps, and joining a recording after the recorder crashed.
+> Link drops lose no samples: the hardware tests (`tests/hw/`) drop the link
+> 20 times with `bluetoothctl disconnect` and 8 times with real supervision
+> timeouts. Walking out of range hasn't been tried since then. The analysis
 > runs on real recordings, but its thresholds still need a real skate session.
 
 ## Install

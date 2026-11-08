@@ -201,7 +201,9 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
       `seq`, 0 dropped, clock fit ±0.72 ms.
 - [ ] **4. Laptop recorder**: `host/` script (bleak). Logs to a file and plots
       live. Do one real skate session to look at the raw signal.
-      *Built and recording from the real tag. Still to do: the skate session.*
+      *Built and recording from the real tag at every rate. Link drops and
+      reconnects lose no samples (hardware tests in `host/tests/hw/`).
+      Still to do: the skate session.*
 - [ ] **5. Android logger**: Kotlin foreground service. Connects, starts and
       stops recording, logs IMU + GPS, exports files. First test the stream
       with nRF Connect.
@@ -238,6 +240,19 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
   Cost: if the tag resets or sleeps before anyone connects, the update is
   lost. Waking from System OFF is a reset, so idle sleep and the 2 s button
   hold would have to wait (or warn) while the image isn't confirmed.
+
+Known issues and things not tested yet:
+
+- **The firmware version is still 0.2.0**, although it has changed a lot
+  since: samples kept until acknowledged, the last 8 packets resent after a
+  link loss, a 72 s buffer, sleep, +7 dBm and body locations 0-7. Tags with
+  the old and new builds can't be told apart from Info. Bump to 0.3.0.
+- **Walking out of range** with a recording running hasn't been tried since
+  the resend fix, with either recorder. The hardware tests cover the same
+  link loss (supervision timeouts), but not a real walk-away and return.
+- **The Android app's reconnect after a real link drop** is untested.
+- **Phone OTA** with nRF Connect Device Manager is untested; OTA has only
+  been done from the laptop (`make ota`).
 
 Settled:
 

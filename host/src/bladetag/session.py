@@ -245,10 +245,11 @@ def decode_tag_log(data: bytes, meta: TagMeta) -> TagData:
                 if pkt.samples is None:
                     unknown += 1
                     continue
-                # BlueZ can deliver a notification twice (old notify sessions
-                # after a reconnect). Keep the first copy. timestamp_us is in
-                # the key so a new session in the same log isn't mistaken
-                # for a copy.
+                # Packets arrive more than once after a reconnect: the tag
+                # resends its last few (PROTOCOL.md 1.9), and older recorders
+                # let BlueZ deliver every notification twice. Keep the first
+                # copy. timestamp_us is in the key so a new session in the
+                # same log isn't mistaken for a copy.
                 key = (pkt.seq, pkt.sample_index, pkt.timestamp_us)
                 if key in seen:
                     dup += 1
