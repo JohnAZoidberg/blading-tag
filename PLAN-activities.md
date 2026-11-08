@@ -167,7 +167,7 @@ that from the data.
 - [x] **2. Host**: read/write `activity` and `gear`, `record --activity
       --gear`, `bladetag label`, `bladetag compare`, `analyze` dispatch and
       `--activity`.
-- [ ] **3. Android**: activity picker and gear field, session.json fields,
+- [x] **3. Android**: activity picker and gear field, session.json fields,
       edit dialog, session list, wording.
 - [ ] **4. Android live panel**: per-activity big number and
       distance-per tile (coordinate with the live-panel session).

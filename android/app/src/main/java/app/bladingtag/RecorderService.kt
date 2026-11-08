@@ -71,8 +71,11 @@ class RecorderService : Service(), TagLink.Listener {
         val trend = Trend()
     }
 
-    /** Armed standby: which tags to watch and record, and whether to record GPS. */
-    class Standby(val addresses: List<String>, val gps: Boolean)
+    /** What a recording is of: session.json "activity" and "gear". */
+    data class Label(val activity: ActivityKind, val gear: String)
+
+    /** Armed standby: which tags to watch and record, whether to record GPS, and what it'll be. */
+    class Standby(val addresses: List<String>, val gps: Boolean, val label: Label)
 
     private val main = Handler(Looper.getMainLooper())
     private var wakeLock: PowerManager.WakeLock? = null
@@ -84,21 +87,24 @@ class RecorderService : Service(), TagLink.Listener {
         when (intent?.action) {
             ACTION_START -> if (current == null) {
                 begin(intent.getStringArrayExtra(EXTRA_ADDRESSES)?.toList().orEmpty(),
-                    intent.getBooleanExtra(EXTRA_GPS, true))
+                    intent.getBooleanExtra(EXTRA_GPS, true), label(intent))
             }
             ACTION_STOP -> end()
             ACTION_SPLIT -> split()
             ACTION_STANDBY -> if (current == null && standby == null) {
                 arm(intent.getStringArrayExtra(EXTRA_ADDRESSES)?.toList().orEmpty(),
-                    intent.getBooleanExtra(EXTRA_GPS, true))
+                    intent.getBooleanExtra(EXTRA_GPS, true), label(intent))
             }
             ACTION_LEAVE_STANDBY -> disarm()
         }
         return START_NOT_STICKY
     }
 
+    private fun label(intent: Intent) =
+        Label(ActivityKind.of(intent.getStringExtra(EXTRA_ACTIVITY)), intent.getStringExtra(EXTRA_GEAR).orEmpty())
+
     /** [wantGps]: the user's choice; GPS also needs the location permission. */
-    private fun begin(addresses: List<String>, wantGps: Boolean) {
+    private fun begin(addresses: List<String>, wantGps: Boolean, label: Label) {
         val hasLocation = wantGps && granted(Manifest.permission.ACCESS_FINE_LOCATION)
         if (standby == null) {
             startForeground(NOTIFICATION_ID, notification("Starting…"), fgsTypes(hasLocation))
@@ -115,6 +121,8 @@ class RecorderService : Service(), TagLink.Listener {
         val dir = newSessionDir(startUtc)
         val meta = SessionMeta(BuildConfig.VERSION_NAME, startUtc, startElapsed,
             addresses.map { TagMeta(it).apply { simulated = it == SimulatedTag.ADDRESS } })
+        meta.activity = label.activity
+        meta.gear = label.gear
         writeSessionJson(dir, meta)
 
         val logs = addresses.associateWith { TagLog(File(dir, TagLog.fileName(it))) }
@@ -144,12 +152,12 @@ class RecorderService : Service(), TagLink.Listener {
     // ---- standby ------------------------------------------------------------
 
     /** [wantGps]: as for [begin]. Must be called while the app is visible. */
-    private fun arm(addresses: List<String>, wantGps: Boolean) {
+    private fun arm(addresses: List<String>, wantGps: Boolean, label: Label) {
         val hasLocation = wantGps && granted(Manifest.permission.ACCESS_FINE_LOCATION)
         val tags = addresses.filter { it != SimulatedTag.ADDRESS }
         if (tags.isEmpty()) { stopSelf(); return }
         startForeground(NOTIFICATION_ID, standbyNotification(), fgsTypes(hasLocation))
-        standby = Standby(tags, hasLocation)
+        standby = Standby(tags, hasLocation, label)
         Log.i(TAG, "standby for $tags, gps=$hasLocation")
         startStandbyScan()
     }
@@ -238,7 +246,7 @@ class RecorderService : Service(), TagLink.Listener {
         if (adv.state != Protocol.STATE_RECORDING || adv.version != Protocol.VERSION) return
         Log.i(TAG, "standby: ${r.device.address} is recording, joining")
         stopStandbyScan()
-        begin(sb.addresses, sb.gps)
+        begin(sb.addresses, sb.gps, sb.label)
     }
 
     /** A new folder; "-2", "-3"... if a split comes within the same second. */
@@ -327,6 +335,8 @@ class RecorderService : Service(), TagLink.Listener {
         synchronized(old.meta) {
             val meta = SessionMeta(BuildConfig.VERSION_NAME, startUtc, startElapsed,
                 old.meta.tags.map { it.copy() })
+            meta.activity = old.meta.activity
+            meta.gear = old.meta.gear
             writeSessionJson(dir, meta)
             current = Recording(dir, meta, old.links, logs, gps).apply { lastFix = old.lastFix }
         }
@@ -534,6 +544,8 @@ class RecorderService : Service(), TagLink.Listener {
         const val ACTION_LEAVE_STANDBY = "app.bladingtag.LEAVE_STANDBY"
         const val EXTRA_ADDRESSES = "addresses"
         const val EXTRA_GPS = "gps"
+        const val EXTRA_ACTIVITY = "activity"
+        const val EXTRA_GEAR = "gear"
 
         @Volatile var current: Recording? = null
             private set
@@ -545,20 +557,24 @@ class RecorderService : Service(), TagLink.Listener {
         fun sessionsDir(c: Context) = File(c.getExternalFilesDir(null), "sessions").apply { mkdirs() }
 
         /** Without [gps] there is no gps.csv (PROTOCOL.md §2 allows it to be missing). */
-        fun start(c: Context, addresses: List<String>, gps: Boolean) {
+        fun start(c: Context, addresses: List<String>, gps: Boolean, label: Label) {
             c.startForegroundService(Intent(c, RecorderService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_ADDRESSES, addresses.toTypedArray())
-                .putExtra(EXTRA_GPS, gps))
+                .putExtra(EXTRA_GPS, gps)
+                .putExtra(EXTRA_ACTIVITY, label.activity.key)
+                .putExtra(EXTRA_GEAR, label.gear))
         }
 
         /** Wait for one of [addresses] to be started with its button, then record from all of them.
          *  Call while the app is visible: the foreground service has to start from there. */
-        fun standby(c: Context, addresses: List<String>, gps: Boolean) {
+        fun standby(c: Context, addresses: List<String>, gps: Boolean, label: Label) {
             c.startForegroundService(Intent(c, RecorderService::class.java)
                 .setAction(ACTION_STANDBY)
                 .putExtra(EXTRA_ADDRESSES, addresses.toTypedArray())
-                .putExtra(EXTRA_GPS, gps))
+                .putExtra(EXTRA_GPS, gps)
+                .putExtra(EXTRA_ACTIVITY, label.activity.key)
+                .putExtra(EXTRA_GEAR, label.gear))
         }
 
         fun leaveStandby(c: Context) {

@@ -154,6 +154,35 @@ class ProtocolTest {
         assertFalse(old("C0:BB:4A:A7:0D:57").simulated)
     }
 
+    @Test fun activityAndGear() {
+        val m = SessionMeta("0.1.0", 1_794_061_530_123L, 1L, listOf(TagMeta("C0:BB:4A:A7:0D:57")))
+        var j = SessionJson.parse(m.toJson())
+        assertEquals(ActivityKind.UNKNOWN, j.activity)
+        assertEquals("", j.gear)
+        m.activity = ActivityKind.WALKING
+        m.gear = "Brooks \"Ghost\" 15"
+        assertTrue(m.toJson(), m.toJson().contains("\"activity\": \"walking\""))
+        j = SessionJson.parse(m.toJson())
+        assertEquals(ActivityKind.WALKING, j.activity)
+        assertEquals("Brooks \"Ghost\" 15", j.gear)
+
+        // Sessions from before the fields, or from a newer version.
+        assertEquals(ActivityKind.UNKNOWN, SessionJson.parse("{\"tags\": []}").activity)
+        assertEquals(ActivityKind.UNKNOWN, ActivityKind.of("rowing"))
+        assertEquals(ActivityKind.CYCLING, ActivityKind.of(" Cycling "))
+
+        val dir = Files.createTempDirectory("session").toFile()
+        writeSessionJson(dir, m)
+        SessionJson.edit(dir, "", emptyMap(), ActivityKind.SKATING, " FR 90 mm ")
+        j = SessionJson.read(dir)!!
+        assertEquals(ActivityKind.SKATING, j.activity)
+        assertEquals("FR 90 mm", j.gear)
+        // Not given: left as it is.
+        SessionJson.edit(dir, "x", emptyMap())
+        assertEquals(ActivityKind.SKATING, SessionJson.read(dir)!!.activity)
+        dir.deleteRecursively()
+    }
+
     @Test fun bodyLocations() {
         Protocol.BODY_LOCATIONS.forEachIndexed { i, l -> assertEquals(i, l.value) }
         assertEquals("backpack", Protocol.positionName(7))

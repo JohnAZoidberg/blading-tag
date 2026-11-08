@@ -112,6 +112,28 @@ class TagMeta(val address: String) {
     }
 }
 
+/**
+ * What a session is (session.json "activity", PROTOCOL.md §2.2), with the
+ * words the app uses for it. [gear] names the "gear" field for it.
+ */
+enum class ActivityKind(val label: String, val gear: String, val gearHint: String, val verb: String,
+                    val moving: String) {
+    SKATING("Skating", "Skates", "e.g. FR 90 mm wheels", "skate", "skate"),
+    WALKING("Walking", "Shoes", "e.g. Brooks Ghost 15", "walk", "foot"),
+    CYCLING("Cycling", "Bike", "e.g. road bike", "ride", "foot"),
+    UNKNOWN("Not given", "Gear", "", "start", "tag");
+
+    /** The session.json label: "skating", ... */
+    val key get() = name.lowercase()
+
+    companion object {
+        /** UNKNOWN for null, "" or a label this version doesn't know. */
+        fun of(key: String?): ActivityKind = entries.firstOrNull { it.key == key?.trim()?.lowercase() } ?: UNKNOWN
+        /** The ones offered when starting a recording. */
+        val PICKABLE = listOf(SKATING, WALKING, CYCLING)
+    }
+}
+
 class SessionMeta(
     val recorderVersion: String,
     val startUtcMs: Long,
@@ -120,6 +142,9 @@ class SessionMeta(
 ) {
     var endElapsedNs: Long? = null
     var notes = ""
+    var activity = ActivityKind.UNKNOWN
+    /** The shoes, skates or bike, as typed; "" if not given. */
+    var gear = ""
 
     fun toJson(): String {
         val sb = StringBuilder()
@@ -146,7 +171,9 @@ class SessionMeta(
             sb.append("    {\n      ").append(fields.joinToString(",\n      ")).append("\n    }")
         }
         sb.append(if (tags.isEmpty()) "],\n" else "\n  ],\n")
-        sb.append("  \"notes\": ${q(notes)}\n")
+        sb.append("  \"notes\": ${q(notes)},\n")
+        sb.append("  \"activity\": ${q(activity.key)},\n")
+        sb.append("  \"gear\": ${q(gear)}\n")
         sb.append("}\n")
         return sb.toString()
     }
@@ -192,6 +219,8 @@ class SessionJson(
     val tags: List<Tag>,
     /** Shown as the session's description. */
     val notes: String,
+    val activity: ActivityKind = ActivityKind.UNKNOWN,
+    val gear: String = "",
 ) {
     class Tag(val address: String, val position: String, val simulated: Boolean)
 
@@ -223,17 +252,22 @@ class SessionJson(
                         t.optBoolean("simulated", false) || isSimulatorAddress(address))
                 },
                 notes = o.optString("notes", ""),
+                activity = ActivityKind.of(o.optString("activity", "")),
+                gear = o.optString("gear", "").trim(),
             )
         }
 
         /**
-         * Sets the notes and the tag positions ([positions]: address ->
+         * Sets the notes, activity, gear and the tag positions ([positions]: address ->
          * body location name, e.g. "left_wrist") of a finished session. Every other field
          * stays as it is, including ones this app doesn't know.
          */
-        fun edit(dir: File, notes: String, positions: Map<String, String>) {
+        fun edit(dir: File, notes: String, positions: Map<String, String>,
+                 activity: ActivityKind? = null, gear: String? = null) {
             val o = JSONObject(File(dir, "session.json").readText())
             o.put("notes", notes)
+            activity?.let { o.put("activity", it.key) }
+            gear?.let { o.put("gear", it.trim()) }
             val tags = o.optJSONArray("tags")
             for (i in 0 until (tags?.length() ?: 0)) {
                 val t = tags!!.getJSONObject(i)

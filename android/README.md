@@ -9,6 +9,14 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
 
 ## Using it
 
+0. Pick the **Activity** (Skating, Walking, Cycling) and, if you like, the
+   **Skates**, **Shoes** or **Bike**: a name to compare them by later
+   (`bladetag compare` on the laptop compares walks by shoes). Both go into
+   session.json (`activity`, `gear`), are remembered for next time, carry
+   over to Standby and to **Save and start new session**, and can be changed
+   afterwards with **Edit**. The field offers the names typed before for
+   that activity. The live screen still shows push rate for every activity
+   for now.
 1. Wake the tag by moving the skate. It shows up under **Tags** with its
    state, body location and battery. **Blink** flashes its LED so you can
    tell two tags apart, and **Body location…** stores where the tag is worn
@@ -49,8 +57,9 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    (in the app or the notification) ends it. Arm it while the app is open:
    Android only lets a foreground service use GPS from the background if it
    was started from the foreground.
-7. Under **Sessions**, **Edit** changes a session's description and each
-   tag's body location, **Share** zips a session into
+7. Under **Sessions**, each session shows its activity and gear. **Edit**
+   changes a session's description, activity, gear and each tag's body
+   location, **Share** zips a session into
    `Downloads/blading-tag/` and opens the share sheet, and **Delete** removes
    it from the phone. Sessions from the simulated tag say **SIMULATED**
    (`"simulated": true` in session.json), so they aren't mistaken for real

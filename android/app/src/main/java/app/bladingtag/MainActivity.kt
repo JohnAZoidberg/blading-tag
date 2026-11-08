@@ -24,9 +24,12 @@ import android.view.View
 import android.view.WindowInsets
 import android.widget.Button
 import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
@@ -72,6 +75,11 @@ class MainActivity : Activity() {
     private lateinit var standbyBox: LinearLayout
     private lateinit var standbyText: TextView
     private lateinit var gpsBox: CheckBox
+    private lateinit var activityGroup: RadioGroup
+    private lateinit var gearLabel: TextView
+    private lateinit var gearField: AutoCompleteTextView
+    private lateinit var tagsHint: TextView
+    private lateinit var startHint: TextView
     private lateinit var sessionList: LinearLayout
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -156,16 +164,41 @@ class MainActivity : Activity() {
 
         // While idle
         tagsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        tagsBox.addView(heading("Tags"))
-        tagsBox.addView(TextView(this).apply {
-            text = "Move the skate to wake the tag. Tick one tag, or two (one per foot)."
+        tagsBox.addView(heading("Activity"))
+        activityGroup = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        for (a in ActivityKind.PICKABLE) {
+            activityGroup.addView(RadioButton(this).apply {
+                id = View.generateViewId()
+                tag = a
+                text = a.label
+                textSize = 15f
+            })
+        }
+        val picked = pickedActivity()
+        for (i in 0 until activityGroup.childCount) {
+            val b = activityGroup.getChildAt(i) as RadioButton
+            if (b.tag == picked) b.isChecked = true
+        }
+        activityGroup.setOnCheckedChangeListener { g, id ->
+            val a = g.findViewById<RadioButton>(id)?.tag as? ActivityKind ?: return@setOnCheckedChangeListener
+            prefs().edit().putString(PREF_ACTIVITY, a.key).apply()
+            showActivity(a)
+        }
+        tagsBox.addView(activityGroup, lp(dp(4)))
+        gearLabel = TextView(this).apply { textSize = 15f }
+        tagsBox.addView(gearLabel, lp(dp(8)))
+        gearField = gearField("")
+        tagsBox.addView(gearField)
+
+        tagsBox.addView(heading("Tags"), lp(dp(20)))
+        tagsHint = TextView(this).apply {
             textSize = 14f
             alpha = 0.7f
-        }, lp(dp(4)))
+        }
+        tagsBox.addView(tagsHint, lp(dp(4)))
         tagList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         tagsBox.addView(tagList, lp(dp(8)))
         gpsBox = CheckBox(this).apply {
-            text = "Record GPS (speed, for distance per push)"
             textSize = 15f
             isChecked = prefs().getBoolean(PREF_GPS, true)
             setOnCheckedChangeListener { _, on ->
@@ -179,11 +212,11 @@ class MainActivity : Activity() {
             setOnClickListener { startRecording() }
         }
         tagsBox.addView(startButton, lp(dp(12)))
-        tagsBox.addView(TextView(this).apply {
-            text = "After starting, stand still for 2 seconds, then skate."
+        startHint = TextView(this).apply {
             textSize = 14f
             alpha = 0.7f
-        }, lp(dp(4)))
+        }
+        tagsBox.addView(startHint, lp(dp(4)))
         standbyButton = Button(this).apply {
             text = "Standby: start with the tag's button"
             setOnClickListener { enterStandby() }
@@ -213,7 +246,62 @@ class MainActivity : Activity() {
         if (BuildConfig.DEBUG) {
             found[SimulatedTag.ADDRESS] = Found(SimulatedTag.ADDRESS, "Simulated tag (debug build)")
         }
+        showActivity(picked)
     }
+
+    // ---- activity and gear --------------------------------------------------
+
+    private fun pickedActivity(): ActivityKind =
+        ActivityKind.of(prefs().getString(PREF_ACTIVITY, null)).takeIf { it != ActivityKind.UNKNOWN } ?: ActivityKind.SKATING
+
+    /** Names typed before for this activity's gear, most recent first. */
+    private fun gearNames(a: ActivityKind): List<String> =
+        prefs().getString(PREF_GEAR_NAMES + a.key, "")!!.split("\n").filter { it.isNotBlank() }
+
+    /** Adds [gear] to the names offered; [asLast]: also preset it for the next recording. */
+    private fun rememberGear(a: ActivityKind, gear: String, asLast: Boolean = true) {
+        val names = (listOf(gear).filter { it.isNotBlank() } + gearNames(a).filter { it != gear }).take(20)
+        val e = prefs().edit().putString(PREF_GEAR_NAMES + a.key, names.joinToString("\n"))
+        if (asLast) e.putString(PREF_GEAR + a.key, gear)
+        e.apply()
+    }
+
+    /** A text field offering the names used before, see [gearNames]. */
+    private fun gearField(current: String, names: List<String> = emptyList()) = AutoCompleteTextView(this).apply {
+        setText(current)
+        threshold = 1
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+        isSingleLine = true
+        setAdapter(ArrayAdapter(this@MainActivity, android.R.layout.simple_dropdown_item_1line, names))
+        setOnClickListener { if (adapter.count > 0) showDropDown() }
+    }
+
+    /** Wording and gear field for the picked activity. */
+    private fun showActivity(a: ActivityKind) {
+        gearLabel.text = "${a.gear} (optional, to compare them later)"
+        gearField.hint = a.gearHint
+        gearField.setText(prefs().getString(PREF_GEAR + a.key, ""))
+        gearField.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, gearNames(a)))
+        tagsHint.text = "Move the ${a.moving} to wake the tag. Tick one tag, or two (one per foot)."
+        gpsBox.text = "Record GPS (speed, " + when (a) {
+            ActivityKind.WALKING -> "to check the stride length)"
+            ActivityKind.CYCLING -> "for distance per crank turn)"
+            else -> "for distance per push)"
+        }
+        startHint.text = "After starting, stand still for 2 seconds, then ${a.verb}."
+    }
+
+    /** The picked activity and the typed gear, remembered for next time. */
+    private fun label(): RecorderService.Label {
+        val a = pickedActivity()
+        val gear = gearField.text.toString().trim()
+        rememberGear(a, gear)
+        return RecorderService.Label(a, gear)
+    }
+
+    private fun labelText(activity: ActivityKind, gear: String) =
+        listOfNotNull(activity.label.takeIf { activity != ActivityKind.UNKNOWN }, gear.takeIf { it.isNotBlank() })
+            .joinToString(" · ")
 
     override fun onResume() {
         super.onResume()
@@ -288,7 +376,8 @@ class MainActivity : Activity() {
             stopScan()
             standbyText.text = "Waiting for the button on " +
                 standby.addresses.joinToString(" or ") { it.takeLast(5) } +
-                (if (standby.gps) ". GPS on." else ". GPS off.")
+                (if (standby.gps) ". GPS on." else ". GPS off.") +
+                labelText(standby.label.activity, standby.label.gear).let { if (it.isEmpty()) "" else "\n$it" }
         } else {
             if (hasPermissions() && adapter?.isEnabled == true) startScan() else stopScan()
             renderTags()
@@ -307,6 +396,7 @@ class MainActivity : Activity() {
         val sb = StringBuilder()
         // Elapsed time and "stopping…" are at the top of the live panel.
         if (RecorderService.standby != null) sb.append("standby: back to waiting for the button after this\n")
+        labelText(rec.meta.activity, rec.meta.gear).takeIf { it.isNotEmpty() }?.let { sb.append(it).append("\n") }
         rec.meta.notes.takeIf { it.isNotBlank() }?.let { sb.append(it.lines().first()).append("\n") }
         for (l in rec.links) {
             val s = l.status
@@ -496,7 +586,7 @@ class MainActivity : Activity() {
     private fun startRecording() {
         if (selected.isEmpty()) return
         stopScan()
-        RecorderService.start(this, selected.toList(), gps = gpsBox.isChecked && hasLocation())
+        RecorderService.start(this, selected.toList(), gps = gpsBox.isChecked && hasLocation(), label())
         rememberTags()
         selected.clear()
         userPicked = false
@@ -509,7 +599,7 @@ class MainActivity : Activity() {
         stopScan()
         // From here, while the app is visible: Android only lets a foreground
         // service use GPS in the background if it was started in the foreground.
-        RecorderService.standby(this, tags, gps = gpsBox.isChecked && hasLocation())
+        RecorderService.standby(this, tags, gps = gpsBox.isChecked && hasLocation(), label())
         rememberTags()
         selected.clear()
         userPicked = false
@@ -595,8 +685,10 @@ class MainActivity : Activity() {
                 if (it.simulated) "simulated" else Protocol.positionLabel(it.position).lowercase()
             }?.let { " · $it" }.orEmpty()
             val fake = if (s.json?.simulated == true) " · SIMULATED" else ""
+            val what = s.json?.let { labelText(it.activity, it.gear) }?.takeIf { it.isNotEmpty() }
+                ?.let { " · $it" }.orEmpty()
             sessionList.addView(TextView(this).apply {
-                text = "${s.dir.name.removePrefix("session-")}$fake\n$dur · ${s.tags} tag$feet · " +
+                text = "${s.dir.name.removePrefix("session-")}$fake$what\n$dur · ${s.tags} tag$feet · " +
                     "${s.gpsFixes} GPS · ${size(s.bytes)}"
                 textSize = 14f
                 setPadding(0, dp(10), 0, 0)
@@ -666,7 +758,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    /** Description and body location of each tag for a saved session. */
+    /** Description, activity, gear and body location of each tag for a saved session. */
     private fun edit(s: Sessions.Summary, json: SessionJson) {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -675,6 +767,31 @@ class MainActivity : Activity() {
         box.addView(TextView(this).apply { text = "Description"; textSize = 15f })
         val field = notesField(json.notes)
         box.addView(field)
+        box.addView(TextView(this).apply { text = "Activity"; textSize = 15f }, lp(dp(16)))
+        val activities = ActivityKind.PICKABLE + ActivityKind.UNKNOWN
+        val activitySpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                activities.map { it.label })
+            setSelection(activities.indexOf(json.activity))
+        }
+        box.addView(activitySpinner)
+        val gearTitle = TextView(this).apply { textSize = 15f }
+        box.addView(gearTitle, lp(dp(16)))
+        val gear = gearField(json.gear)
+        box.addView(gear)
+        fun showGear(a: ActivityKind) {
+            gearTitle.text = a.gear
+            gear.hint = a.gearHint
+            val names = if (a == ActivityKind.UNKNOWN) ActivityKind.PICKABLE.flatMap { gearNames(it) }.distinct()
+                        else gearNames(a)
+            gear.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, names))
+        }
+        showGear(json.activity)
+        activitySpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) =
+                showGear(activities[pos])
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
         val locations = Protocol.BODY_LOCATIONS
         val choices = json.tags.map { t ->
             box.addView(TextView(this).apply {
@@ -697,8 +814,11 @@ class MainActivity : Activity() {
                 val feet = choices.associate { (t, spinner) ->
                     t.address to locations[spinner.selectedItemPosition].name
                 }
+                val activity = activities[activitySpinner.selectedItemPosition]
+                val gearName = gear.text.toString().trim()
+                if (activity != ActivityKind.UNKNOWN && gearName.isNotEmpty()) rememberGear(activity, gearName, asLast = false)
                 io.execute {
-                    val r = runCatching { SessionJson.edit(s.dir, notes, feet) }
+                    val r = runCatching { SessionJson.edit(s.dir, notes, feet, activity, gearName) }
                     ui.post { r.onFailure { toast("Saving failed: ${it.message}") } }
                     refreshSessions()
                 }
@@ -768,6 +888,10 @@ class MainActivity : Activity() {
         /** Only needed for the optional GPS track. */
         private const val LOCATION = Manifest.permission.ACCESS_FINE_LOCATION
         private const val PREF_GPS = "record_gps"
+        private const val PREF_ACTIVITY = "activity"
+        /** + activity key: the gear last used, and the names used before (newline separated). */
+        private const val PREF_GEAR = "gear_"
+        private const val PREF_GEAR_NAMES = "gear_names_"
         /** Addresses ticked for the last recording or standby. */
         private const val PREF_TAGS = "last_tags"
     }
