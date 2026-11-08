@@ -133,9 +133,10 @@ data class Cadence(val periodS: Float, val strength: Float, val gyroRmsDps: Floa
             val peaks = (lo + 1 until hi).filter { ac[it] > ac[it - 1] && ac[it] >= ac[it + 1] }
             if (peaks.isEmpty()) return null
             // Multiples of the period also correlate; take the first peak
-            // that is nearly as strong as the best one.
+            // that is nearly as strong as the best one. When every peak is
+            // negative (no repetition, e.g. a slow sway) none is: no cadence.
             val best = peaks.maxOf { ac[it] }
-            val k = peaks.first { ac[it] >= 0.8f * best }
+            val k = peaks.firstOrNull { ac[it] >= 0.8f * best } ?: return null
             // Parabolic interpolation between lags: at 50 Hz one lag is 2 %
             // of a 1 s period, too coarse for a rate display.
             val y0 = ac[k - 1]; val y1 = ac[k]; val y2 = ac[k + 1]

@@ -69,6 +69,15 @@ class LiveSignalTest {
         assertTrue(c == null || !c.valid)
     }
 
+    /** A 4 s sway with a small 1 s wobble: the only autocorrelation peak is negative. This used to throw. */
+    @Test
+    fun onlyNegativePeaksIsNotACadence() {
+        val fs = 50f
+        val n = (Cadence.WINDOW_S * fs).toInt()
+        val gx = FloatArray(n) { val t = it / fs; (100 * (sin(2 * PI * t / 4) + 0.3 * sin(2 * PI * t))).toFloat() }
+        assertNull(Cadence.estimate(gx, FloatArray(n), FloatArray(n), fs))
+    }
+
     @Test
     fun decimatesTo50HzAndKeepsThirtySeconds() {
         val live = LiveSignal()

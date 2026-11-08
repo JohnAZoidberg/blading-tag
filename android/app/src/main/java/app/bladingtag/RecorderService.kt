@@ -303,7 +303,13 @@ class RecorderService : Service(), TagLink.Listener {
         override fun run() {
             val rec = current ?: return
             val rates = rec.links.mapNotNull { l ->
-                l.cadence = l.live.cadence()
+                // Only for display: a bug here must not crash the recording.
+                l.cadence = try {
+                    l.live.cadence()
+                } catch (e: RuntimeException) {
+                    Log.e(TAG, "live cadence failed", e)
+                    null
+                }
                 l.cadence?.takeIf { it.valid }?.cyclesPerMin
             }
             val fix = rec.lastFix
