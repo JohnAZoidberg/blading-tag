@@ -221,6 +221,8 @@ in `host/` so they don't collide with NCS checkout paths such as `tools/`.
 - [ ] **8. Second tag**: one per foot, clock sync, left/right metrics.
 - [ ] **9. Technique**: orientation fusion (Madgwick), edge angle, push
       direction, crossovers.
+- [ ] **Activities**: pick skating, walking or cycling per session, with
+      metrics to match. See [PLAN-activities.md](PLAN-activities.md).
 - [ ] **Maybe**: live audio cues (push-rate beep), push detection on the tag,
       BME688 climb detection, phone-side OTA in our own app.
 
