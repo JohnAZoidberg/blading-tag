@@ -7,6 +7,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.bluetooth.BluetoothManager
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -17,6 +22,7 @@ import android.location.LocationManager
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.ParcelUuid
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
@@ -34,7 +40,18 @@ import java.io.File
  * [split] ends the session and starts the next one without touching the tag
  * links: the tags keep recording and only the files change, so no sample is
  * lost at the cut and there's no reconnect.
+ *
+ * **Standby** ([standby]): armed from the app, the service waits in the
+ * foreground with a filtered BLE scan for one of its tags advertising
+ * RECORDING, i.e. started with its button. Then it records from all of its
+ * tags (starting the others) as if Start had been tapped; the tag's buffer
+ * covers the few seconds until the phone notices. A tag's button stopping
+ * it ends the recording, and the service goes back to waiting until standby
+ * is left. Because the service is already in the foreground when the
+ * recording starts, Android allows it BLE and GPS with the app in the
+ * background and the screen off.
  */
+@SuppressLint("MissingPermission") // the activity only arms standby/records with BLE permissions
 class RecorderService : Service(), TagLink.Listener {
 
     /** Live state of the running recording's current session, for the UI. A split replaces it. */
@@ -50,6 +67,9 @@ class RecorderService : Service(), TagLink.Listener {
         @Volatile var stopping = false
     }
 
+    /** Armed standby: which tags to watch and record, and whether to record GPS. */
+    class Standby(val addresses: List<String>, val gps: Boolean)
+
     private val main = Handler(Looper.getMainLooper())
     private var wakeLock: PowerManager.WakeLock? = null
     private var locationListener: LocationListener? = null
@@ -64,6 +84,11 @@ class RecorderService : Service(), TagLink.Listener {
             }
             ACTION_STOP -> end()
             ACTION_SPLIT -> split()
+            ACTION_STANDBY -> if (current == null && standby == null) {
+                arm(intent.getStringArrayExtra(EXTRA_ADDRESSES)?.toList().orEmpty(),
+                    intent.getBooleanExtra(EXTRA_GPS, true))
+            }
+            ACTION_LEAVE_STANDBY -> disarm()
         }
         return START_NOT_STICKY
     }
@@ -71,9 +96,15 @@ class RecorderService : Service(), TagLink.Listener {
     /** [wantGps]: the user's choice; GPS also needs the location permission. */
     private fun begin(addresses: List<String>, wantGps: Boolean) {
         val hasLocation = wantGps && granted(Manifest.permission.ACCESS_FINE_LOCATION)
-        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-        if (hasLocation) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-        startForeground(NOTIFICATION_ID, notification("Starting…"), types)
+        if (standby == null) {
+            startForeground(NOTIFICATION_ID, notification("Starting…"), fgsTypes(hasLocation))
+        } else {
+            // Already in the foreground with these types since arm(). Calling
+            // startForeground again now, from the background, could lose the
+            // location type.
+            getSystemService(NotificationManager::class.java)
+                .notify(NOTIFICATION_ID, notification("Starting…"))
+        }
 
         val startUtc = System.currentTimeMillis()
         val startElapsed = SystemClock.elapsedRealtimeNanos()
@@ -97,6 +128,112 @@ class RecorderService : Service(), TagLink.Listener {
         links.forEach { it.start() }
         Log.i(TAG, "recording to $dir with ${addresses.size} tag(s), gps=${gps != null}")
         main.postDelayed(tick, TICK_MS)
+    }
+
+    private fun fgsTypes(location: Boolean): Int {
+        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if (location) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        return types
+    }
+
+    // ---- standby ------------------------------------------------------------
+
+    /** [wantGps]: as for [begin]. Must be called while the app is visible. */
+    private fun arm(addresses: List<String>, wantGps: Boolean) {
+        val hasLocation = wantGps && granted(Manifest.permission.ACCESS_FINE_LOCATION)
+        val tags = addresses.filter { it != SimulatedTag.ADDRESS }
+        if (tags.isEmpty()) { stopSelf(); return }
+        startForeground(NOTIFICATION_ID, standbyNotification(), fgsTypes(hasLocation))
+        standby = Standby(tags, hasLocation)
+        Log.i(TAG, "standby for $tags, gps=$hasLocation")
+        startStandbyScan()
+    }
+
+    /** Leave standby. A recording in progress carries on; it stops the service when it ends. */
+    private fun disarm() {
+        if (standby == null) return
+        standby = null
+        stopStandbyScan()
+        Log.i(TAG, "standby left")
+        if (current == null) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        } else {
+            current?.let { rec ->
+                getSystemService(NotificationManager::class.java)
+                    .notify(NOTIFICATION_ID, notification(summary(rec)))
+            }
+        }
+    }
+
+    private var scanning = false
+
+    private val scanCallback = object : ScanCallback() {
+        override fun onScanResult(callbackType: Int, r: ScanResult) = onAdvert(r)
+        override fun onBatchScanResults(results: MutableList<ScanResult>) = results.forEach(::onAdvert)
+        override fun onScanFailed(errorCode: Int) {
+            Log.w(TAG, "standby scan failed: $errorCode")
+            scanning = false
+            if (standby != null && current == null) {
+                getSystemService(NotificationManager::class.java)
+                    .notify(NOTIFICATION_ID, standbyNotification("Bluetooth scan failed ($errorCode), retrying…"))
+                main.postDelayed(::startStandbyScan, SCAN_RETRY_MS)
+            }
+        }
+    }
+
+    /**
+     * Only tags advertising RECORDING (manufacturer data byte 1, PROTOCOL.md
+     * §1.1) match, so with the screen off the Bluetooth controller does the
+     * filtering and the phone sleeps until a button is pressed.
+     */
+    private fun startStandbyScan() {
+        main.removeCallbacks(restartScan)
+        if (scanning || standby == null || current != null) return
+        val scanner = getSystemService(BluetoothManager::class.java).adapter?.bluetoothLeScanner
+        if (scanner == null) {
+            // Bluetooth is off; try again later rather than give up standby.
+            main.postDelayed(::startStandbyScan, SCAN_RETRY_MS)
+            return
+        }
+        val filter = ScanFilter.Builder()
+            .setServiceUuid(ParcelUuid(Protocol.SERVICE))
+            .setManufacturerData(Protocol.COMPANY_ID,
+                byteArrayOf(0, Protocol.STATE_RECORDING.toByte()), byteArrayOf(0, 0xFF.toByte()))
+            .build()
+        val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_POWER).build()
+        scanner.startScan(listOf(filter), settings, scanCallback)
+        scanning = true
+        // Android quietly demotes scans that run for 30 minutes; start afresh before that.
+        main.postDelayed(restartScan, SCAN_RESTART_MS)
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, standbyNotification())
+    }
+
+    private val restartScan = Runnable {
+        stopStandbyScan()
+        startStandbyScan()
+    }
+
+    private fun stopStandbyScan() {
+        main.removeCallbacks(restartScan)
+        if (!scanning) return
+        scanning = false
+        runCatching {
+            getSystemService(BluetoothManager::class.java).adapter?.bluetoothLeScanner?.stopScan(scanCallback)
+        }
+    }
+
+    /** On the main thread (BluetoothLeScanner delivers results there). */
+    private fun onAdvert(r: ScanResult) {
+        val sb = standby ?: return
+        if (current != null || r.device.address !in sb.addresses) return
+        val adv = r.scanRecord?.getManufacturerSpecificData(Protocol.COMPANY_ID)
+            ?.let { Protocol.parseAdv(it) } ?: return
+        if (adv.state != Protocol.STATE_RECORDING || adv.version != Protocol.VERSION) return
+        Log.i(TAG, "standby: ${r.device.address} is recording, joining")
+        stopStandbyScan()
+        begin(sb.addresses, sb.gps)
     }
 
     /** A new folder; "-2", "-3"... if a split comes within the same second. */
@@ -179,7 +316,11 @@ class RecorderService : Service(), TagLink.Listener {
 
     private fun end() {
         val rec = current
-        if (rec == null) { stopSelf(); return }
+        if (rec == null) {
+            // Stop with nothing recording ends standby too.
+            if (standby != null) disarm() else stopSelf()
+            return
+        }
         if (rec.stopping) return
         rec.stopping = true
         getSystemService(NotificationManager::class.java)
@@ -194,8 +335,12 @@ class RecorderService : Service(), TagLink.Listener {
             wakeLock?.takeIf { it.isHeld }?.release()
             current = null
             Log.i(TAG, "recording saved to ${rec.dir}")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (standby != null) {
+                startStandbyScan()
+            } else {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
         if (pending == 0) { finish(); return }
         rec.links.forEach { link ->
@@ -204,6 +349,8 @@ class RecorderService : Service(), TagLink.Listener {
     }
 
     override fun onDestroy() {
+        standby = null
+        stopStandbyScan()
         // Killed without a stop (e.g. swiped away on some OEM ROMs): keep what we have.
         current?.let { rec ->
             rec.links.forEach { it.stop {} }
@@ -231,6 +378,16 @@ class RecorderService : Service(), TagLink.Listener {
             val next = current
             if (next == null || next === rec) return
             rec = next
+        }
+    }
+
+    /** A tag's button stopped it: end the whole recording, stopping the other tag too. */
+    override fun onTagStopped(link: TagLink) {
+        main.post {
+            // Only the recording this link belongs to (not a later one).
+            if (current?.links?.contains(link) != true) return@post
+            Log.i(TAG, "${link.address} was stopped on the tag, ending the recording")
+            end()
         }
     }
 
@@ -303,6 +460,25 @@ class RecorderService : Service(), TagLink.Listener {
             .build()
     }
 
+    private fun standbyNotification(text: String? = null): Notification {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Recording",
+            NotificationManager.IMPORTANCE_LOW))
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE)
+        val leave = PendingIntent.getService(this, 3, Intent(this, RecorderService::class.java)
+            .setAction(ACTION_LEAVE_STANDBY), PendingIntent.FLAG_IMMUTABLE)
+        return Notification.Builder(this, CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Standby")
+            .setContentText(text ?: "Press the button on a tag to start recording")
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(open)
+            .addAction(Notification.Action.Builder(null, "Leave standby", leave).build())
+            .build()
+    }
+
     private fun granted(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
     companion object {
@@ -310,13 +486,21 @@ class RecorderService : Service(), TagLink.Listener {
         private const val CHANNEL = "recording"
         private const val NOTIFICATION_ID = 1
         private const val TICK_MS = 5_000L
+        private const val SCAN_RESTART_MS = 20 * 60_000L
+        private const val SCAN_RETRY_MS = 10_000L
         const val ACTION_START = "app.bladingtag.START"
         const val ACTION_STOP = "app.bladingtag.STOP"
         const val ACTION_SPLIT = "app.bladingtag.SPLIT"
+        const val ACTION_STANDBY = "app.bladingtag.STANDBY"
+        const val ACTION_LEAVE_STANDBY = "app.bladingtag.LEAVE_STANDBY"
         const val EXTRA_ADDRESSES = "addresses"
         const val EXTRA_GPS = "gps"
 
         @Volatile var current: Recording? = null
+            private set
+
+        /** Non-null while standby is armed (also during a recording it started). */
+        @Volatile var standby: Standby? = null
             private set
 
         fun sessionsDir(c: Context) = File(c.getExternalFilesDir(null), "sessions").apply { mkdirs() }
@@ -327,6 +511,19 @@ class RecorderService : Service(), TagLink.Listener {
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_ADDRESSES, addresses.toTypedArray())
                 .putExtra(EXTRA_GPS, gps))
+        }
+
+        /** Wait for one of [addresses] to be started with its button, then record from all of them.
+         *  Call while the app is visible: the foreground service has to start from there. */
+        fun standby(c: Context, addresses: List<String>, gps: Boolean) {
+            c.startForegroundService(Intent(c, RecorderService::class.java)
+                .setAction(ACTION_STANDBY)
+                .putExtra(EXTRA_ADDRESSES, addresses.toTypedArray())
+                .putExtra(EXTRA_GPS, gps))
+        }
+
+        fun leaveStandby(c: Context) {
+            c.startService(Intent(c, RecorderService::class.java).setAction(ACTION_LEAVE_STANDBY))
         }
 
         fun stop(c: Context) {

@@ -65,6 +65,9 @@ class MainActivity : Activity() {
     private lateinit var tagsBox: LinearLayout
     private lateinit var tagList: LinearLayout
     private lateinit var startButton: Button
+    private lateinit var standbyButton: Button
+    private lateinit var standbyBox: LinearLayout
+    private lateinit var standbyText: TextView
     private lateinit var gpsBox: CheckBox
     private lateinit var sessionList: LinearLayout
 
@@ -122,6 +125,30 @@ class MainActivity : Activity() {
         }, lp(dp(12)))
         root.addView(recordingBox, lp(dp(8)))
 
+        // Standby, waiting for a tag's button
+        standbyBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        standbyBox.addView(heading("Standby"))
+        standbyText = TextView(this).apply { textSize = 15f }
+        standbyBox.addView(standbyText, lp(dp(8)))
+        standbyBox.addView(TextView(this).apply {
+            text = "On the tag:\n" +
+                "• green flash: the tag started recording\n" +
+                "• blue blinking a few seconds later: the phone joined and records it\n" +
+                "• yellow blip every second: no phone yet, the tag buffers (~70 s)\n" +
+                "• red blip every second: buffer full, data is being lost\n" +
+                "Press the button again to stop. The phone then waits for the next press."
+            textSize = 14f
+            alpha = 0.7f
+        }, lp(dp(8)))
+        standbyBox.addView(Button(this).apply {
+            text = "Leave standby"
+            setOnClickListener {
+                RecorderService.leaveStandby(this@MainActivity)
+                ui.postDelayed({ refresh() }, 200)
+            }
+        }, lp(dp(12)))
+        root.addView(standbyBox, lp(dp(8)))
+
         // While idle
         tagsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         tagsBox.addView(heading("Tags"))
@@ -149,6 +176,17 @@ class MainActivity : Activity() {
         tagsBox.addView(startButton, lp(dp(12)))
         tagsBox.addView(TextView(this).apply {
             text = "After starting, stand still for 2 seconds, then skate."
+            textSize = 14f
+            alpha = 0.7f
+        }, lp(dp(4)))
+        standbyButton = Button(this).apply {
+            text = "Standby: start with the tag's button"
+            setOnClickListener { enterStandby() }
+        }
+        tagsBox.addView(standbyButton, lp(dp(12)))
+        tagsBox.addView(TextView(this).apply {
+            text = "Put the phone away. Pressing a ticked tag's button starts recording " +
+                "from all ticked tags, pressing it again stops."
             textSize = 14f
             alpha = 0.7f
         }, lp(dp(4)))
@@ -221,11 +259,19 @@ class MainActivity : Activity() {
             else -> notice(null, null) {}
         }
 
+        val standby = RecorderService.standby
         recordingBox.visibility = if (rec != null) View.VISIBLE else View.GONE
-        tagsBox.visibility = if (rec == null) View.VISIBLE else View.GONE
+        standbyBox.visibility = if (rec == null && standby != null) View.VISIBLE else View.GONE
+        tagsBox.visibility = if (rec == null && standby == null) View.VISIBLE else View.GONE
         if (rec != null) {
             stopScan()
             recordingText.text = describe(rec)
+        } else if (standby != null) {
+            // The service scans for the tags; a second scan here would only compete.
+            stopScan()
+            standbyText.text = "Waiting for the button on " +
+                standby.addresses.joinToString(" or ") { it.takeLast(5) } +
+                (if (standby.gps) ". GPS on." else ". GPS off.")
         } else {
             if (hasPermissions() && adapter?.isEnabled == true) startScan() else stopScan()
             renderTags()
@@ -245,6 +291,7 @@ class MainActivity : Activity() {
         val secs = (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1_000_000_000
         sb.append("%d:%02d:%02d".format(secs / 3600, secs / 60 % 60, secs % 60))
         if (rec.stopping) sb.append("  stopping…")
+        if (RecorderService.standby != null) sb.append("\nstandby: back to waiting for the button after this")
         sb.append("\n")
         rec.meta.notes.takeIf { it.isNotBlank() }?.let { sb.append(it.lines().first()).append("\n") }
         for (l in rec.links) {
@@ -321,6 +368,7 @@ class MainActivity : Activity() {
             }
         }
         startButton.isEnabled = selected.isNotEmpty() && hasPermissions()
+        standbyButton.isEnabled = selected.any { it != SimulatedTag.ADDRESS } && hasPermissions()
     }
 
     private fun rowDescription(f: Found): String {
@@ -348,6 +396,7 @@ class MainActivity : Activity() {
                     toast("At most two tags")
                 } else if (on) selected.add(f.address) else selected.remove(f.address)
                 startButton.isEnabled = selected.isNotEmpty()
+                standbyButton.isEnabled = selected.any { it != SimulatedTag.ADDRESS }
             }
         })
         val desc = TextView(this).apply {
@@ -433,8 +482,26 @@ class MainActivity : Activity() {
         if (selected.isEmpty()) return
         stopScan()
         RecorderService.start(this, selected.toList(), gps = gpsBox.isChecked && hasLocation())
+        rememberTags()
         selected.clear()
         ui.postDelayed({ refresh() }, 200)
+    }
+
+    private fun enterStandby() {
+        val tags = selected.filter { it != SimulatedTag.ADDRESS }
+        if (tags.isEmpty()) return
+        stopScan()
+        // From here, while the app is visible: Android only lets a foreground
+        // service use GPS in the background if it was started in the foreground.
+        RecorderService.standby(this, tags, gps = gpsBox.isChecked && hasLocation())
+        rememberTags()
+        selected.clear()
+        ui.postDelayed({ refresh() }, 200)
+    }
+
+    /** Tick the same tags again next time they show up. */
+    private fun rememberTags() {
+        prefs().edit().putStringSet(PREF_TAGS, selected.filter { it != SimulatedTag.ADDRESS }.toSet()).apply()
     }
 
     // ---- scanning -----------------------------------------------------------
@@ -443,6 +510,7 @@ class MainActivity : Activity() {
         override fun onScanResult(callbackType: Int, r: ScanResult) {
             val addr = r.device.address
             val f = found.getOrPut(addr) {
+                if (addr in prefs().getStringSet(PREF_TAGS, emptySet())!! && selected.size < 2) selected.add(addr)
                 Found(addr, r.scanRecord?.deviceName ?: r.device.name ?: "BladeTag-" +
                     addr.takeLast(5).replace(":", ""))
             }
@@ -666,5 +734,7 @@ class MainActivity : Activity() {
         /** Only needed for the optional GPS track. */
         private const val LOCATION = Manifest.permission.ACCESS_FINE_LOCATION
         private const val PREF_GPS = "record_gps"
+        /** Addresses ticked for the last recording or standby. */
+        private const val PREF_TAGS = "last_tags"
     }
 }

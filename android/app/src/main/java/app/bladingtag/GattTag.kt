@@ -24,8 +24,11 @@ import android.util.Log
  * outstanding GATT operation at a time, hence the [ops] queue.
  *
  * Two modes:
- * - recording ([oneShot] == null): START after connecting, reconnect on
- *   link loss until [stop].
+ * - recording ([oneShot] == null): START after connecting (or join a
+ *   recording started with the tag's button), reconnect on link loss until
+ *   [stop]. Once the tag's data is coming in, it blinks blue for a moment
+ *   (IDENTIFY) so a skater with the phone in a pocket sees the phone joined.
+ *   A button press that stops the tag ends this mode ([Listener.onTagStopped]).
  * - one-shot: connect, write [oneShot] (IDENTIFY, SET_POSITION, ...),
  *   disconnect, report the result via [onOneShotDone]. Nothing is logged.
  */
@@ -51,6 +54,11 @@ class GattTag(
 
     private var running = false
     private var everStarted = false
+    /** This connection has seen the tag RECORDING, so a READY Status after it
+     *  means the tag was stopped (and not "hasn't been started yet"). */
+    private var sawRecording = false
+    /** The "phone joined" blink was sent (once per link, not per reconnect). */
+    private var greeted = false
     private var stopDone: (() -> Unit)? = null
     private var finished = false
 
@@ -162,6 +170,7 @@ class GattTag(
                 Log.i(TAG, "$address: connected")
                 handler.removeCallbacks(connectTimeout)
                 connected = true
+                sawRecording = false
                 ops.clear(); busy = false
                 g.discoverServices()
                 return
@@ -255,7 +264,18 @@ class GattTag(
                 Protocol.DATA -> handleData(now, value)
                 Protocol.STATUS -> {
                     handleStatus(now, value)
-                    if (stopDone != null && status?.state == Protocol.STATE_READY) finish()
+                    val state = status?.state
+                    when {
+                        stopDone != null -> if (state == Protocol.STATE_READY) finish()
+                        !running -> {}
+                        state == Protocol.STATE_RECORDING -> joined()
+                        state == Protocol.STATE_READY && sawRecording -> {
+                            // Not our STOP (stopDone is null): its button.
+                            Log.i(TAG, "$address: stopped on the tag")
+                            running = false
+                            listener.onTagStopped(this@GattTag)
+                        }
+                    }
                 }
             }
         }
@@ -288,6 +308,7 @@ class GattTag(
                 // Either our own session after a reconnect (§1.9: don't START
                 // again), or the tag was started with its button.
                 everStarted = true
+                joined()
             }
             s.state == Protocol.STATE_READY -> {
                 // Not recording: a fresh start, or the tag gave up after the
@@ -302,8 +323,19 @@ class GattTag(
         }
     }
 
+    /** The tag is RECORDING with this phone subscribed: from here on its data
+     *  reaches the session (the buffered part first). */
+    private fun joined() {
+        sawRecording = true
+        if (greeted) return
+        greeted = true
+        write(Protocol.identify(JOINED_BLINK_S))
+    }
+
     companion object {
         private const val TAG = "BladingTag"
+        /** Blue blinks for this long; distinct from the green/yellow/red blips. */
+        private const val JOINED_BLINK_S = 2
         private const val CONNECT_TIMEOUT_MS = 15_000L
         private const val STOP_TIMEOUT_MS = 5_000L
     }

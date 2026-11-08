@@ -30,8 +30,19 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    is lost at the cut. **Description…** sets a free-text description
    (session.json `notes`) for the session being recorded.
 4. **Stop recording** sends STOP, waits for the tag to flush its buffer, and
-   saves the session.
-5. Under **Sessions**, **Edit** changes a session's description and each
+   saves the session. Pressing a tag's button also stops it; the app notices
+   and ends the recording (stopping the other tag too).
+5. **Standby** (instead of Start recording) is for starting from the tag
+   with the phone in a pocket. It waits in a foreground service, with a
+   filtered BLE scan, for one of the ticked tags to advertise RECORDING.
+   Then it records from all ticked tags (starting the other one) with the
+   same GPS setting, picking up the pressed tag's buffer. Once the phone has
+   a tag's data, it blinks the tag blue for 2 s. A button press that stops a
+   tag ends the session, and the app goes back to waiting. **Leave standby**
+   (in the app or the notification) ends it. Arm it while the app is open:
+   Android only lets a foreground service use GPS from the background if it
+   was started from the foreground. The ticked tags are remembered.
+6. Under **Sessions**, **Edit** changes a session's description and each
    tag's body location, **Share** zips a session into
    `Downloads/blading-tag/` and opens the share sheet, and **Delete** removes
    it from the phone.
@@ -72,7 +83,7 @@ phone, which `make pull` reads over adb.
 | `TagLink.kt` | Base for one tag in a recording: logs payloads verbatim, keeps live counters (gaps, measured rate) |
 | `GattTag.kt` | The real tag over BLE: connection setup, GATT operation queue, START/STOP, reconnects |
 | `SimulatedTag.kt` | The fake tag for debug builds |
-| `RecorderService.kt` | Foreground service: owns the links, GPS, files and wake lock |
+| `RecorderService.kt` | Foreground service: owns the links, GPS, files and wake lock; standby scan |
 | `MainActivity.kt` | The one screen: scan, start/stop, live view, sessions |
 | `Sessions.kt` | Listing and zip export of recorded sessions |
 

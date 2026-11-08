@@ -18,6 +18,10 @@ abstract class TagLink(val address: String, protected val listener: Listener) {
         /** [kind] is [TagLog.KIND_DATA] or [TagLog.KIND_STATUS]. */
         fun onRecord(link: TagLink, kind: Int, elapsedNs: Long, payload: ByteArray)
         fun onStatus(link: TagLink, status: Protocol.Status) {}
+        /** The tag went from RECORDING to READY on its own while connected:
+         *  someone pressed its button. The link stops reconnecting/restarting;
+         *  call [stop] to close it. */
+        fun onTagStopped(link: TagLink) {}
     }
 
     /** Connect (and keep reconnecting) and get the tag recording. */

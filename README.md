@@ -38,6 +38,13 @@ should last for many sessions.
    and the app connects and starts recording.
 3. **Stand still for 2 seconds**, then skate. Keep the phone with you.
 4. **Press stop** when you're done. The session is saved on the phone.
+
+Or, with the phone already in your pocket: tick the tags in the app and tap
+**Standby** before you put it away. Then a short press of the tag's button
+starts recording on the tag *and* the phone (with GPS), and another press
+stops both. The tag blinks blue a few seconds after the press once the phone
+has joined; if it shows yellow blips instead, the phone hasn't. See
+[android/README.md](android/README.md#using-it).
 5. **Look at the results:** share the session from the app (or copy it over
    adb with `make -C android pull`) and run the analysis in `host/` on a
    laptop. The app doesn't show results itself yet.
