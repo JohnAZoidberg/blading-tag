@@ -19,6 +19,12 @@ def _die(msg: str) -> None:
     sys.exit(1)
 
 
+def _warn_simulated(s) -> None:
+    """On stderr, so it doesn't end up in --json output."""
+    if s.simulated:
+        print("note: SIMULATED session, fake data from a simulator, not a real recording", file=sys.stderr)
+
+
 # --- BLE commands ------------------------------------------------------------
 
 
@@ -201,14 +207,15 @@ def cmd_dump(a):
 
     s = load_session(a.session)
     m = s.meta
-    print(f"session   {a.session}")
+    print(f"session   {a.session}" + ("  (SIMULATED)" if s.simulated else ""))
     print(f"recorder  {m['recorder']['name']} {m['recorder']['version']}, start {m['start_utc']}")
     if m.get("end_elapsed_ns"):
         print(f"length    {(m['end_elapsed_ns'] - m['start_elapsed_ns']) / 1e9:.1f} s")
     if m.get("notes"):
         print(f"notes     {m['notes']}")
     for t in s.tags:
-        print(f"tag {t.meta.address} ({t.meta.position}), session_id {t.meta.session_id}, "
+        print(f"tag {t.meta.address} ({t.meta.position}{', simulated' if t.meta.simulated else ''}),"
+              f" session_id {t.meta.session_id}, "
               f"{t.meta.odr_hz} Hz ±{t.meta.accel_range_g} g ±{t.meta.gyro_range_dps} dps")
         if t.info:
             print(f"  firmware {t.info.fw_string}, buffer {t.info.buffer_capacity}")
@@ -241,6 +248,7 @@ def cmd_analyze(a):
     from .session import load_session
 
     s = load_session(a.session)
+    _warn_simulated(s)
     if not s.tags:
         _die("session has no tags")
     tags = s.tags
@@ -280,6 +288,7 @@ def cmd_explore(a):
     from .timesync import fit_clocks
 
     s = load_session(a.session)
+    _warn_simulated(s)
     tags = s.tags
     if a.tag:
         tags = [t for t in s.tags if p.normalize_position(a.tag) in (t.meta.position, t.meta.address)]
@@ -311,7 +320,7 @@ def cmd_explore(a):
             df = ex.crop(ex.sample_frame(s, tag, clock), a.start, a.end)
         except ValueError as e:
             _die(str(e))
-        name = f"{tag.meta.address} ({tag.meta.position})"
+        name = f"{tag.meta.address} ({tag.meta.position})" + (" SIMULATED" if s.simulated else "")
         still = ex.still_mask(df, fs)
         cad = ex.cadence_track(df, fs)
         print(f"tag {name}")

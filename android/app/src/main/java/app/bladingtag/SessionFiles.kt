@@ -96,6 +96,8 @@ class TagMeta(val address: String) {
     var odrHz: Int? = null
     var accelRangeG: Int? = null
     var gyroRangeDps: Int? = null
+    /** Fake data from [SimulatedTag], not a real recording. */
+    var simulated = false
     val file get() = TagLog.fileName(address)
 
     /** For the next session when a recording is split: same tag, same settings. */
@@ -106,6 +108,7 @@ class TagMeta(val address: String) {
         it.odrHz = odrHz
         it.accelRangeG = accelRangeG
         it.gyroRangeDps = gyroRangeDps
+        it.simulated = simulated
     }
 }
 
@@ -138,6 +141,7 @@ class SessionMeta(
                 t.odrHz?.let { "\"odr_hz\": $it" },
                 t.accelRangeG?.let { "\"accel_range_g\": $it" },
                 t.gyroRangeDps?.let { "\"gyro_range_dps\": $it" },
+                "\"simulated\": ${t.simulated}",
             )
             sb.append("    {\n      ").append(fields.joinToString(",\n      ")).append("\n    }")
         }
@@ -189,9 +193,16 @@ class SessionJson(
     /** Shown as the session's description. */
     val notes: String,
 ) {
-    class Tag(val address: String, val position: String)
+    class Tag(val address: String, val position: String, val simulated: Boolean)
+
+    /** Any of its tags is simulated: not a real recording. */
+    val simulated get() = tags.any { it.simulated }
 
     companion object {
+        /** The Android simulated tag's and the host fake tag's addresses (PROTOCOL.md §2.2). */
+        fun isSimulatorAddress(address: String) =
+            address == SimulatedTag.ADDRESS || address.uppercase().startsWith("FA:KE:")
+
         /** Null if the folder has no readable session.json. */
         fun read(dir: File): SessionJson? = runCatching {
             parse(File(dir, "session.json").readText())
@@ -206,8 +217,10 @@ class SessionJson(
                 endElapsedNs = long("end_elapsed_ns"),
                 tags = (0 until (tags?.length() ?: 0)).map { i ->
                     val t = tags!!.getJSONObject(i)
-                    Tag(t.getString("address"),
-                        Protocol.normalizePosition(t.optString("position", "unknown")))
+                    val address = t.getString("address")
+                    Tag(address, Protocol.normalizePosition(t.optString("position", "unknown")),
+                        // Sessions from before the field: known simulator addresses.
+                        t.optBoolean("simulated", false) || isSimulatorAddress(address))
                 },
                 notes = o.optString("notes", ""),
             )

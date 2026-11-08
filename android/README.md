@@ -52,7 +52,9 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
 7. Under **Sessions**, **Edit** changes a session's description and each
    tag's body location, **Share** zips a session into
    `Downloads/blading-tag/` and opens the share sheet, and **Delete** removes
-   it from the phone.
+   it from the phone. Sessions from the simulated tag say **SIMULATED**
+   (`"simulated": true` in session.json), so they aren't mistaken for real
+   activities.
 
 If the link drops mid-session, the app reconnects as soon as the tag is back
 in range. The tag buffers in the meantime (PROTOCOL.md §1.9). If the tag is

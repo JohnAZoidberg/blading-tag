@@ -186,6 +186,8 @@ def write_session(folder: Path, model: SkaterModel | None = None, link: LinkMode
     info = p.Info(1, (0, 1, 0), list(p.ODR_VALUES), list(p.ACCEL_RANGES), list(p.GYRO_RANGES),
                   link.buffer_capacity)
     log = w.add_tag(address, info.pack())
+    w.tags[address].simulated = True
+    w.save()
 
     def status(state, i, fill=0, dropped=0, extra_us=0):
         return p.Status(state, p.StatusFlag.OVERFLOW if dropped else 0, 2950, 3, 200, 16, pos, 2000,

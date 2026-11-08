@@ -2,6 +2,7 @@ package app.bladingtag
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -131,6 +132,26 @@ class ProtocolTest {
         assertTrue(text, text.contains("\"file\": \"tag-C0BB4AA70D57.bin\""))
         assertNull(SessionJson.read(File(dir, "missing")))
         dir.deleteRecursively()
+    }
+
+    @Test fun simulatedSessions() {
+        val real = TagMeta("C0:BB:4A:A7:0D:57")
+        val sim = TagMeta(SimulatedTag.ADDRESS).apply { simulated = true }
+        val m = SessionMeta("0.1.0", 1_794_061_530_123L, 1L, listOf(real, sim))
+        assertTrue(m.toJson().contains("\"simulated\": true"))
+        assertTrue(m.toJson().contains("\"simulated\": false"))
+        assertTrue(sim.copy().simulated)
+        val j = SessionJson.parse(m.toJson())
+        assertEquals(listOf(false, true), j.tags.map { it.simulated })
+        assertTrue(j.simulated)
+        assertFalse(SessionJson.parse(SessionMeta("0.1.0", 0L, 1L, listOf(real)).toJson()).simulated)
+
+        // From before the field: recognised by the simulators' addresses.
+        fun old(address: String) = SessionJson.parse(
+            "{\"start_elapsed_ns\": 1, \"tags\": [{\"address\": \"$address\"}], \"notes\": \"\"}")
+        assertTrue(old("02:00:00:00:00:01").simulated)
+        assertTrue(old("FA:KE:00:00:00:01").simulated)
+        assertFalse(old("C0:BB:4A:A7:0D:57").simulated)
     }
 
     @Test fun bodyLocations() {

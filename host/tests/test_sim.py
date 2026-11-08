@@ -15,6 +15,7 @@ def test_sim_session_roundtrip(tmp_path):
     s = load_session(tmp_path / "s")
     t = s.tags[0]
     assert t.meta.position == "left_foot"
+    assert t.meta.simulated and s.simulated
     assert len(t.raw) == int(120 * link.true_rate_hz)  # short drop: nothing lost
     assert t.gaps() == [] and t.seq_gaps() == 0
     fit = fit_clocks(t)

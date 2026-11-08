@@ -114,7 +114,7 @@ class RecorderService : Service(), TagLink.Listener {
         val startElapsed = SystemClock.elapsedRealtimeNanos()
         val dir = newSessionDir(startUtc)
         val meta = SessionMeta(BuildConfig.VERSION_NAME, startUtc, startElapsed,
-            addresses.map { TagMeta(it) })
+            addresses.map { TagMeta(it).apply { simulated = it == SimulatedTag.ADDRESS } })
         writeSessionJson(dir, meta)
 
         val logs = addresses.associateWith { TagLog(File(dir, TagLog.fileName(it))) }

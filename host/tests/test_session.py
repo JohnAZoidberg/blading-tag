@@ -187,3 +187,34 @@ def test_seq_gaps_counts_only_seqs_never_received(tmp_path):
         log.write(RecordKind.DATA, p.DataPacket.pack_imu6(seq, i * 19, i * 95000, samples), i)
     w.close()
     assert load_session(tmp_path / "s").tags[0].seq_gaps() == 1
+
+
+def test_simulated_flag(tmp_path):
+    w = SessionWriter(tmp_path / "real")
+    w.add_tag(ADDR, INFO)
+    w.add_tag("FA:KE:00:00:00:01")  # the host fake tag is flagged by its address
+    w.save()
+    meta = json.loads((tmp_path / "real" / "session.json").read_text())
+    assert [t["simulated"] for t in meta["tags"]] == [False, True]
+    s = load_session(tmp_path / "real")
+    assert [t.meta.simulated for t in s.tags] == [False, True]
+    assert s.simulated
+
+    w = SessionWriter(tmp_path / "only-real")
+    w.add_tag(ADDR, INFO)
+    assert not load_session(tmp_path / "only-real").simulated
+
+
+def test_simulated_before_the_field(tmp_path):
+    """Old sessions: the Android simulated tag's address, or sim_truth.json."""
+    for name, addr, truth in (("android", "02:00:00:00:00:01", False), ("simulate", ADDR, True),
+                              ("real", ADDR, False)):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "session.json").write_text(json.dumps({
+            "format_version": 1, "recorder": {"name": "x", "version": "0"},
+            "start_utc": "2026-11-07T14:25:30.123Z", "start_elapsed_ns": 0,
+            "tags": [{"address": addr}], "notes": ""}))
+        if truth:
+            (d / "sim_truth.json").write_text("{}")
+        assert load_session(d).simulated == (name != "real"), name

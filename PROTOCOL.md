@@ -372,7 +372,8 @@ wall-clock time.
       "session_id": 3,
       "odr_hz": 200,
       "accel_range_g": 16,
-      "gyro_range_dps": 2000
+      "gyro_range_dps": 2000,
+      "simulated": false
     }
   ],
   "notes": ""
@@ -385,6 +386,14 @@ wall-clock time.
 - `notes` is a free-text description, empty by default. The Android app lets
   you edit it, and the foot/body location, after recording.
 - `info_hex` is the raw Info characteristic. Spaces are optional.
+- `simulated` is `true` for fake data from a simulator (the Android app's
+  simulated tag, `bladetag record fake`, `bladetag simulate`), so test data
+  isn't mistaken for a real activity. A session is simulated if any of its
+  tags is. Sessions written before the field have no `simulated`; readers
+  treat them as simulated if a tag has a simulator-only address
+  (`02:00:00:00:00:01` on Android, `FA:KE:…` on the host) or the folder has
+  a `sim_truth.json` (written by `bladetag simulate`, which used the real
+  tag's address).
 - Readers ignore fields they don't know.
 
 ### 2.3 tag-ADDRESS.bin

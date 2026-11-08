@@ -591,10 +591,12 @@ class MainActivity : Activity() {
         for (s in list) {
             val d = s.durationS
             val dur = if (d == null) "unfinished" else "%d:%02d:%02d".format(d / 3600, d / 60 % 60, d % 60)
-            val feet = s.json?.tags?.joinToString(" + ") { Protocol.positionLabel(it.position).lowercase() }
-                ?.let { " · $it" }.orEmpty()
+            val feet = s.json?.tags?.joinToString(" + ") {
+                if (it.simulated) "simulated" else Protocol.positionLabel(it.position).lowercase()
+            }?.let { " · $it" }.orEmpty()
+            val fake = if (s.json?.simulated == true) " · SIMULATED" else ""
             sessionList.addView(TextView(this).apply {
-                text = "${s.dir.name.removePrefix("session-")}\n$dur · ${s.tags} tag$feet · " +
+                text = "${s.dir.name.removePrefix("session-")}$fake\n$dur · ${s.tags} tag$feet · " +
                     "${s.gpsFixes} GPS · ${size(s.bytes)}"
                 textSize = 14f
                 setPadding(0, dp(10), 0, 0)

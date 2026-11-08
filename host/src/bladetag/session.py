@@ -69,6 +69,13 @@ class TagLog:
         self._f.close()
 
 
+#: Addresses only simulators use: the Android app's simulated tag and the
+#: host's fake tag (``bladetag record fake``). See PROTOCOL.md §2.2.
+def is_simulator_address(address: str) -> bool:
+    a = address.upper()
+    return a == "02:00:00:00:00:01" or a.startswith("FA:KE:")
+
+
 @dataclass
 class TagMeta:
     address: str
@@ -79,9 +86,12 @@ class TagMeta:
     odr_hz: int | None = None
     accel_range_g: int | None = None
     gyro_range_dps: int | None = None
+    simulated: bool = False  # fake data from a simulator, not a real recording
 
     def __post_init__(self):
         self.position = p.normalize_position(self.position)
+        # Sessions from before the field still have the simulator's address.
+        self.simulated = bool(self.simulated) or is_simulator_address(self.address)
         if not self.file:
             self.file = tag_filename(self.address)
 
@@ -297,6 +307,7 @@ class Session:
     meta: dict
     tags: list[TagData]
     gps: "np.ndarray | None"  # structured array with GPS_COLUMNS, or None
+    simulated: bool = False  # any tag simulated, or written by `bladetag simulate`
 
     @property
     def start_utc(self) -> datetime:
@@ -357,7 +368,10 @@ def load_session(path: str | Path) -> Session:
         data = folder.read(tm.file) or b""
         tags.append(decode_tag_log(data, tm))
     gps_raw = folder.read("gps.csv")
-    return Session(Path(path), meta, tags, _parse_gps(gps_raw) if gps_raw else None)
+    # `bladetag simulate` used the real tag's address before the field existed,
+    # but always wrote sim_truth.json next to the session.
+    simulated = any(t.meta.simulated for t in tags) or folder.read("sim_truth.json") is not None
+    return Session(Path(path), meta, tags, _parse_gps(gps_raw) if gps_raw else None, simulated)
 
 
 def _parse_gps(raw: bytes) -> np.ndarray | None:
