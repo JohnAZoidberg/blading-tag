@@ -18,8 +18,6 @@
   --line: #cfd4db;
   --accent: #2448d8;      /* tracked skate, wheels down */
   --air: #c77700;         /* tracked skate, in the air */
-  --outside: #0d9682;     /* wheels on their outside edge (inside edge = accent) */
-  --flat: #8a93a0;        /* wheels flat, within the uncertainty of "flat" */
   --early: #8a93a0;
   --ground: #d9dde2;
   --ground-line: #b8bfc8;
@@ -32,14 +30,14 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #121519; --panel: #1a1e24; --ink: #e7eaee; --muted: #949dab; --line: #2c323b;
-    --accent: #7d98ff; --air: #f0a63a; --early: #6b7482; --outside: #3fd0b8; --flat: #7c8594;
+    --accent: #7d98ff; --air: #f0a63a; --early: #6b7482;
     --ground: #1c2026; --ground-line: #2a3039; --lane: #8d8f86;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #121519; --panel: #1a1e24; --ink: #e7eaee; --muted: #949dab; --line: #2c323b;
-  --accent: #7d98ff; --air: #f0a63a; --early: #6b7482; --outside: #3fd0b8; --flat: #7c8594;
+  --accent: #7d98ff; --air: #f0a63a; --early: #6b7482;
   --ground: #1c2026; --ground-line: #2a3039; --lane: #8d8f86;
   color-scheme: dark;
 }
@@ -152,9 +150,7 @@ td.up { color: var(--accent); }
       <div class="row"><span>Speed</span><span class="num" id="hud-speed">–</span></div>
     </div>
     <div class="edge-key" aria-hidden="true">
-      <span><i style="background:var(--outside)"></i>outside edge</span>
-      <span><i style="background:var(--flat)"></i>flat</span>
-      <span><i style="background:var(--accent)"></i>inside edge</span>
+      <span><i style="background:var(--accent)"></i>wheels down: the lit half of each wheel is the edge on the road, both halves when flat</span>
       <span><i style="background:var(--air)"></i>in the air</span>
     </div>
     <div class="views">
@@ -220,7 +216,7 @@ td.up { color: var(--accent); }
       <h2 style="color:var(--ink)">How this is worked out</h2>
       <p>One tag sees one skate. A stroke runs from the wheels touching down to the next touch-down, found from road vibration. Within each stroke the acceleration is integrated twice and the skater's own constant speed is taken out, so the path shows the skate relative to you, the way a camera riding alongside would see it.</p>
       <p>Wheels only roll along the skate, so while they're down the skate must point where it's going. That fixes which way the tag sits on the skate.</p>
-      <p>Edges: while the wheels are down they're coloured by the skate's roll, outside edge to inside edge. “Flat” is how the skate sat while you stood still, averaged over every stop that day with the tag on that foot. Stops differ by a few degrees, so rolls within <span id="flat-deg">4</span>° of flat count as neither edge.</p>
+      <p>Edges: while the wheels are down, the half of each wheel that's on the road lights up: the outer half on the outside edge, the inner half on the inside edge, both when the skate is flat. “Flat” is how the skate sat while you stood still, averaged over every stop that day with the tag on that foot. Stops differ by a few degrees, so rolls within <span id="flat-deg">4</span>° of flat count as neither edge.</p>
       <p>Sideways sweep includes your body swaying. Heights stay small because the wheels are pinned to the road while they're down, and a low recovery barely leaves it.</p>
       <div id="warnings"></div>
     </section>
@@ -287,11 +283,16 @@ const travel = new THREE.Line(travelGeo, travelMat); travel.computeLineDistances
 // wheels above the road with them.
 function makeSkate() {
   const g = new THREE.Group();
-  const urethane = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.7 });
+  // Each wheel in two halves across its width, so the half on the road can light up:
+  // halfL on the skate's left (+y), halfR on its right.
+  const halfL = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.7 });
+  const halfR = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.7 });
   const hub = new THREE.MeshStandardMaterial({ color: 0xb8bec7, metalness: 0.6, roughness: 0.35 });
   for (const x of [-0.12, 0, 0.12]) {
-    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.024, 36), urethane);
-    w.position.set(x, 0, 0.055); g.add(w);  // cylinder axis is y: the axle runs sideways
+    for (const [y, m] of [[0.006, halfL], [-0.006, halfR]]) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.0115, 36), m);
+      w.position.set(x, y, 0.055); g.add(w);  // cylinder axis is y: the axle runs sideways
+    }
     const h = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.026, 18), hub);
     h.position.set(x, 0, 0.055); g.add(h);
   }
@@ -310,7 +311,7 @@ function makeSkate() {
   const tagMat = new THREE.MeshStandardMaterial({ color: 0x2448d8, roughness: 0.4 });
   const tag = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.03, 0.01), tagMat);
   tag.position.set(0.075, 0, 0.205); tag.rotation.y = -0.38; g.add(tag);
-  g.userData = { tagMat, bootMat, urethane };
+  g.userData = { tagMat, bootMat, halfL, halfR };
   return g;
 }
 const skate = makeSkate(); scene.add(skate);
@@ -324,7 +325,7 @@ const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ vertexColor
 scene.add(trail);
 // Typical-stroke loops.
 const loopEarly = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x888888 }));
-const loopLate = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true }));
+const loopLate = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x2448d8 }));
 const liftMarks = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 0.03, color: 0xc77700 }));
 scene.add(loopEarly, loopLate, liftMarks);
 
@@ -333,12 +334,12 @@ function applyTheme() {
   colors = {
     bg: new THREE.Color(css("--ground")), line: new THREE.Color(css("--ground-line")), lane: new THREE.Color(css("--lane")),
     accent: new THREE.Color(css("--accent")), air: new THREE.Color(css("--air")), early: new THREE.Color(css("--early")),
-    muted: new THREE.Color(css("--muted")), outside: new THREE.Color(css("--outside")), flat: new THREE.Color(css("--flat")),
+    muted: new THREE.Color(css("--muted")),
   };
   scene.background = colors.bg; scene.fog = new THREE.Fog(colors.bg, 4, 14);
   groundMat.color = colors.bg; gridMat.color = colors.line; laneMat.color = colors.lane; travelMat.color = colors.muted;
   skate.userData.tagMat.color = colors.accent;
-  loopEarly.material.color = colors.early; liftMarks.material.color = colors.air;
+  loopEarly.material.color = colors.early; liftMarks.material.color = colors.air; loopLate.material.color = colors.accent;
   if (S) buildLoops();
   drawTimeline();
 }
@@ -363,13 +364,12 @@ function angles(q) {
   return { edge: -S.side * leanLeft * 180 / Math.PI, toe: S.side * Math.atan2(vF.y, vF.x) * 180 / Math.PI };
 }
 
-const Qk = new THREE.Quaternion(), WHEEL_DARK = new THREE.Color(0x2b2f36), BLACK = new THREE.Color(0);
+const WHEEL_DARK = new THREE.Color(0x2b2f36), BLACK = new THREE.Color(0);
 let FLAT = 4;
-// Wheels-down colour: outside edge, flat, inside edge (stronger with the angle).
-function edgeColor(e) {
-  const m = Math.abs(e);
-  if (m < FLAT) return colors.flat;
-  return colors.flat.clone().lerp(e > 0 ? colors.accent : colors.outside, Math.min(1, 0.45 + 0.55 * (m - FLAT) / 20));
+// Light a wheel half (it's on the road) or leave it dark. It glows a little so it reads in any light.
+function litHalf(m, lit) {
+  m.color.copy(lit ? colors.accent : WHEEL_DARK);
+  m.emissive.copy(lit ? colors.accent : BLACK).multiplyScalar(0.5);
 }
 
 // ---- camera presets ----------------------------------------------------------
@@ -428,20 +428,21 @@ function updateScene() {
       if (S.T[idx] - S.T[k] > span) break;
       const x = S.P[3 * k] / 1000 + (ground ? S.D[k] - d0 : 0);
       pts.push([x, S.P[3 * k + 1] / 1000, S.P[3 * k + 2] / 1000]);
-      const base = S.C[k] ? edgeColor(angles(quatOf(k, Qk)).edge) : colors.air, fade = c / TRAIL;
+      const base = S.C[k] ? colors.accent : colors.air, fade = c / TRAIL;
       cols.push(base.clone().lerp(colors.bg, fade * 0.85));
     }
     if (pts.length) setTrail(pts, cols);
   }
   const a = angles(Q);
-  const ec = inAir ? null : edgeColor(a.edge);
-  // Wheels show the edge while they're down; they glow a little so it reads in any light.
-  skate.userData.urethane.color.copy(inAir ? WHEEL_DARK : ec);
-  skate.userData.urethane.emissive.copy(inAir ? BLACK : ec).multiplyScalar(0.5);
+  // The half of each wheel on the road: outer half on the outside edge, inner
+  // half on the inside edge, both when flat (within FLAT degrees), none in the air.
+  const flat = Math.abs(a.edge) < FLAT, U = skate.userData;
+  const outer = S.side > 0 ? U.halfL : U.halfR, inner = S.side > 0 ? U.halfR : U.halfL;
+  litHalf(outer, !inAir && (flat || a.edge < 0));
+  litHalf(inner, !inAir && (flat || a.edge > 0));
   $("hud-phase").textContent = inAir ? "In the air" : "Wheels down";
-  $("hud-phase").style.color = inAir ? "var(--air)" : "#" + ec.getHexString();
-  $("hud-edge").textContent = Math.abs(a.edge) < FLAT ? "flat" : (a.edge > 0 ? "inside " : "outside ") + Math.abs(a.edge).toFixed(0) + "°";
-  $("hud-edge").style.color = inAir ? "" : "#" + ec.getHexString();
+  $("hud-phase").style.color = inAir ? "var(--air)" : "var(--accent)";
+  $("hud-edge").textContent = flat ? "flat" : (a.edge > 0 ? "inside " : "outside ") + Math.abs(a.edge).toFixed(0) + "°";
   $("hud-toe").textContent = a.toe.toFixed(0) + "°";
   if (typical) {
     const L = S.typical.all;
@@ -462,15 +463,6 @@ function buildLoops() {
   const mk = (L) => new THREE.BufferGeometry().setFromPoints((L ? L.pos.concat([L.pos[0]]) : []).map((p) => new THREE.Vector3(p[0], p[1], p[2] + 0.003)));
   loopEarly.geometry.dispose(); loopLate.geometry.dispose(); liftMarks.geometry.dispose();
   loopEarly.geometry = mk(T.early); loopLate.geometry = mk(T.late);
-  // The late loop is coloured like the trail: by edge while the wheels are down.
-  if (T.late) {
-    const n = T.late.pos.length, lp = T.late.lift_phase === null ? 1 : T.late.lift_phase, col = [];
-    for (let i = 0; i <= n; i++) {
-      const j = i % n, c = j / n < lp ? edgeColor(angles(Qk.set(...T.late.quat[j])).edge) : colors.air;
-      col.push(c.r, c.g, c.b);
-    }
-    loopLate.geometry.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-  }
   const marks = [];
   for (const L of [T.early, T.late]) if (L && L.lift_phase !== null) {
     const p = L.pos[Math.round(L.lift_phase * L.pos.length) % L.pos.length]; marks.push(new THREE.Vector3(p[0], p[1], p[2] + 0.006));
@@ -638,6 +630,7 @@ window.__viz = {  // for scripted checks of the page
   render: () => { updateScene(); controls.update(); renderer.render(scene, camera); },
   seek: (t) => { now = t; },
   strokes: () => S.strokes,
+  closeUp: () => { const p = skate.position; controls.target.set(p.x, p.y, p.z + 0.1); camera.position.set(p.x - 0.6, p.y, p.z + 0.18); },
 };
 setPlaying(!matchMedia("(prefers-reduced-motion: reduce)").matches);
 requestAnimationFrame(tick);

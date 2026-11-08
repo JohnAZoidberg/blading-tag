@@ -213,9 +213,9 @@ How it works (`src/bladetag/viz3d.py`):
    the skate can't pitch then. The orientation is corrected for the 3–5° of
    pitch it showed during contact (interpolated through the air phases) and
    the path is integrated again.
-6. **Edges:** while the wheels are down, the wheels, the trail and the
-   typical loop are coloured by the skate's roll: outside edge, flat, inside
-   edge. "Flat" is how the skate sat while you stood still, averaged over
+6. **Edges:** while the wheels are down, the half of each wheel that's on
+   the road lights up: the outer half on the outside edge, the inner half on
+   the inside edge, both when flat. "Flat" is how the skate sat while you stood still, averaged over
    every stop that day with the same tag on the same foot (stops differ by
    3–5°), so rolls within 4° of it count as neither edge. On the riverside
    legs the skate set down on its outside edge (~10°) for about half the
