@@ -264,9 +264,9 @@ Known issues and things not tested yet:
 - **The app's live push rate on real skating** is unchecked. On the next
   skate session, look at the screen a few times and compare with counting
   pushes for 30 s. Things that could be off:
-  - It doubles the period of the tagged foot (feet alternate). That's right
-    for skating only; walking shows steps/min by luck, cycling would show
-    twice the rpm (see [PLAN-activities.md](PLAN-activities.md)).
+  - Pushes/min is twice the cycles of the tagged foot (feet alternate). The
+    session's activity picks the unit: steps/min (×2) for walking, rpm (×1)
+    for cycling (see [PLAN-activities.md](PLAN-activities.md)).
   - The "moving" (gyro RMS > 30 °/s) and "repetitive" (autocorrelation
     > 0.5) thresholds come from `bladetag explore` and were only checked on
     walks. Long glides or a relaxed cruise may fall below "repetitive" and

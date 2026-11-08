@@ -80,7 +80,7 @@ class LiveSignalTest {
         assertEquals(1f, w.ch[2].average().toFloat(), 1e-3f)   // az = 1 g
         val c = live.cadence()!!
         assertEquals(1.5, c.periodS.toDouble(), 0.02)
-        assertEquals(80f, c.pushesPerMin, 1.2f)
+        assertEquals(40f, c.cyclesPerMin, 0.6f)
     }
 
     @Test
@@ -115,14 +115,29 @@ class LiveSignalTest {
     }
 
     @Test
+    fun ratePerActivity() {
+        // One foot at 40 cycles/min, 18 km/h = 5 m/s.
+        val skate = RateUnit.of(ActivityKind.SKATING)
+        assertEquals(80f, skate.rate(40f))
+        assertEquals("pushes/min", skate.rate)
+        assertEquals(3.75f, skate.distancePer(18f, 40f), 1e-4f)   // 5 m/s / (80/60 per s)
+        assertEquals(80f, RateUnit.of(ActivityKind.WALKING).rate(40f))
+        val bike = RateUnit.of(ActivityKind.CYCLING)
+        assertEquals(40f, bike.rate(40f))
+        assertEquals("rpm", bike.rate)
+        assertEquals(7.5f, bike.distancePer(18f, 40f), 1e-4f)
+        assertEquals(40f, RateUnit.of(ActivityKind.UNKNOWN).rate(40f))
+    }
+
+    @Test
     fun trendGrows() {
         val tr = Trend()
-        assertTrue(tr.lastPushesPerMin.isNaN())
+        assertTrue(tr.lastCyclesPerMin.isNaN())
         for (i in 0 until 5000) tr.add(i.toFloat(), if (i % 2 == 0) Float.NaN else 60f, 20f)
         assertEquals(5000, tr.size)
-        assertEquals(60f, tr.lastPushesPerMin)
+        assertEquals(60f, tr.lastCyclesPerMin)
         assertEquals(4999f, tr.t[4999])
-        assertFalse(tr.pushesPerMin[4998] == 60f)
+        assertFalse(tr.cyclesPerMin[4998] == 60f)
     }
 
     /**

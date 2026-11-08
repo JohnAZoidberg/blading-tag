@@ -298,13 +298,13 @@ class RecorderService : Service(), TagLink.Listener {
         }
     }
 
-    /** Push rate from each tag's last seconds, and GPS speed, into the trend. */
+    /** Cycles/min from each tag's last seconds, and GPS speed, into the trend. */
     private val liveTick = object : Runnable {
         override fun run() {
             val rec = current ?: return
             val rates = rec.links.mapNotNull { l ->
                 l.cadence = l.live.cadence()
-                l.cadence?.takeIf { it.valid }?.pushesPerMin
+                l.cadence?.takeIf { it.valid }?.cyclesPerMin
             }
             val fix = rec.lastFix
             val fresh = fix != null && fix.hasSpeed() &&
@@ -478,9 +478,10 @@ class RecorderService : Service(), TagLink.Listener {
             }
         }
         val sb = StringBuilder("%d:%02d:%02d".format(secs / 3600, secs / 60 % 60, secs % 60))
-        val push = rec.trend.lastPushesPerMin
+        val unit = RateUnit.of(rec.meta.activity)
+        val cycles = rec.trend.lastCyclesPerMin
         val speed = rec.trend.lastSpeedKmh
-        if (!push.isNaN()) sb.append(" · %.0f pushes/min".format(push))
+        if (!cycles.isNaN()) sb.append(" · %.0f %s".format(unit.rate(cycles), unit.rate))
         if (!speed.isNaN()) sb.append(" · %.1f km/h".format(speed))
         if (rec.distanceM > 0) sb.append(" · %.2f km".format(rec.distanceM / 1000))
         return sb.append(" · ").append(tags).toString()

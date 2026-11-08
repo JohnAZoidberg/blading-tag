@@ -8,8 +8,9 @@ import android.widget.TextView
 
 /**
  * The glanceable top of the recording screen, for taking the phone out of
- * the pocket for a moment: push rate as the one big number, speed, distance
- * and distance per push under it, the session so far as two trend charts,
+ * the pocket for a moment: the rate as the one big number (pushes/min,
+ * steps/min or rpm, by the session's activity: [RateUnit]), speed, distance
+ * and distance per push/step/turn under it, the session so far as two trend charts,
  * and each tag's last seconds of motion.
  *
  * [update] runs with the activity's 500 ms refresh; [animate] redraws the
@@ -23,15 +24,15 @@ class LivePanel(context: Context) : LinearLayout(context) {
     private val semibold = Typeface.create(Typeface.DEFAULT, 600, false)
 
     private val elapsed = TextView(context).apply { textSize = 20f; typeface = semibold; alpha = 0.7f }
-    private val pushValue = TextView(context).apply {
+    private val rateValue = TextView(context).apply {
         textSize = 64f; typeface = semibold; includeFontPadding = false
     }
-    private val pushLabel = TextView(context).apply { textSize = 14f; alpha = 0.7f }
+    private val rateLabel = TextView(context).apply { textSize = 14f; alpha = 0.7f }
     private val speed = tile("km/h")
     private val distance = tile("km")
-    private val perPush = tile("m per push")
-    private val pushTrend = PlotView(context).apply {
-        title = "Pushes/min"; minSpan = 20f; emptyText = "no repetitive motion yet"
+    private val perCycle = tile("m per push")
+    private val rateTrend = PlotView(context).apply {
+        minSpan = 20f; emptyText = "no repetitive motion yet"
         xLabel = ::clock
     }
     private val speedTrend = PlotView(context).apply {
@@ -47,14 +48,14 @@ class LivePanel(context: Context) : LinearLayout(context) {
     init {
         orientation = VERTICAL
         addView(elapsed)
-        addView(pushValue, lp(4))
-        addView(pushLabel)
+        addView(rateValue, lp(4))
+        addView(rateLabel)
         addView(LinearLayout(context).apply {
             orientation = HORIZONTAL
-            for (t in listOf(speed, distance, perPush)) addView(t.first.parent as LinearLayout,
+            for (t in listOf(speed, distance, perCycle)) addView(t.first.parent as LinearLayout,
                 LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         }, lp(12))
-        addView(pushTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(16) })
+        addView(rateTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(16) })
         addView(speedTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(8) })
         addView(scopeBox, lp(8))
     }
@@ -76,25 +77,29 @@ class LivePanel(context: Context) : LinearLayout(context) {
         val secs = (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1_000_000_000
         elapsed.text = "%d:%02d:%02d".format(secs / 3600, secs / 60 % 60, secs % 60) +
             if (rec.stopping) "  stopping…" else ""
-        val push = tr.lastPushesPerMin
+        val unit = RateUnit.of(rec.meta.activity)
+        val cycles = tr.lastCyclesPerMin
         val kmh = tr.lastSpeedKmh
-        pushValue.text = if (push.isNaN()) "–" else "%.0f".format(push)
-        pushLabel.text = when {
-            !push.isNaN() -> "pushes/min"
-            rec.links.any { it.samples > 0 } -> "pushes/min · not moving"
-            else -> "pushes/min · waiting for the tag"
+        rateValue.text = if (cycles.isNaN()) "–" else "%.0f".format(unit.rate(cycles))
+        rateLabel.text = when {
+            !cycles.isNaN() -> unit.rate
+            rec.links.any { it.samples > 0 } -> "${unit.rate} · not moving"
+            else -> "${unit.rate} · waiting for the tag"
         }
         speed.first.text = if (kmh.isNaN()) "–" else "%.1f".format(kmh)
         distance.first.text = if (rec.gps == null) "–" else "%.2f".format(rec.distanceM / 1000)
         // Below walking pace GPS speed is mostly noise, and so would this be.
-        perPush.first.text = if (push.isNaN() || kmh.isNaN() || kmh < MIN_PER_PUSH_KMH) "–"
-            else "%.1f".format(kmh / 3.6f / (push / 60f))
+        perCycle.second.text = "m per ${unit.one}"
+        perCycle.first.text = if (cycles.isNaN() || kmh.isNaN() || kmh < MIN_PER_CYCLE_KMH) "–"
+            else "%.${if (unit.perCycle == 1) 2 else 1}f".format(unit.distancePer(kmh, cycles))
 
         val now = (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1e9f
         // Whole session, but at least 5 minutes wide so the start isn't stretched.
         val xMax = maxOf(now, 300f)
         val t = tr.t.copyOf(tr.size)
-        pushTrend.set(t, listOf(PlotView.Series("pushes/min", colors[0], tr.pushesPerMin.copyOf(tr.size))), 0f, xMax)
+        rateTrend.title = unit.title
+        val rates = FloatArray(tr.size) { unit.rate(tr.cyclesPerMin[it]) }
+        rateTrend.set(t, listOf(PlotView.Series(unit.rate, colors[0], rates)), 0f, xMax)
         speedTrend.emptyText = if (rec.gps == null) "GPS is off" else "no GPS speed yet"
         speedTrend.set(t, listOf(PlotView.Series("km/h", colors[1], tr.speedKmh.copyOf(tr.size))), 0f, xMax)
 
@@ -112,7 +117,7 @@ class LivePanel(context: Context) : LinearLayout(context) {
                 scopeBox.addView(p, LayoutParams(LayoutParams.MATCH_PARENT, dp(120)).apply { topMargin = dp(12) })
             }
         }
-        // Repetition strength next to each tag's plot, as a hint why there's no push rate.
+        // Repetition strength next to each tag's plot, as a hint why there's no rate.
         for ((i, l) in rec.links.withIndex()) scopes[i].title = scopeTitle(l)
     }
 
@@ -144,7 +149,7 @@ class LivePanel(context: Context) : LinearLayout(context) {
 
     companion object {
         const val SCOPE_S = 10f
-        const val MIN_PER_PUSH_KMH = 3f
+        const val MIN_PER_CYCLE_KMH = 3f
 
         /** Session time on the trend axis: "12 min", or "1:05 h" past an hour. */
         fun clock(s: Float): String {

@@ -35,10 +35,11 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    then has no `gps.csv`, so there is no speed or distance per push. The
    choice is remembered.
 3. While recording, the screen is made for a quick look out of the pocket:
-   push rate as the big number, then speed, distance and metres per push,
-   then the session so far as two charts (push rate and speed), and each
-   tag's last 10 s of gyro (tap the plot for accel). The notification shows
-   push rate, speed and distance too. See [Live push rate](#live-push-rate).
+   the rate as the big number (pushes/min, steps/min or rpm, by the
+   activity), then speed, distance and metres per push, step or crank turn,
+   then the session so far as two charts (rate and speed), and each tag's
+   last 10 s of gyro (tap the plot for accel). The notification shows the
+   rate, speed and distance too. See [Live push rate](#live-push-rate).
 4. **Save and start new session** (also in the notification) saves the
    session so far and keeps recording into a new one, to separate movement
    patterns. The tags stay connected and only the files change, so nothing
@@ -76,13 +77,15 @@ skate. The new `session_id` is visible in the logged Status records.
 Push rate is computed on the phone once a second, with the same method as
 `cadence_track` in `bladetag explore`: the autocorrelation of the gyro vector
 over the last 8 s, decimated to 50 Hz. It doesn't depend on how the tag is
-mounted and has no thresholds to tune. The repetition period is one stroke
-of the foot the tag is on, so pushes/min is twice the strokes of that foot
-(skating alternates feet). It's shown only while moving (gyro RMS > 30 °/s)
+mounted and has no thresholds to tune. The repetition period is one cycle
+of the foot the tag is on (a stroke, a stride, a crank turn). Skating and
+walking alternate feet, so pushes/min and steps/min are twice that foot's
+cycles; cycling shows them as rpm; with no activity given it shows one
+foot's cycles/min. It's shown only while moving (gyro RMS > 30 °/s)
 and repetitive (autocorrelation > 0.5), so standing or rolling without
 pushing shows "–". With two tags it's their mean. Distance integrates GPS
-speed between fixes, like the host analysis; metres per push is speed
-divided by push rate.
+speed between fixes, like the host analysis; metres per push (step, crank
+turn) is speed divided by that rate, from 3 km/h up.
 
 To check the port against the host on a real recording:
 

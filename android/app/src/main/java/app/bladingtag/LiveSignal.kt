@@ -71,7 +71,7 @@ class LiveSignal {
         return Window(rate, t, ch)
     }
 
-    /** Push rate from the newest [Cadence.WINDOW_S] without a gap, or null. */
+    /** Repetition period of the newest [Cadence.WINDOW_S] without a gap, or null. */
     fun cadence(): Cadence? {
         val w = window(Cadence.WINDOW_S)
         if (w.size < (Cadence.WINDOW_S * w.rateHz).toInt() || w.ch[3].any { it.isNaN() }) return null
@@ -98,8 +98,8 @@ class LiveSignal {
  */
 data class Cadence(val periodS: Float, val strength: Float, val gyroRmsDps: Float) {
 
-    /** Skating alternates feet, so pushes are two per cycle of either foot. */
-    val pushesPerMin get() = 2 * 60f / periodS
+    /** Cycles of the tagged limb per minute; [RateUnit] turns it into pushes, steps or rpm. */
+    val cyclesPerMin get() = 60f / periodS
 
     /** Moving and repetitive: the thresholds `bladetag explore` uses. */
     val valid get() = gyroRmsDps > MIN_GYRO_RMS_DPS && strength > MIN_STRENGTH
@@ -148,28 +148,51 @@ data class Cadence(val periodS: Float, val strength: Float, val gyroRmsDps: Floa
 }
 
 /**
+ * How the live view names the repetition for an activity. The tag on one
+ * foot sees one cycle per stroke, stride or crank turn of that foot:
+ * skating pushes and walking steps alternate feet, so there are [perCycle]
+ * = 2 of them per cycle; a crank turns once.
+ */
+class RateUnit(val perCycle: Int, val rate: String, val title: String, val one: String) {
+    fun rate(cyclesPerMin: Float) = cyclesPerMin * perCycle
+    /** Metres per push/step/turn at [kmh]. */
+    fun distancePer(kmh: Float, cyclesPerMin: Float) = kmh / 3.6f / (rate(cyclesPerMin) / 60f)
+
+    companion object {
+        fun of(a: ActivityKind) = when (a) {
+            ActivityKind.SKATING -> RateUnit(2, "pushes/min", "Pushes/min", "push")
+            ActivityKind.WALKING -> RateUnit(2, "steps/min", "Steps/min", "step")
+            ActivityKind.CYCLING -> RateUnit(1, "rpm", "Cadence, rpm", "crank turn")
+            // Not given: one foot's cycles, without guessing what they are.
+            ActivityKind.UNKNOWN -> RateUnit(1, "cycles/min", "Cycles/min (one foot)", "cycle")
+        }
+    }
+}
+
+/**
  * One row per second of the live numbers, for the session trend charts.
- * Push rate and speed are NaN when unknown (not moving, no GPS fix).
+ * Cycles/min (of the tagged foot, see [RateUnit]) and speed are NaN when
+ * unknown (not moving, no GPS fix).
  * Written and read on the main thread.
  */
 class Trend {
     var size = 0; private set
     var t = FloatArray(1024); private set
-    var pushesPerMin = FloatArray(1024); private set
+    var cyclesPerMin = FloatArray(1024); private set
     var speedKmh = FloatArray(1024); private set
 
-    fun add(tS: Float, pushes: Float, speed: Float) {
+    fun add(tS: Float, cycles: Float, speed: Float) {
         if (size == t.size) {
             t = t.copyOf(size * 2)
-            pushesPerMin = pushesPerMin.copyOf(size * 2)
+            cyclesPerMin = cyclesPerMin.copyOf(size * 2)
             speedKmh = speedKmh.copyOf(size * 2)
         }
         t[size] = tS
-        pushesPerMin[size] = pushes
+        cyclesPerMin[size] = cycles
         speedKmh[size] = speed
         size++
     }
 
-    val lastPushesPerMin get() = if (size == 0) Float.NaN else pushesPerMin[size - 1]
+    val lastCyclesPerMin get() = if (size == 0) Float.NaN else cyclesPerMin[size - 1]
     val lastSpeedKmh get() = if (size == 0) Float.NaN else speedKmh[size - 1]
 }

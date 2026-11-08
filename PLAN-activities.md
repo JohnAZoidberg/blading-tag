@@ -169,8 +169,13 @@ that from the data.
       `--activity`.
 - [x] **3. Android**: activity picker and gear field, session.json fields,
       edit dialog, session list, wording.
-- [ ] **4. Android live panel**: per-activity big number and
-      distance-per tile (coordinate with the live-panel session).
+- [x] **4. Android live panel**: per-activity big number and
+      distance-per tile. Pushes/min, steps/min or rpm (cycles of the
+      tagged foot ×2, ×2, ×1), metres per push/step/crank turn, also in the
+      chart title and the notification. Unknown shows cycles/min of one
+      foot. The period range (0.3–3 s) already covers cycling, so the
+      detector is the same for all three. Checked on the phone with the
+      simulated tag as Cycling (40 rpm).
 - [ ] **5. First cycling ride**, then `cycling.py`: cadence,
       pedalling/coasting, distance per turn; then decide on the rest.
 
