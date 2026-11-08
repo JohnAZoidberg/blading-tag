@@ -612,9 +612,11 @@ def page_data(fm: FootMotion, p: Params = Params()) -> dict:
     }
 
 
-def write_html(motions: list[FootMotion], path: str | Path, title: str = "Skate strokes", p: Params = Params()) -> Path:
+def write_html(motions: list[FootMotion], path: str | Path, title: str = "Skate strokes", p: Params = Params(),
+               open_index: int = 0) -> Path:
+    """``open_index``: the session the page shows first."""
     data = [page_data(fm, p) for fm in motions]
-    blob = json.dumps({"title": title, "sessions": data}, separators=(",", ":"), allow_nan=False)
+    blob = json.dumps({"title": title, "sessions": data, "open": open_index}, separators=(",", ":"), allow_nan=False)
     html = TEMPLATE.read_text().replace("/*__DATA__*/null", blob.replace("</", "<\\/"))
     path = Path(path)
     path.write_text(html)

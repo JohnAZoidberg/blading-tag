@@ -144,13 +144,13 @@ td.up { color: var(--accent); }
     </div>
     <div class="views">
       <div class="seg" id="mode" role="group" aria-label="What to show">
-        <button id="mode-skater" data-v="skater" aria-pressed="true">Skater frame</button>
-        <button id="mode-ground" data-v="ground">Over ground</button>
+        <button id="mode-skater" data-v="skater">Skater frame</button>
+        <button id="mode-ground" data-v="ground" aria-pressed="true">Over ground</button>
         <button id="mode-typical" data-v="typical">Typical stroke</button>
       </div>
       <div class="seg" id="cam" role="group" aria-label="Camera">
-        <button id="cam-quarter" data-v="quarter" aria-pressed="true">¾</button>
-        <button id="cam-behind" data-v="behind">Behind</button>
+        <button id="cam-quarter" data-v="quarter">¾</button>
+        <button id="cam-behind" data-v="behind" aria-pressed="true">Behind</button>
         <button id="cam-side" data-v="side">Side</button>
         <button id="cam-top" data-v="top">Top</button>
         <button id="cam-front" data-v="front">Front</button>
@@ -230,7 +230,7 @@ const localTime = (iso) => { try { return new Date(iso).toLocaleString([], { mon
 const median = (a) => { const v = a.filter((x) => x !== null && isFinite(x)).sort((x, y) => x - y); return v.length ? v[Math.floor(v.length / 2)] : null; };
 
 // ---- state ---------------------------------------------------------------
-let S = DATA.sessions[0], idx = 0, now = 0, playing = false, rate = 0.25, mode = "skater", camView = "quarter", tphase = 0;
+let S = DATA.sessions[0], idx = 0, now = 0, playing = false, rate = 0.25, mode = "ground", camView = "behind", tphase = 0;
 
 // ---- three.js scene --------------------------------------------------------
 const canvas = $("scene");
@@ -586,7 +586,7 @@ function tick(ms) {
   controls.update(); renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
-applyTheme(); resize(); selectSession(0);
+applyTheme(); resize(); selectSession(Math.min(DATA.open || 0, DATA.sessions.length - 1));
 controls.update(); renderer.render(scene, camera);  // a first frame before the animation starts
 window.__viz = { render: () => { updateScene(); controls.update(); renderer.render(scene, camera); } };
 setPlaying(!matchMedia("(prefers-reduced-motion: reduce)").matches);

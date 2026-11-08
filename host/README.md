@@ -178,7 +178,7 @@ Use `--raw-at SECONDS` to pick the window.
 ## 3D replay of the skate
 
 ```sh
-bladetag viz3d sessions/session-20261108-1* -o strokes3d.html
+bladetag viz3d sessions/session-20261108-1* -o strokes3d.html --open guting
 ```
 
 Writes one page with every skating session given: a 3D skate (three 110 mm

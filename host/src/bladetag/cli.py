@@ -453,7 +453,14 @@ def cmd_viz3d(a):
             motions.append(fm)
     if not motions:
         _die("nothing to show: no skating session with stroke cycles")
-    out = viz3d.write_html(motions, a.output)
+    first = 0
+    if a.open:
+        hits = [i for i, fm in enumerate(motions)
+                if a.open.lower() in fm.name.lower() or a.open.lower() in fm.meta.get("notes", "").lower()]
+        if not hits:
+            _die(f"--open {a.open!r} matches no session (by folder name or notes)")
+        first = hits[0]
+    out = viz3d.write_html(motions, a.output, open_index=first)
     print(f"wrote {out} (open it in a browser; three.js and the fonts load from a CDN)")
 
 
@@ -630,6 +637,7 @@ def main(argv=None):
     c.add_argument("sessions", nargs="+", help="session folders or .zip files")
     c.add_argument("--tag", help="left, right or an address (default: all)")
     c.add_argument("-o", "--output", default="strokes3d.html", help="page to write (default: strokes3d.html)")
+    c.add_argument("--open", metavar="TEXT", help="session the page shows first: part of its folder name or notes")
     c.set_defaults(fn=cmd_viz3d)
 
     c = sub.add_parser("report", help="skating sessions on one page: findings, correlations, map, out vs back",
