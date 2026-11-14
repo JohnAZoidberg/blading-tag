@@ -38,8 +38,9 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    recording runs in a foreground service, and its notification has a Stop
    button. Untick **Record GPS** to record without location. The session
    then has no `gps.csv`, so there is no speed or distance per push. The
-   choice is remembered. The live speed chart is hidden when GPS recording
-   is off; with GPS on, it stays visible while waiting for a speed fix.
+   choice is remembered. The live speed, distance and metres-per-cycle
+   numbers and speed chart are hidden when GPS recording is off; with GPS
+   on, they stay visible while waiting for a speed fix.
 3. While recording, the screen is made for a quick look out of the pocket:
    the rate as the big number (pushes/min, steps/min or rpm, by the
    activity), then speed, distance and metres per push, step or crank turn,

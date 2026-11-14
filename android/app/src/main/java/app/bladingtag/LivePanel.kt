@@ -32,6 +32,11 @@ class LivePanel(context: Context) : LinearLayout(context) {
     private val speed = tile("km/h")
     private val distance = tile("km")
     private val perCycle = tile("m per push")
+    private val gpsStats = LinearLayout(context).apply {
+        orientation = HORIZONTAL
+        for (t in listOf(speed, distance, perCycle)) addView(t.first.parent as LinearLayout,
+            LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+    }
     private val rateTrend = PlotView(context).apply {
         minSpan = 20f; emptyText = "no repetitive motion yet"
         xLabel = ::clock
@@ -52,11 +57,7 @@ class LivePanel(context: Context) : LinearLayout(context) {
         addView(rateValue, lp(4))
         addView(rateLabel)
         addView(heartRate, lp(8))
-        addView(LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            for (t in listOf(speed, distance, perCycle)) addView(t.first.parent as LinearLayout,
-                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-        }, lp(12))
+        addView(gpsStats, lp(12))
         addView(rateTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(16) })
         addView(speedTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(8) })
         addView(scopeBox, lp(8))
@@ -75,6 +76,7 @@ class LivePanel(context: Context) : LinearLayout(context) {
     }
 
     fun update(rec: RecorderService.Recording) {
+        gpsStats.visibility = if (rec.gps != null) VISIBLE else GONE
         speedTrend.visibility = if (rec.gps != null) VISIBLE else GONE
         heartRate.visibility = if (rec.heartRateLink != null) VISIBLE else GONE
         heartRate.text = rec.heartRateLink?.display().orEmpty()
