@@ -50,8 +50,8 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
 4. During recording, the **Home / Past sessions** tab selector is hidden,
    keeping the live view on screen. It returns when recording ends. The compact **Save and
    start new** and **Stop** buttons sit side by side.
-   Tapping either opens a confirmation: hold the left circle for one second,
-   then slide fully right without lifting. Releasing, moving before the hold,
+   Tapping either opens a confirmation: slide the left circle
+   fully right without lifting. Releasing early, moving vertically,
    or waiting more than four seconds cancels the gesture. Recording continues
    until confirmed. Leaving the app dismisses the confirmation.
    **Save and start new** (also in the notification) saves the

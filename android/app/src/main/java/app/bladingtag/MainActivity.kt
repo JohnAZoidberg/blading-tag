@@ -332,13 +332,13 @@ class MainActivity : Activity() {
         showActivity(picked)
     }
 
-    /** Recording continues while the user holds, slides, or cancels this dialog. */
+    /** Recording continues while the user slides or cancels this dialog. */
     private fun confirmRecordingAction(label: String, action: () -> Unit) {
         val recording = RecorderService.current ?: return
         recordingConfirmation?.dismiss()
         val dialog = AlertDialog.Builder(this)
             .setTitle(label)
-            .setMessage("Hold the left circle for 1 second, then slide all the way right without lifting. Release early to cancel.")
+            .setMessage("Slide the left circle all the way right without lifting. Release early to cancel.")
             .setNegativeButton("Keep recording", null)
             .create()
         val slider = HoldSlideView(this) {

@@ -13,23 +13,24 @@ class HoldSlideGestureTest {
         assertFalse(gesture.active)
     }
 
-    @Test fun swipeBeforeHoldCancelsEvenIfNextEventIsLate() {
+    @Test fun immediateSwipeConfirms() {
         gesture.start(0f, 0f, 0)
-        assertFalse(gesture.move(200f, 0f, 1500, 200f))
+        assertTrue(gesture.move(200f, 0f, 100, 200f))
         assertFalse(gesture.active)
     }
 
-    @Test fun releaseRequiresAnotherFullHold() {
+    @Test fun releaseRequiresAnotherFullSlide() {
         gesture.start(0f, 0f, 0)
-        gesture.advance(1000)
+        assertFalse(gesture.move(100f, 0f, 100, 200f))
         gesture.reset()
-        gesture.start(0f, 0f, 1100)
-        assertFalse(gesture.move(200f, 0f, 1200, 200f))
+        assertFalse(gesture.move(200f, 0f, 200, 200f))
+        gesture.start(0f, 0f, 300)
+        assertFalse(gesture.move(100f, 0f, 400, 200f))
+        assertTrue(gesture.move(200f, 0f, 500, 200f))
     }
 
-    @Test fun deliberateHoldAndSlideConfirmsOnce() {
+    @Test fun partialSlideThenFullSlideConfirmsOnce() {
         gesture.start(0f, 0f, 0)
-        gesture.advance(1000)
         assertFalse(gesture.move(100f, 0f, 1100, 200f))
         assertTrue(gesture.move(200f, 0f, 1200, 200f))
         assertFalse(gesture.move(200f, 0f, 1300, 200f))
@@ -37,14 +38,12 @@ class HoldSlideGestureTest {
 
     @Test fun delayedSlideAfterExpiryCannotConfirm() {
         gesture.start(0f, 0f, 0)
-        gesture.advance(1000)
         assertFalse(gesture.move(200f, 0f, 5000, 200f))
         assertFalse(gesture.active)
     }
 
     @Test fun verticalMovementCancels() {
         gesture.start(0f, 0f, 0)
-        gesture.advance(1000)
         assertFalse(gesture.move(200f, 40f, 1200, 200f))
         assertFalse(gesture.active)
     }
