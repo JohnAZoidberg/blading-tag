@@ -509,7 +509,8 @@ class RecorderService : Service(), TagLink.Listener {
         if (!cycles.isNaN()) sb.append(" · %.0f %s".format(unit.rate(cycles), unit.rate))
         if (!speed.isNaN()) sb.append(" · %.1f km/h".format(speed))
         if (rec.distanceM > 0) sb.append(" · %.2f km".format(rec.distanceM / 1000))
-        return sb.append(" · ").append(tags).toString()
+        if (tags.isNotEmpty()) sb.append(" · ").append(tags)
+        return sb.toString()
     }
 
     private fun notification(text: String): Notification {

@@ -77,6 +77,11 @@ class LivePanel(context: Context) : LinearLayout(context) {
     fun update(rec: RecorderService.Recording) {
         heartRate.visibility = if (rec.heartRateLink != null) VISIBLE else GONE
         heartRate.text = rec.heartRateLink?.display().orEmpty()
+        val hasTags = rec.links.isNotEmpty()
+        rateValue.visibility = if (hasTags) VISIBLE else GONE
+        rateLabel.visibility = if (hasTags) VISIBLE else GONE
+        rateTrend.visibility = if (hasTags) VISIBLE else GONE
+        (perCycle.first.parent as LinearLayout).visibility = if (hasTags) VISIBLE else GONE
         val tr = rec.trend
         val secs = (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1_000_000_000
         elapsed.text = "%d:%02d:%02d".format(secs / 3600, secs / 60 % 60, secs % 60) +

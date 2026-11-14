@@ -26,7 +26,12 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    **Sleep** puts a tag that isn't recording into System OFF. It stops
    advertising and drops off the list until moving the tag or pressing its
    button wakes it (see [../firmware/README.md](../firmware/README.md#power-states-status)).
-2. Tags in range are ticked as they show up (at most two, preferring the
+2. **Connect to tags** is optional and remembered. Turn it off to record
+   using just phone GPS and/or a heart-rate monitor. No tag connection is
+   attempted; cadence and motion charts are hidden. Save/start-new and Stop
+   work as usual, and the session has an empty `tags` list. Standby still
+   requires a real tag.
+   Tags in range are ticked as they show up (at most two, preferring the
    ones used last time), so usually you just press **Start recording**.
    Tick or untick to choose others. Stand still for 2 s,
    then skate. The phone can go in your pocket with the screen off. The

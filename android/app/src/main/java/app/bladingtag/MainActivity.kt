@@ -75,9 +75,11 @@ class MainActivity : Activity() {
     private lateinit var standbyButton: Button
     private lateinit var standbyBox: LinearLayout
     private lateinit var standbyText: TextView
+    private lateinit var standbyHint: TextView
     private lateinit var hrmBox: CheckBox
     private lateinit var hrmPicker: Button
     private val hrmDevices = LinkedHashMap<String, String>()
+    private lateinit var useTagsBox: CheckBox
     private lateinit var gpsBox: CheckBox
     private lateinit var activityGroup: RadioGroup
     private lateinit var gearLabel: TextView
@@ -195,6 +197,17 @@ class MainActivity : Activity() {
         tagsBox.addView(gearField)
 
         tagsBox.addView(heading("Tags"), lp(dp(20)))
+        useTagsBox = CheckBox(this).apply {
+            text = "Connect to tags"
+            textSize = 15f
+            isChecked = prefs().getBoolean("record_tags", true)
+            setOnCheckedChangeListener { _, on ->
+                prefs().edit().putBoolean("record_tags", on).apply()
+                showActivity(pickedActivity())
+                refresh()
+            }
+        }
+        tagsBox.addView(useTagsBox, lp(dp(4)))
         tagsHint = TextView(this).apply {
             textSize = 14f
             alpha = 0.7f
@@ -252,12 +265,13 @@ class MainActivity : Activity() {
             setOnClickListener { enterStandby() }
         }
         tagsBox.addView(standbyButton, lp(dp(12)))
-        tagsBox.addView(TextView(this).apply {
+        standbyHint = TextView(this).apply {
             text = "Put the phone away. Pressing a ticked tag's button starts recording " +
                 "from all ticked tags, pressing it again stops."
             textSize = 14f
             alpha = 0.7f
-        }, lp(dp(4)))
+        }
+        tagsBox.addView(standbyHint, lp(dp(4)))
         root.addView(tagsBox, lp(dp(8)))
 
         sessionsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -347,7 +361,13 @@ class MainActivity : Activity() {
             ActivityKind.CYCLING -> "for distance per crank turn)"
             else -> "for distance per push)"
         }
-        startHint.text = "After starting, stand still for 2 seconds, then ${a.verb}."
+        startHint.text = if (useTagsBox.isChecked)
+            "After starting, stand still for 2 seconds, then ${a.verb}."
+        else "Record without tags using GPS and/or a heart-rate monitor."
+        tagsHint.visibility = if (useTagsBox.isChecked) View.VISIBLE else View.GONE
+        tagList.visibility = if (useTagsBox.isChecked) View.VISIBLE else View.GONE
+        standbyButton.visibility = if (useTagsBox.isChecked) View.VISIBLE else View.GONE
+        standbyHint.visibility = standbyButton.visibility
     }
 
     /** The picked activity and the typed gear, remembered for next time. */
@@ -416,7 +436,7 @@ class MainActivity : Activity() {
         when {
             !hasPermissions() -> notice("Bluetooth and notification permissions are needed.",
                 "Grant permissions") { openAppSettings() }
-            adapter == null || !adapter.isEnabled -> notice("Bluetooth is off.", "Turn on Bluetooth") {
+            (useTagsBox.isChecked || hrmBox.isChecked) && (adapter == null || !adapter.isEnabled) -> notice("Bluetooth is off.", "Turn on Bluetooth") {
                 startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
             }
             else -> notice(null, null) {}
@@ -440,7 +460,7 @@ class MainActivity : Activity() {
                 (if (standby.gps) ". GPS on." else ". GPS off.") +
                 labelText(standby.label.activity, standby.label.gear).let { if (it.isEmpty()) "" else "\n$it" }
         } else {
-            if (hasPermissions() && adapter?.isEnabled == true) startScan() else stopScan()
+            if ((useTagsBox.isChecked || hrmBox.isChecked) && hasPermissions() && adapter?.isEnabled == true) startScan() else stopScan()
             hrmPicker.text = prefs().getString("last_hrm_name", null)?.let { "HRM: $it · change…" }
                 ?: "HRM: first available · choose…"
             renderTags()
@@ -535,7 +555,7 @@ class MainActivity : Activity() {
                 sleep.isEnabled = !recording
             }
         }
-        startButton.isEnabled = selected.isNotEmpty() && hasPermissions()
+        startButton.isEnabled = (!useTagsBox.isChecked || selected.isNotEmpty()) && hasPermissions()
         standbyButton.isEnabled = selected.any { it != SimulatedTag.ADDRESS } && hasPermissions()
     }
 
@@ -564,7 +584,7 @@ class MainActivity : Activity() {
                     toast("At most two tags")
                 } else if (on) selected.add(f.address) else selected.remove(f.address)
                 userPicked = true
-                startButton.isEnabled = selected.isNotEmpty()
+                startButton.isEnabled = (!useTagsBox.isChecked || selected.isNotEmpty()) && hasPermissions()
                 standbyButton.isEnabled = selected.any { it != SimulatedTag.ADDRESS }
             }
         })
@@ -648,11 +668,11 @@ class MainActivity : Activity() {
     }
 
     private fun startRecording() {
-        if (selected.isEmpty()) return
+        if (useTagsBox.isChecked && selected.isEmpty()) return
         stopScan()
-        RecorderService.start(this, selected.toList(), gps = gpsBox.isChecked && hasLocation(), label(),
+        RecorderService.start(this, if (useTagsBox.isChecked) selected.toList() else emptyList(), gps = gpsBox.isChecked && hasLocation(), label(),
             hrm = hrmBox.isChecked, hrmAddress = prefs().getString("last_hrm", null))
-        rememberTags()
+        if (useTagsBox.isChecked) rememberTags()
         selected.clear()
         userPicked = false
         ui.postDelayed({ refresh() }, 200)
