@@ -1,1 +1,3 @@
-- commit as you go, if there are changes you didn't make, don't commit those. Use git to selectively stage the changes you made
+- Test changes. Usually I have a phone with ADB connected, if not ask me. I may or may not have a tag available
+- Commit as you go, if there are changes you didn't make, don't commit those. Use git to selectively stage the changes you made
+- The readme describes some end-user behavior like button, if you make change related to those, update it
