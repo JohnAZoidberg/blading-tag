@@ -75,6 +75,7 @@ class LivePanel(context: Context) : LinearLayout(context) {
     }
 
     fun update(rec: RecorderService.Recording) {
+        speedTrend.visibility = if (rec.gps != null) VISIBLE else GONE
         heartRate.visibility = if (rec.heartRateLink != null) VISIBLE else GONE
         heartRate.text = rec.heartRateLink?.display().orEmpty()
         val hasTags = rec.links.isNotEmpty()
@@ -109,7 +110,6 @@ class LivePanel(context: Context) : LinearLayout(context) {
         rateTrend.title = unit.title
         val rates = FloatArray(tr.size) { unit.rate(tr.cyclesPerMin[it]) }
         rateTrend.set(t, listOf(PlotView.Series(unit.rate, colors[0], rates)), 0f, xMax)
-        speedTrend.emptyText = if (rec.gps == null) "GPS is off" else "no GPS speed yet"
         speedTrend.set(t, listOf(PlotView.Series("km/h", colors[1], tr.speedKmh.copyOf(tr.size))), 0f, xMax)
 
         if (rec.links != scopeLinks) {
