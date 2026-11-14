@@ -52,6 +52,7 @@ class HeartRateLink(private val context: Context, private val address: String?,
         Log.w("HeartRateLink", "$reason; retrying")
         state = "$reason; reconnecting…"
         measurement = null
+        selectedAddress = address
         main.removeCallbacks(timeout)
         stopScan()
         val old = gatt; gatt = null

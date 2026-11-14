@@ -171,9 +171,16 @@ the computer, `make pull` overwrites it.
 
 Tick **Connect to heart-rate monitor** before Start or Standby. Use the button
 below it to choose a discovered standard BLE HRM, or let the app use the first
-available one. The checkbox and last connected monitor are remembered. Keep
+available one. Before starting, the screen shows whether the selected monitor
+(or any HRM in Automatic mode) has advertised within the last 15 seconds.
+“Available nearby” means discovered by Bluetooth; the actual connection and
+measurement start with recording. The picker lists recently seen monitors.
+The checkbox and explicitly chosen monitor are remembered; Automatic stays
+automatic across recordings and reconnects. Keep
 the strap awake and disconnect other readers if it cannot be found. If its BLE
-address changes, choose **Automatic: first available HRM** again.
+address changes, choose **Automatic: first available HRM** again. If an older
+app version remembered a monitor you never explicitly selected, choose Automatic
+once to clear that saved address.
 
 The foreground recording service connects independently of the tags and GPS.
 It retries failed scans/connections/subscriptions and dropped links automatically,

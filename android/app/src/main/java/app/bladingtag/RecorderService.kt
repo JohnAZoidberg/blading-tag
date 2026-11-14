@@ -147,8 +147,9 @@ class RecorderService : Service(), TagLink.Listener {
                     r.meta.heartRate = device
                     writeSessionJson(r.dir, r.meta)
                 }
-                getSharedPreferences("bladingtag", MODE_PRIVATE).edit()
-                    .putString("last_hrm", device.address).putString("last_hrm_name", device.name).apply()
+                // Automatic selection stays automatic; only the picker pins an address.
+                if (hrmAddress != null) getSharedPreferences("bladingtag", MODE_PRIVATE).edit()
+                    .putString("last_hrm_name", device.name).apply()
             }
         }, onPacket = { ns, raw -> current?.takeIf { !it.stopping }?.heartRateLog?.append(ns, raw) }) else null
         val rec = Recording(dir, meta, links, logs, gps, hrLog, hrLink)

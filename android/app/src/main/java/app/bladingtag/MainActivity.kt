@@ -78,6 +78,8 @@ class MainActivity : Activity() {
     private lateinit var standbyHint: TextView
     private lateinit var hrmBox: CheckBox
     private lateinit var hrmPicker: Button
+    private lateinit var hrmStatus: TextView
+    private val hrmSeenAt = LinkedHashMap<String, Long>()
     private val hrmDevices = LinkedHashMap<String, String>()
     private lateinit var useTagsBox: CheckBox
     private lateinit var gpsBox: CheckBox
@@ -235,7 +237,7 @@ class MainActivity : Activity() {
             isAllCaps = false
             visibility = if (hrmBox.isChecked) View.VISIBLE else View.GONE
             setOnClickListener {
-                val addresses = hrmDevices.keys.toList()
+                val addresses = hrmSeenAt.filterValues { SystemClock.elapsedRealtime() - it < 15_000 }.keys.toList()
                 val labels = listOf("Automatic: first available HRM") + addresses.map { "${hrmDevices[it]} · $it" }
                 AlertDialog.Builder(this@MainActivity).setTitle("Heart-rate monitor")
                     .setItems(labels.toTypedArray()) { _, which ->
@@ -247,6 +249,8 @@ class MainActivity : Activity() {
             }
         }
         tagsBox.addView(hrmPicker)
+        hrmStatus = TextView(this).apply { textSize = 15f }
+        tagsBox.addView(hrmStatus, lp(dp(4)))
         startButton = Button(this).apply {
             text = "Start recording"
             setOnClickListener { startRecording() }
@@ -506,6 +510,20 @@ class MainActivity : Activity() {
             if ((useTagsBox.isChecked || hrmBox.isChecked) && hasPermissions() && adapter?.isEnabled == true) startScan() else stopScan()
             hrmPicker.text = prefs().getString("last_hrm_name", null)?.let { "HRM: $it · change…" }
                 ?: "HRM: first available · choose…"
+            hrmStatus.visibility = if (hrmBox.isChecked) View.VISIBLE else View.GONE
+            val selectedHrm = prefs().getString("last_hrm", null)
+            val recentHrms = hrmSeenAt.filterValues { SystemClock.elapsedRealtime() - it < 15_000 }.keys
+            hrmStatus.text = when {
+                !hasPermissions() -> "HRM: Bluetooth permissions needed"
+                adapter?.isEnabled != true -> "HRM: Bluetooth is off"
+                selectedHrm != null && selectedHrm in recentHrms ->
+                    "HRM available nearby: ${hrmDevices[selectedHrm]}"
+                selectedHrm == null && recentHrms.isNotEmpty() ->
+                    "HRM available nearby: ${hrmDevices[recentHrms.first()]}"
+                selectedHrm != null && recentHrms.isNotEmpty() ->
+                    "Selected HRM not seen. Another HRM is nearby; choose a monitor or Automatic."
+                else -> "HRM not seen nearby · wake/wear it and disconnect other readers"
+            }
             renderTags()
         }
     }
@@ -760,6 +778,7 @@ class MainActivity : Activity() {
         override fun onScanResult(callbackType: Int, r: ScanResult) {
             val addr = r.device.address
             if (r.scanRecord?.serviceUuids?.contains(ParcelUuid(HeartRate.SERVICE)) == true) {
+                hrmSeenAt[addr] = SystemClock.elapsedRealtime()
                 hrmDevices[addr] = r.scanRecord?.deviceName ?: r.device.name ?: "Heart-rate monitor"
                 return
             }
