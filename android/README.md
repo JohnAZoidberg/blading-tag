@@ -42,6 +42,10 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    rate, speed and distance too. See [Live push rate](#live-push-rate).
 4. During recording, previous sessions are hidden and the compact **Save and
    start new** and **Stop** buttons sit side by side.
+   Tapping either opens a confirmation: hold the left circle for one second,
+   then slide fully right without lifting. Releasing, moving before the hold,
+   or waiting more than four seconds cancels the gesture. Recording continues
+   until confirmed. Leaving the app dismisses the confirmation.
    **Save and start new** (also in the notification) saves the
    session so far and keeps recording into a new one, to separate movement
    patterns. The tags stay connected and only the files change, so nothing

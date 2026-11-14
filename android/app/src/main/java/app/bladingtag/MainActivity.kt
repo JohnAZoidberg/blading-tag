@@ -60,6 +60,7 @@ class MainActivity : Activity() {
     private val rowText = HashMap<String, TextView>()
     /** Per tag: the Stop and Sleep buttons, enabled by advertised state. */
     private val powerButtons = HashMap<String, Pair<Button, Button>>()
+    private var recordingConfirmation: AlertDialog? = null
     private var scanning = false
     private var shownRecording: RecorderService.Recording? = null
 
@@ -127,7 +128,7 @@ class MainActivity : Activity() {
             text = label
             textSize = 14f
             isAllCaps = false
-            setOnClickListener { action() }
+            setOnClickListener { confirmRecordingAction(label, action) }
             recordingActions.addView(this, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)))
         }
@@ -280,6 +281,33 @@ class MainActivity : Activity() {
         showActivity(picked)
     }
 
+    /** Recording continues while the user holds, slides, or cancels this dialog. */
+    private fun confirmRecordingAction(label: String, action: () -> Unit) {
+        val recording = RecorderService.current ?: return
+        recordingConfirmation?.dismiss()
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(label)
+            .setMessage("Hold the left circle for 1 second, then slide all the way right without lifting. Release early to cancel.")
+            .setNegativeButton("Keep recording", null)
+            .create()
+        val slider = HoldSlideView(this) {
+            dialog.dismiss()
+            // A tag or notification may have stopped or split it while the dialog was open.
+            if (RecorderService.current === recording) action()
+        }
+        val box = LinearLayout(this).apply {
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+            addView(slider, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(72)))
+        }
+        dialog.setView(box)
+        recordingConfirmation = dialog
+        dialog.setOnDismissListener {
+            slider.reset()
+            recordingConfirmation = null
+        }
+        dialog.show()
+    }
+
     // ---- activity and gear --------------------------------------------------
 
     private fun pickedActivity(): ActivityKind =
@@ -342,6 +370,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        recordingConfirmation?.dismiss()
         stopScan()
         ui.removeCallbacks(tick)
         ui.removeCallbacks(frame)
