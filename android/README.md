@@ -174,15 +174,3 @@ RR ticks and raw measurement bytes (PROTOCOL.md §2.5). Splitting sessions keeps
 the HRM connection and switches files. Export/pull includes the new file.
 The host's `load_session()` exposes notification rows as `session.heart_rate`;
 old sessions return an empty list. Charts and HRV analysis are not added yet.
-
-Verified on the Fairphone 6 on 2026-11-14 with the real Giant HRM and the debug
-simulated tag: 347 HRM notifications across two sessions, live bpm, recording
-with the screen off, and automatic reconnection/resubscription after toggling
-phone Bluetooth off/on. Android did not deliver an immediate disconnect in
-that test; the no-notification watchdog recovered the connection. The resulting
-reception gap was 44.6 s. A session split retained the connection and metadata;
-the last old-session and first new-session packets were 1.8 s apart. Normal
-Stop saved the end reason. Both copied folders and ZIP equivalents load through
-the host reader with identical HRM rows and timestamps within session bounds.
-Two real tags alongside an HRM, and HRM recording from button-triggered standby,
-remain unverified on hardware.
