@@ -37,8 +37,8 @@ import android.widget.Toast
 import java.util.concurrent.Executors
 
 /**
- * One screen: find tags and start a recording, watch it while it runs, and
- * manage past sessions. The recording itself lives in [RecorderService], so
+ * Home: find tags and start a recording, or watch it while it runs.
+ * Past sessions live in a separate tab. The recording itself lives in [RecorderService], so
  * this activity can come and go.
  */
 @SuppressLint("MissingPermission") // every BLE call is behind hasPermissions()
@@ -86,7 +86,7 @@ class MainActivity : Activity() {
     private lateinit var gearField: AutoCompleteTextView
     private lateinit var tagsHint: TextView
     private lateinit var startHint: TextView
-    private lateinit var sessionsBox: LinearLayout
+    private var showingSessions = false
     private lateinit var sessionList: LinearLayout
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -105,11 +105,6 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(20), dp(20), dp(20))
         }
-        root.addView(TextView(this).apply {
-            text = getString(R.string.app_name)
-            textSize = 28f
-            typeface = Typeface.DEFAULT_BOLD
-        })
 
         notice = TextView(this).apply { textSize = 15f; setTextColor(COLOR_BAD) }
         noticeButton = Button(this)
@@ -274,20 +269,60 @@ class MainActivity : Activity() {
         tagsBox.addView(standbyHint, lp(dp(4)))
         root.addView(tagsBox, lp(dp(8)))
 
-        sessionsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        sessionsBox.addView(heading("Sessions"))
+        val sessionsBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+        }
+        sessionsBox.addView(heading("Past sessions"))
         sessionList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         sessionsBox.addView(sessionList, lp(dp(4)))
-        root.addView(sessionsBox, lp(dp(24)))
 
-        val scroll = ScrollView(this).apply { addView(root) }
+        val homeScroll = ScrollView(this).apply { addView(root) }
+        val sessionsScroll = ScrollView(this).apply { addView(sessionsBox) }
+        val shell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        shell.addView(TextView(this).apply {
+            text = getString(R.string.app_name)
+            textSize = 28f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(20), dp(16), dp(20), dp(8))
+        })
+        val tabs = RadioGroup(this).apply {
+            orientation = RadioGroup.HORIZONTAL
+            setPadding(dp(20), 0, dp(20), 0)
+        }
+        fun tab(label: String) = RadioButton(this).apply {
+            id = View.generateViewId()
+            text = label
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setButtonDrawable(android.R.color.transparent)
+            tabs.addView(this, LinearLayout.LayoutParams(0, dp(48), 1f))
+        }
+        val homeTab = tab("Home")
+        val sessionsTab = tab("Past sessions")
+        fun showTab(sessions: Boolean) {
+            showingSessions = sessions
+            homeScroll.visibility = if (sessions) View.GONE else View.VISIBLE
+            sessionsScroll.visibility = if (sessions) View.VISIBLE else View.GONE
+            homeTab.setTypeface(null, if (sessions) Typeface.NORMAL else Typeface.BOLD)
+            sessionsTab.setTypeface(null, if (sessions) Typeface.BOLD else Typeface.NORMAL)
+        }
+        tabs.setOnCheckedChangeListener { _, id ->
+            showTab(id == sessionsTab.id)
+            if (showingSessions) refreshSessions()
+        }
+        shell.addView(tabs)
+        shell.addView(homeScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        shell.addView(sessionsScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        showingSessions = savedInstanceState?.getBoolean("showing_sessions") ?: false
+        tabs.check(if (showingSessions) sessionsTab.id else homeTab.id)
         // targetSdk 35+ draws edge to edge; keep content out of the bars.
-        scroll.setOnApplyWindowInsetsListener { v, insets ->
+        shell.setOnApplyWindowInsetsListener { v, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars())
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
-        setContentView(scroll)
+        setContentView(shell)
 
         if (BuildConfig.DEBUG) {
             found[SimulatedTag.ADDRESS] = Found(SimulatedTag.ADDRESS, "Simulated tag (debug build)")
@@ -382,6 +417,11 @@ class MainActivity : Activity() {
         listOfNotNull(activity.label.takeIf { activity != ActivityKind.UNKNOWN }, gear.takeIf { it.isNotBlank() })
             .joinToString(" · ")
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean("showing_sessions", showingSessions)
+    }
+
     override fun onResume() {
         super.onResume()
         if (!hasPermissions()) requestPermissions(wantedPermissions(), REQ_PERMISSIONS)
@@ -444,7 +484,6 @@ class MainActivity : Activity() {
 
         val standby = RecorderService.standby
         recordingBox.visibility = if (rec != null) View.VISIBLE else View.GONE
-        sessionsBox.visibility = if (rec == null) View.VISIBLE else View.GONE
         standbyBox.visibility = if (rec == null && standby != null) View.VISIBLE else View.GONE
         tagsBox.visibility = if (rec == null && standby == null) View.VISIBLE else View.GONE
         if (rec != null) {
