@@ -29,8 +29,10 @@ void app_on_data_acked(uint32_t token);
 void app_kick(void);
 void app_adv_fields(uint8_t *state, uint8_t *position, uint16_t *battery_mv, bool *fast);
 
-/* What a short button press does: start (defaults) or stop recording. Also
+/* What a short button press does: start (defaults) while idle, otherwise ignore. Also
  * used by testhook.c. Call from the system workqueue. */
 void app_button_short(void);
+/* Release after a press begun in was_recording; held means the 2 s threshold passed. */
+void app_button_release(bool was_recording, bool held);
 
 #endif /* BLADING_APP_H_ */

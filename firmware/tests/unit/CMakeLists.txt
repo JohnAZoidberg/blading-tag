@@ -10,6 +10,7 @@ find_package(Zephyr COMPONENTS unittest REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(blading_unit)
 
 target_sources(testbinary PRIVATE
+  src/test_button.c
   src/test_proto.c
   src/test_samplebuf.c
   ../../src/proto.c

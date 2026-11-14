@@ -20,6 +20,7 @@ DEVICE = "NRF54L15_M33"
 TESTHOOK_MAGIC = 0xB1AD7E57
 CMD_NONE = 0
 CMD_BUTTON_SHORT = 1
+CMD_BUTTON_STOP_HOLD = 2
 
 
 class JLinkError(RuntimeError):
@@ -129,6 +130,9 @@ class TestHooks:
 
     def button_short(self) -> None:
         self.command(CMD_BUTTON_SHORT)
+
+    def button_stop_hold(self) -> None:
+        self.command(CMD_BUTTON_STOP_HOLD)
 
     def log(self, seconds: float = 2.0) -> str:
         return self.jlink.rtt_log(self.rtt_addr, seconds)

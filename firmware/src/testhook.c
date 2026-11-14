@@ -24,6 +24,7 @@ enum testhook_cmd {
 	TESTHOOK_NONE = 0,
 	/* What a short press of the button does. */
 	TESTHOOK_BUTTON_SHORT = 1,
+	TESTHOOK_BUTTON_STOP_HOLD = 2,
 };
 
 /* Layout is read by host/src/bladetag/jlink.py; keep them in sync. */
@@ -55,6 +56,9 @@ static void poll_fn(struct k_work *work)
 
 		LOG_INF("command %u", cmd);
 		switch (cmd) {
+		case TESTHOOK_BUTTON_STOP_HOLD:
+			app_button_release(true, true);
+			break;
 		case TESTHOOK_BUTTON_SHORT:
 			app_button_short();
 			break;

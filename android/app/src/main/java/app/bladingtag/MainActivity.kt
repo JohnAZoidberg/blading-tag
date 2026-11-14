@@ -150,7 +150,7 @@ class MainActivity : Activity() {
                 "• blue blinking a few seconds later: the phone joined and records it\n" +
                 "• yellow blip every second: no phone yet, the tag buffers (~70 s)\n" +
                 "• red blip every second: buffer full, data is being lost\n" +
-                "Press the button again to stop. The phone then waits for the next press."
+                "To stop, hold the button for 2 seconds until it flashes red, then release. Short presses while recording do nothing. The phone then waits for the next press."
             textSize = 14f
             alpha = 0.7f
         }, lp(dp(8)))

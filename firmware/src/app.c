@@ -15,6 +15,7 @@
 #include <zephyr/sys/poweroff.h>
 
 #include "battery.h"
+#include "button.h"
 #include "ble.h"
 #include "imu.h"
 #include "led.h"
@@ -751,13 +752,15 @@ static void idle_work_fn(struct k_work *work)
 /* --- Button ----------------------------------------------------------------------------- */
 
 /*
- * Short press: start (defaults) / stop recording.
- * Hold 2 s (red flash), then release: sleep. Sleep waits for the release,
+ * Short press: start (defaults) while idle; ignored while recording.
+ * Hold 2 s (red flash), then release: stop recording, or sleep if idle.
+ * Both actions wait for release,
  * because a held button would wake the tag again right away.
  */
 static struct gpio_callback button_cb;
 static bool button_down;
 static bool button_long;
+static bool button_started_recording;
 
 static void button_long_fn(struct k_work *work)
 {
@@ -782,20 +785,19 @@ static void button_fn(struct k_work *work)
 
 	if (down) {
 		button_long = false;
+		k_mutex_lock(&app_lock, K_FOREVER);
+		button_started_recording = app.state == PROTO_STATE_RECORDING;
+		k_mutex_unlock(&app_lock);
 		k_work_reschedule(&button_long_work, K_MSEC(LONG_PRESS_MS));
 		return;
 	}
 
 	k_work_cancel_delayable(&button_long_work);
-	if (button_long) {
-		k_work_reschedule(&sleep_work, K_NO_WAIT);
-		return;
-	}
-	app_button_short();
+	app_button_release(button_started_recording, button_long);
 }
 
 /* System workqueue only, like the button. */
-void app_button_short(void)
+void app_button_release(bool was_recording, bool held)
 {
 	k_mutex_lock(&app_lock, K_FOREVER);
 	bool recording = app.state == PROTO_STATE_RECORDING;
@@ -803,17 +805,34 @@ void app_button_short(void)
 	touch_active();
 	k_mutex_unlock(&app_lock);
 
-	if (recording) {
+	switch (button_action(was_recording, recording, held)) {
+	case BUTTON_STOP:
 		stop_recording();
 		led_flash(LED_RED, 300);
-	} else {
+		break;
+	case BUTTON_SLEEP:
+		k_work_reschedule(&sleep_work, K_NO_WAIT);
+		break;
+	case BUTTON_START: {
 		static const struct proto_rec_cfg defaults = {
 			PROTO_DEFAULT_ODR_HZ, PROTO_DEFAULT_ACCEL_RANGE_G,
 			PROTO_DEFAULT_GYRO_RANGE_DPS,
 		};
 
 		led_flash(start_recording(&defaults, false) == 0 ? LED_GREEN : LED_RED, 300);
+		break;
 	}
+	case BUTTON_NONE:
+		break;
+	}
+}
+
+void app_button_short(void)
+{
+	k_mutex_lock(&app_lock, K_FOREVER);
+	bool recording = app.state == PROTO_STATE_RECORDING;
+	k_mutex_unlock(&app_lock);
+	app_button_release(recording, false);
 }
 
 static void button_isr(const struct device *port, struct gpio_callback *cb, uint32_t pins)

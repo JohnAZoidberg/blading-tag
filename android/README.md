@@ -56,15 +56,16 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    patterns. The tags stay connected and only the files change, so nothing
    is lost at the cut. Use **Edit** after recording to set a description.
 5. **Stop** sends STOP, waits for the tag to flush its buffer, and
-   saves the session. Pressing a tag's button also stops it; the app notices
+   saves the session. Holding a tag's button for 2 s (until the red flash),
+   then releasing also stops it; short presses during recording are ignored. The app notices
    and ends the recording (stopping the other tag too).
 6. **Standby** (instead of Start recording) is for starting from the tag
    with the phone in a pocket. It waits in a foreground service, with a
    filtered BLE scan, for one of the ticked tags to advertise RECORDING.
    Then it records from all ticked tags (starting the other one) with the
    same GPS setting, picking up the pressed tag's buffer. Once the phone has
-   a tag's data, it blinks the tag blue for 2 s. A button press that stops a
-   tag ends the session, and the app goes back to waiting. **Leave standby**
+   a tag's data, it blinks the tag blue for 2 s. Holding a tag's button for
+   2 s, then releasing ends the session, and the app goes back to waiting. **Leave standby**
    (in the app or the notification) ends it. Arm it while the app is open:
    Android only lets a foreground service use GPS from the background if it
    was started from the foreground.

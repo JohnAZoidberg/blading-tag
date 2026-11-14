@@ -19,7 +19,7 @@ What it does:
 - Advertises state, position and battery. Advertising is every 1 s in READY,
   and every ~100 ms while recording without a link, so the app reconnects
   quickly.
-- Goes to System OFF on SLEEP, a 2 s button hold, or after 10 min idle
+- Goes to System OFF on SLEEP, a 2 s button hold while idle, or after 10 min idle
   (`CONFIG_BLADING_IDLE_SLEEP_S`; off in test builds). ADXL367 motion or the
   button wakes it. See [Power states: status](#power-states-status).
 - Accepts firmware updates over BLE (MCUboot + mcumgr/SMP), and confirms its
@@ -51,14 +51,21 @@ and MCUboot reverts to the previous image.
 
 ### LED and button
 
+A short press starts recording while idle and is ignored during recording.
+To stop recording, hold for 2 s until the red flash, then release. The tag
+stays awake; a connected recorder saves and ends the session. To sleep,
+hold for 2 s and release while idle. Releasing early during recording does
+nothing. See the [button table](../README.md#the-button).
+
 | | |
 |---|---|
 | Green blip every 2 s | Recording, connected |
 | Yellow blip every 1 s | Recording into the buffer, no link |
 | Red blip every 1 s | Same, but the buffer is full: samples are being dropped |
 | Blue blinking | IDENTIFY |
-| Short press | Start recording (green flash) or stop (red flash) |
-| Hold 2 s (red flash), release | System OFF |
+| Short press | Start recording while idle (green flash); ignored while recording |
+| Hold 2 s (red flash), release while recording | Stop recording; stay awake |
+| Hold 2 s (red flash), release while idle | System OFF |
 
 ## Power states: status
 
@@ -107,8 +114,8 @@ Debugging notes:
 
 ## Unit tests
 
-`proto.c` and `samplebuf.c` are plain C, tested with ztest on the
-`unit_testing` board (a host binary), including the example bytes from
+The button action rules, `proto.c`, and `samplebuf.c` are plain C, tested
+with ztest on the `unit_testing` board (a host binary), including the example bytes from
 PROTOCOL.md. Inside the toolchain container (see `CONTAINER_RUN` in the
 Makefile):
 

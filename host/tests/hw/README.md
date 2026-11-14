@@ -44,7 +44,8 @@ polls the mailbox every 20 ms, which costs power.
 | Test | Checks |
 |---|---|
 | `test_button_start_keeps_advertising` | Button start with no phone: adverts say RECORDING within 3 s and keep coming (no gap > 3 s for 20 s) |
-| `test_button_stop_advertises_ready` | Button stop: adverts say READY again |
+| `test_button_stop_advertises_ready` | Short press is ignored while recording; hold-stop release advertises READY again |
+| `test_phone_started_recording_requires_button_hold` | Phone-started recording ignores a short press and stops on hold release |
 | `test_ble_start_stop` | START from the laptop, Data flows, STOP ends with a READY Status |
 | `test_stop_from_another_connection` | The app's Stop button: STOP without subscribing ends a recording someone else started |
 | `test_sleep_refused_while_recording` | SLEEP gets BAD_STATE while recording |

@@ -41,8 +41,8 @@ should last for many sessions.
 
 Or, with the phone already in your pocket: tick the tags in the app and tap
 **Standby** before you put it away. Then a short press of the tag's button
-starts recording on the tag *and* the phone (with GPS), and another press
-stops both. The tag blinks blue a few seconds after the press once the phone
+starts recording on the tag *and* the phone (with GPS). To stop both, hold
+the button for two seconds until it flashes red, then release. The tag blinks blue a few seconds after the press once the phone
 has joined; if it shows yellow blips instead, the phone hasn't. See
 [android/README.md](android/README.md#using-it).
 5. **Look at the results:** share the session from the app (or copy it over
@@ -57,12 +57,16 @@ second one, but it's disabled there and the firmware doesn't use it.
 | Do this | What happens | LED |
 |---|---|---|
 | **Short press** while not recording | Starts recording with the default settings (200 Hz, ±16 g, ±2000 °/s), no phone needed | Green flash; red flash if it can't start (sensor fault, or still finishing the last recording) |
-| **Short press** while recording | Stops recording, whether the app or the button started it | Red flash |
-| **Hold 2 s**, then let go | Goes to sleep (System OFF). Bluetooth turns off and recording stops | Long red flash at 2 s, then 3 short red blinks |
+| **Short press** while recording | Ignored; recording continues | No change |
+| **Hold 2 s** while recording, then let go | Stops recording, whether the app or the button started it; the connected app saves the session and stops the other tag too. The tag stays awake | Red flash at 2 s, then red flash on release |
+| **Hold 2 s** while not recording, then let go | Goes to sleep (System OFF). Bluetooth turns off | Long red flash at 2 s, then 3 short red blinks |
 | **Press** (or move the tag) while asleep | Wakes the tag. It restarts and advertises again. This press doesn't start a recording | Short green flash at startup |
 
 Some details:
 
+- Stop and sleep only happen when you **let go**, after the red flash at 2 s.
+  Releasing earlier while recording does nothing. A press spanning a change
+  between idle and recording (for example, the phone starting or stopping) is ignored.
 - Sleep only starts when you **let go**. A button that's still held down
   would wake the tag right away again.
 - Without a phone connected, "recording" only means the tag is sampling into

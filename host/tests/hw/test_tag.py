@@ -55,6 +55,8 @@ def test_button_stop_advertises_ready(ready, hooks):
             await a.wait_state(p.State.RECORDING, 3)
         await asyncio.sleep(2)
         await asyncio.to_thread(hooks.button_short)
+        assert (await status(ready)).state == p.State.RECORDING
+        await asyncio.to_thread(hooks.button_stop_hold)
         async with watch_adverts(ready) as a:
             t_ready = await a.wait_state(p.State.READY, 5)
             await asyncio.sleep(WATCH_READY_S)
@@ -83,6 +85,22 @@ def test_ble_start_stop(ready):
                     break
                 await asyncio.sleep(0.1)
             assert statuses and statuses[-1].state == p.State.READY, "no READY Status after STOP"
+
+    run(go())
+
+
+def test_phone_started_recording_requires_button_hold(ready, hooks):
+    async def go():
+        async with open_link(ready) as link:
+            await link.write_control(p.cmd_start())
+            await asyncio.to_thread(hooks.button_short)
+            assert p.Status.parse(await link.read_status()).state == p.State.RECORDING
+            await asyncio.to_thread(hooks.button_stop_hold)
+            for _ in range(50):
+                if p.Status.parse(await link.read_status()).state == p.State.READY:
+                    break
+                await asyncio.sleep(0.1)
+            assert p.Status.parse(await link.read_status()).state == p.State.READY
 
     run(go())
 
