@@ -61,6 +61,8 @@ class RecorderService : Service(), TagLink.Listener {
         val links: List<TagLink>,
         val logs: Map<String, TagLog>,
         val gps: GpsLog?,
+        val heartRateLog: HeartRateLog? = null,
+        val heartRateLink: HeartRateLink? = null,
     ) {
         val startElapsedNs get() = meta.startElapsedNs
         @Volatile var lastFix: Location? = null
@@ -75,7 +77,7 @@ class RecorderService : Service(), TagLink.Listener {
     data class Label(val activity: ActivityKind, val gear: String)
 
     /** Armed standby: which tags to watch and record, whether to record GPS, and what it'll be. */
-    class Standby(val addresses: List<String>, val gps: Boolean, val label: Label)
+    class Standby(val addresses: List<String>, val gps: Boolean, val label: Label, val hrm: Boolean, val hrmAddress: String?)
 
     private val main = Handler(Looper.getMainLooper())
     private var wakeLock: PowerManager.WakeLock? = null
@@ -92,13 +94,15 @@ class RecorderService : Service(), TagLink.Listener {
         when (intent?.action) {
             ACTION_START -> if (current == null) {
                 begin(intent.getStringArrayExtra(EXTRA_ADDRESSES)?.toList().orEmpty(),
-                    intent.getBooleanExtra(EXTRA_GPS, true), label(intent))
+                    intent.getBooleanExtra(EXTRA_GPS, true), label(intent),
+                    intent.getBooleanExtra(EXTRA_HRM, false), intent.getStringExtra(EXTRA_HRM_ADDRESS))
             }
             ACTION_STOP -> end(intent.getStringExtra(EXTRA_REASON) ?: EndReason.STOP)
             ACTION_SPLIT -> split()
             ACTION_STANDBY -> if (current == null && standby == null) {
                 arm(intent.getStringArrayExtra(EXTRA_ADDRESSES)?.toList().orEmpty(),
-                    intent.getBooleanExtra(EXTRA_GPS, true), label(intent))
+                    intent.getBooleanExtra(EXTRA_GPS, true), label(intent),
+                    intent.getBooleanExtra(EXTRA_HRM, false), intent.getStringExtra(EXTRA_HRM_ADDRESS))
             }
             ACTION_LEAVE_STANDBY -> disarm()
         }
@@ -109,7 +113,7 @@ class RecorderService : Service(), TagLink.Listener {
         Label(ActivityKind.of(intent.getStringExtra(EXTRA_ACTIVITY)), intent.getStringExtra(EXTRA_GEAR).orEmpty())
 
     /** [wantGps]: the user's choice; GPS also needs the location permission. */
-    private fun begin(addresses: List<String>, wantGps: Boolean, label: Label) {
+    private fun begin(addresses: List<String>, wantGps: Boolean, label: Label, hrm: Boolean, hrmAddress: String?) {
         val hasLocation = wantGps && granted(Manifest.permission.ACCESS_FINE_LOCATION)
         if (standby == null) {
             startForeground(NOTIFICATION_ID, notification("Starting…"), fgsTypes(hasLocation))
@@ -128,6 +132,7 @@ class RecorderService : Service(), TagLink.Listener {
             addresses.map { TagMeta(it).apply { simulated = it == SimulatedTag.ADDRESS } })
         meta.activity = label.activity
         meta.gear = label.gear
+        meta.heartRateEnabled = hrm
         writeSessionJson(dir, meta)
 
         val logs = addresses.associateWith { TagLog(File(dir, TagLog.fileName(it))) }
@@ -135,7 +140,18 @@ class RecorderService : Service(), TagLink.Listener {
             if (addr == SimulatedTag.ADDRESS) SimulatedTag(this) else GattTag(this, addr, this)
         }
         val gps = if (hasLocation) GpsLog(File(dir, "gps.csv")) else null
-        val rec = Recording(dir, meta, links, logs, gps)
+        val hrLog = if (hrm) HeartRateLog(File(dir, "heartrate.csv")) else null
+        val hrLink = if (hrm) HeartRateLink(this, hrmAddress, onDevice = { device ->
+            current?.takeIf { !it.stopping }?.let { r ->
+                synchronized(r.meta) {
+                    r.meta.heartRate = device
+                    writeSessionJson(r.dir, r.meta)
+                }
+                getSharedPreferences("bladingtag", MODE_PRIVATE).edit()
+                    .putString("last_hrm", device.address).putString("last_hrm_name", device.name).apply()
+            }
+        }, onPacket = { ns, raw -> current?.takeIf { !it.stopping }?.heartRateLog?.append(ns, raw) }) else null
+        val rec = Recording(dir, meta, links, logs, gps, hrLog, hrLink)
         current = rec
 
         wakeLock = getSystemService(PowerManager::class.java)
@@ -143,6 +159,7 @@ class RecorderService : Service(), TagLink.Listener {
             .apply { acquire(12 * 3600 * 1000L) }
         if (gps != null) startGps()
         links.forEach { it.start() }
+        hrLink?.start()
         Log.i(TAG, "recording to $dir with ${addresses.size} tag(s), gps=${gps != null}")
         main.postDelayed(tick, TICK_MS)
         main.postDelayed(liveTick, LIVE_TICK_MS)
@@ -157,12 +174,12 @@ class RecorderService : Service(), TagLink.Listener {
     // ---- standby ------------------------------------------------------------
 
     /** [wantGps]: as for [begin]. Must be called while the app is visible. */
-    private fun arm(addresses: List<String>, wantGps: Boolean, label: Label) {
+    private fun arm(addresses: List<String>, wantGps: Boolean, label: Label, hrm: Boolean, hrmAddress: String?) {
         val hasLocation = wantGps && granted(Manifest.permission.ACCESS_FINE_LOCATION)
         val tags = addresses.filter { it != SimulatedTag.ADDRESS }
         if (tags.isEmpty()) { stopSelf(); return }
         startForeground(NOTIFICATION_ID, standbyNotification(), fgsTypes(hasLocation))
-        standby = Standby(tags, hasLocation, label)
+        standby = Standby(tags, hasLocation, label, hrm, hrmAddress)
         Log.i(TAG, "standby for $tags, gps=$hasLocation")
         startStandbyScan()
     }
@@ -251,7 +268,7 @@ class RecorderService : Service(), TagLink.Listener {
         if (adv.state != Protocol.STATE_RECORDING || adv.version != Protocol.VERSION) return
         Log.i(TAG, "standby: ${r.device.address} is recording, joining")
         stopStandbyScan()
-        begin(sb.addresses, sb.gps, sb.label)
+        begin(sb.addresses, sb.gps, sb.label, sb.hrm, sb.hrmAddress)
     }
 
     /** A new folder; "-2", "-3"... if a split comes within the same second. */
@@ -297,6 +314,7 @@ class RecorderService : Service(), TagLink.Listener {
             val rec = current ?: return
             rec.logs.values.forEach { it.flush() }
             rec.gps?.flush()
+            rec.heartRateLog?.flush()
             getSystemService(NotificationManager::class.java)
                 .notify(NOTIFICATION_ID, notification(summary(rec)))
             main.postDelayed(this, TICK_MS)
@@ -348,8 +366,11 @@ class RecorderService : Service(), TagLink.Listener {
                 old.meta.tags.map { it.copy() })
             meta.activity = old.meta.activity
             meta.gear = old.meta.gear
+            meta.heartRateEnabled = old.meta.heartRateEnabled
+            meta.heartRate = old.meta.heartRate
             writeSessionJson(dir, meta)
-            current = Recording(dir, meta, old.links, logs, gps).apply { lastFix = old.lastFix }
+            current = Recording(dir, meta, old.links, logs, gps,
+                old.heartRateLog?.let { HeartRateLog(File(dir, "heartrate.csv")) }, old.heartRateLink).apply { lastFix = old.lastFix }
         }
         // A packet being appended right now retries into the new log (onRecord).
         save(old, startElapsed, EndReason.SPLIT)
@@ -366,6 +387,7 @@ class RecorderService : Service(), TagLink.Listener {
         }
         if (rec.stopping) return
         rec.stopping = true
+        rec.heartRateLink?.stop()
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, notification("Stopping…"))
         locationListener?.let { getSystemService(LocationManager::class.java).removeUpdates(it) }
@@ -397,6 +419,7 @@ class RecorderService : Service(), TagLink.Listener {
         stopStandbyScan()
         // Killed without a stop (e.g. swiped away on some OEM ROMs): keep what we have.
         current?.let { rec ->
+            rec.heartRateLink?.stop()
             rec.links.forEach { it.stop {} }
             save(rec, SystemClock.elapsedRealtimeNanos(), EndReason.SERVICE_DESTROYED)
             current = null
@@ -548,6 +571,8 @@ class RecorderService : Service(), TagLink.Listener {
         const val ACTION_LEAVE_STANDBY = "app.bladingtag.LEAVE_STANDBY"
         const val EXTRA_ADDRESSES = "addresses"
         const val EXTRA_GPS = "gps"
+        const val EXTRA_HRM = "hrm"
+        const val EXTRA_HRM_ADDRESS = "hrm_address"
         const val EXTRA_ACTIVITY = "activity"
         const val EXTRA_GEAR = "gear"
         /** ACTION_STOP: the [EndReason], [EndReason.STOP] if not given. */
@@ -564,6 +589,7 @@ class RecorderService : Service(), TagLink.Listener {
         private fun save(rec: Recording, endElapsedNs: Long, reason: String, detail: String? = null) {
             rec.logs.values.forEach { it.close() }
             rec.gps?.close()
+            rec.heartRateLog?.close()
             synchronized(rec.meta) {
                 rec.meta.endElapsedNs = endElapsedNs
                 rec.meta.endReason = reason
@@ -600,22 +626,26 @@ class RecorderService : Service(), TagLink.Listener {
         fun sessionsDir(c: Context) = File(c.getExternalFilesDir(null), "sessions").apply { mkdirs() }
 
         /** Without [gps] there is no gps.csv (PROTOCOL.md §2 allows it to be missing). */
-        fun start(c: Context, addresses: List<String>, gps: Boolean, label: Label) {
+        fun start(c: Context, addresses: List<String>, gps: Boolean, label: Label, hrm: Boolean = false, hrmAddress: String? = null) {
             c.startForegroundService(Intent(c, RecorderService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_ADDRESSES, addresses.toTypedArray())
                 .putExtra(EXTRA_GPS, gps)
+                .putExtra(EXTRA_HRM, hrm)
+                .putExtra(EXTRA_HRM_ADDRESS, hrmAddress)
                 .putExtra(EXTRA_ACTIVITY, label.activity.key)
                 .putExtra(EXTRA_GEAR, label.gear))
         }
 
         /** Wait for one of [addresses] to be started with its button, then record from all of them.
          *  Call while the app is visible: the foreground service has to start from there. */
-        fun standby(c: Context, addresses: List<String>, gps: Boolean, label: Label) {
+        fun standby(c: Context, addresses: List<String>, gps: Boolean, label: Label, hrm: Boolean = false, hrmAddress: String? = null) {
             c.startForegroundService(Intent(c, RecorderService::class.java)
                 .setAction(ACTION_STANDBY)
                 .putExtra(EXTRA_ADDRESSES, addresses.toTypedArray())
                 .putExtra(EXTRA_GPS, gps)
+                .putExtra(EXTRA_HRM, hrm)
+                .putExtra(EXTRA_HRM_ADDRESS, hrmAddress)
                 .putExtra(EXTRA_ACTIVITY, label.activity.key)
                 .putExtra(EXTRA_GEAR, label.gear))
         }

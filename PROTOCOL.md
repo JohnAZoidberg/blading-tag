@@ -456,3 +456,51 @@ elapsed_ns,utc_ms,lat,lon,alt_m,speed_mps,bearing_deg,h_acc_m,speed_acc_mps
 
 Fields the phone didn't provide are left empty. `speed_mps` is the GNSS
 Doppler speed from `Location.getSpeed()`, not derived from positions.
+
+### 2.5 Optional heart-rate monitor
+
+Format version 1 also permits `heartrate.csv`. This is independent of the
+BladeTag BLE protocol; no tag firmware changes are required. Old readers
+ignore this file and the additional metadata.
+
+When heart-rate recording is enabled, `session.json` contains:
+
+```json
+"heart_rate": {
+  "file": "heartrate.csv",
+  "address": "D1:64:49:8F:8C:36",
+  "name": "Giant HRM"
+}
+```
+
+`address` and `name` are absent until a monitor is found. The address is its
+observed BLE address, not a permanent device identifier. Missing `heart_rate`
+means heart-rate recording was disabled; an enabled session with a header-only
+file received no measurements. A split retains the monitor metadata.
+
+CSV header:
+
+```
+elapsed_ns,bpm,contact_supported,contact_detected,energy_kj,rr_ticks,raw_hex
+```
+
+One row per standard Heart Rate Measurement (`0x2A37`) notification, in
+reception order. `elapsed_ns` is the receiver's monotonic **reception time**
+(§2.1), not a beat timestamp. The packet has no sensor timestamp. RR values
+are unsigned integer ticks of 1/1024 s, oldest first, encoded as a JSON array
+in a CSV-quoted cell (e.g. `"[854,852]"`). `[]` means no RR values in a valid
+measurement. Contact booleans are `true`/`false`; unsupported contact detection
+and absent energy are empty. Energy uses HRS 1.0's accumulated kJ unit.
+`raw_hex` contains the entire original characteristic value, without spaces.
+
+Malformed notifications retain their reception time and raw bytes; all five
+decoded fields are empty. Repeated values and zero bpm are preserved. Live
+views treat zero bpm, absent sensor contact and stale data as unavailable.
+Disconnects create gaps; recorders must not fill those gaps or assume missing
+beats can be recovered. The Android recorder automatically reconnects and
+resubscribes without ending the session. Unlike BladeTags, an HRM is not
+assumed to buffer readings during disconnection.
+
+Readers must ignore unknown session files and metadata fields. This optional
+addition keeps `format_version: 1`; incompatible changes to existing required
+structures would require a new format version.

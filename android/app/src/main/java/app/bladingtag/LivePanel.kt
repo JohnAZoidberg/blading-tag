@@ -28,6 +28,7 @@ class LivePanel(context: Context) : LinearLayout(context) {
         textSize = 64f; typeface = semibold; includeFontPadding = false
     }
     private val rateLabel = TextView(context).apply { textSize = 14f; alpha = 0.7f }
+    private val heartRate = TextView(context).apply { textSize = 22f; typeface = semibold }
     private val speed = tile("km/h")
     private val distance = tile("km")
     private val perCycle = tile("m per push")
@@ -50,6 +51,7 @@ class LivePanel(context: Context) : LinearLayout(context) {
         addView(elapsed)
         addView(rateValue, lp(4))
         addView(rateLabel)
+        addView(heartRate, lp(8))
         addView(LinearLayout(context).apply {
             orientation = HORIZONTAL
             for (t in listOf(speed, distance, perCycle)) addView(t.first.parent as LinearLayout,
@@ -73,6 +75,8 @@ class LivePanel(context: Context) : LinearLayout(context) {
     }
 
     fun update(rec: RecorderService.Recording) {
+        heartRate.visibility = if (rec.heartRateLink != null) VISIBLE else GONE
+        heartRate.text = rec.heartRateLink?.display().orEmpty()
         val tr = rec.trend
         val secs = (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1_000_000_000
         elapsed.text = "%d:%02d:%02d".format(secs / 3600, secs / 60 % 60, secs % 60) +

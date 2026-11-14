@@ -74,6 +74,9 @@ class MainActivity : Activity() {
     private lateinit var standbyButton: Button
     private lateinit var standbyBox: LinearLayout
     private lateinit var standbyText: TextView
+    private lateinit var hrmBox: CheckBox
+    private lateinit var hrmPicker: Button
+    private val hrmDevices = LinkedHashMap<String, String>()
     private lateinit var gpsBox: CheckBox
     private lateinit var activityGroup: RadioGroup
     private lateinit var gearLabel: TextView
@@ -207,6 +210,32 @@ class MainActivity : Activity() {
             }
         }
         tagsBox.addView(gpsBox, lp(dp(8)))
+        hrmBox = CheckBox(this).apply {
+            text = "Connect to heart-rate monitor"
+            textSize = 15f
+            isChecked = prefs().getBoolean("record_hrm", false)
+            setOnCheckedChangeListener { _, on ->
+                prefs().edit().putBoolean("record_hrm", on).apply()
+                hrmPicker.visibility = if (on) View.VISIBLE else View.GONE
+            }
+        }
+        tagsBox.addView(hrmBox, lp(dp(4)))
+        hrmPicker = Button(this).apply {
+            isAllCaps = false
+            visibility = if (hrmBox.isChecked) View.VISIBLE else View.GONE
+            setOnClickListener {
+                val addresses = hrmDevices.keys.toList()
+                val labels = listOf("Automatic: first available HRM") + addresses.map { "${hrmDevices[it]} · $it" }
+                AlertDialog.Builder(this@MainActivity).setTitle("Heart-rate monitor")
+                    .setItems(labels.toTypedArray()) { _, which ->
+                        prefs().edit().apply {
+                            if (which == 0) { remove("last_hrm"); remove("last_hrm_name") }
+                            else { putString("last_hrm", addresses[which - 1]); putString("last_hrm_name", hrmDevices[addresses[which - 1]]) }
+                        }.apply()
+                    }.setNegativeButton("Cancel", null).show()
+            }
+        }
+        tagsBox.addView(hrmPicker)
         startButton = Button(this).apply {
             text = "Start recording"
             setOnClickListener { startRecording() }
@@ -380,6 +409,8 @@ class MainActivity : Activity() {
                 labelText(standby.label.activity, standby.label.gear).let { if (it.isEmpty()) "" else "\n$it" }
         } else {
             if (hasPermissions() && adapter?.isEnabled == true) startScan() else stopScan()
+            hrmPicker.text = prefs().getString("last_hrm_name", null)?.let { "HRM: $it · change…" }
+                ?: "HRM: first available · choose…"
             renderTags()
         }
     }
@@ -427,6 +458,7 @@ class MainActivity : Activity() {
             if (l.restarts > 0) sb.append(", restarted ").append(l.restarts).append("×")
             rec.logs[l.address]?.let { sb.append("\n  file ").append(size(it.bytes)) }
         }
+        rec.heartRateLink?.let { sb.append("\n\n").append(it.display()).append("\n  reconnects ").append(it.reconnects) }
         sb.append("\n\nGPS  ")
         val fix = rec.lastFix
         when {
@@ -586,7 +618,8 @@ class MainActivity : Activity() {
     private fun startRecording() {
         if (selected.isEmpty()) return
         stopScan()
-        RecorderService.start(this, selected.toList(), gps = gpsBox.isChecked && hasLocation(), label())
+        RecorderService.start(this, selected.toList(), gps = gpsBox.isChecked && hasLocation(), label(),
+            hrm = hrmBox.isChecked, hrmAddress = prefs().getString("last_hrm", null))
         rememberTags()
         selected.clear()
         userPicked = false
@@ -599,7 +632,8 @@ class MainActivity : Activity() {
         stopScan()
         // From here, while the app is visible: Android only lets a foreground
         // service use GPS in the background if it was started in the foreground.
-        RecorderService.standby(this, tags, gps = gpsBox.isChecked && hasLocation(), label())
+        RecorderService.standby(this, tags, gps = gpsBox.isChecked && hasLocation(), label(),
+            hrm = hrmBox.isChecked, hrmAddress = prefs().getString("last_hrm", null))
         rememberTags()
         selected.clear()
         userPicked = false
@@ -630,6 +664,10 @@ class MainActivity : Activity() {
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, r: ScanResult) {
             val addr = r.device.address
+            if (r.scanRecord?.serviceUuids?.contains(ParcelUuid(HeartRate.SERVICE)) == true) {
+                hrmDevices[addr] = r.scanRecord?.deviceName ?: r.device.name ?: "Heart-rate monitor"
+                return
+            }
             val f = found.getOrPut(addr) {
                 autoSelect(addr)
                 Found(addr, r.scanRecord?.deviceName ?: r.device.name ?: "BladeTag-" +
@@ -651,7 +689,7 @@ class MainActivity : Activity() {
         val scanner = getSystemService(BluetoothManager::class.java).adapter?.bluetoothLeScanner ?: return
         val filter = ScanFilter.Builder().setServiceUuid(ParcelUuid(Protocol.SERVICE)).build()
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-        scanner.startScan(listOf(filter), settings, scanCallback)
+        scanner.startScan(listOf(filter, ScanFilter.Builder().setServiceUuid(ParcelUuid(HeartRate.SERVICE)).build()), settings, scanCallback)
         scanning = true
     }
 

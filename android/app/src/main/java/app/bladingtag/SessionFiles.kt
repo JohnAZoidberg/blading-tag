@@ -174,6 +174,8 @@ class SessionMeta(
     var activity = ActivityKind.UNKNOWN
     /** The shoes, skates or bike, as typed; "" if not given. */
     var gear = ""
+    var heartRateEnabled = false
+    var heartRate: HeartRateMeta? = null
 
     fun toJson(): String {
         val sb = StringBuilder()
@@ -185,6 +187,7 @@ class SessionMeta(
         endElapsedNs?.let { sb.append("  \"end_elapsed_ns\": $it,\n") }
         endReason?.let { sb.append("  \"end_reason\": ${q(it)},\n") }
         endDetail?.let { sb.append("  \"end_detail\": ${q(it)},\n") }
+        if (heartRateEnabled) sb.append("  \"heart_rate\": ${heartRate?.json() ?: "{\"file\": \"heartrate.csv\"}"},\n")
         sb.append("  \"tags\": [")
         tags.forEachIndexed { i, t ->
             sb.append(if (i == 0) "\n" else ",\n")

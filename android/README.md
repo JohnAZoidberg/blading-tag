@@ -152,3 +152,25 @@ the computer, `make pull` overwrites it.
   walks. Not yet seen on a skate session.
 - Not done yet: firmware updates from the app (use nRF Connect Device
   Manager for now), START parameters other than the defaults.
+
+### Optional BLE heart-rate monitor
+
+Tick **Connect to heart-rate monitor** before Start or Standby. Use the button
+below it to choose a discovered standard BLE HRM, or let the app use the first
+available one. The checkbox and last connected monitor are remembered. Keep
+the strap awake and disconnect other readers if it cannot be found. If its BLE
+address changes, choose **Automatic: first available HRM** again.
+
+The foreground recording service connects independently of the tags and GPS.
+It retries failed scans/connections/subscriptions and dropped links automatically,
+with a 10 s retry delay and 30 s scan/setup/no-notification timeout. Every new
+connection subscribes again. The live panel shows bpm, or an unavailable value
+with contact/stale/reconnecting status; readings become stale after 5 s.
+A missing HRM never blocks or ends the tag recording. Standby connects the HRM
+when a tag starts recording and releases it when recording ends.
+
+`heartrate.csv` stores reception timestamps, bpm, contact state, optional energy,
+RR ticks and raw measurement bytes (PROTOCOL.md §2.5). Splitting sessions keeps
+the HRM connection and switches files. Export/pull includes the new file.
+The host's `load_session()` exposes notification rows as `session.heart_rate`;
+old sessions return an empty list. Charts and HRV analysis are not added yet.

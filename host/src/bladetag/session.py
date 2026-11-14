@@ -323,6 +323,7 @@ class Session:
     tags: list[TagData]
     gps: "np.ndarray | None"  # structured array with GPS_COLUMNS, or None
     simulated: bool = False  # any tag simulated, or written by `bladetag simulate`
+    heart_rate: list[dict] = field(default_factory=list)  # one row per notification
 
     @property
     def start_utc(self) -> datetime:
@@ -400,7 +401,25 @@ def load_session(path: str | Path) -> Session:
     # `bladetag simulate` used the real tag's address before the field existed,
     # but always wrote sim_truth.json next to the session.
     simulated = any(t.meta.simulated for t in tags) or folder.read("sim_truth.json") is not None
-    return Session(Path(path), meta, tags, _parse_gps(gps_raw) if gps_raw else None, simulated)
+    hr_meta = meta.get("heart_rate") or {}
+    hr_raw = folder.read(hr_meta.get("file", "heartrate.csv"))
+    return Session(Path(path), meta, tags, _parse_gps(gps_raw) if gps_raw else None, simulated,
+                   _parse_heart_rate(hr_raw) if hr_raw else [])
+
+
+
+def _parse_heart_rate(raw: bytes) -> list[dict]:
+    """Keep integer clock/RR precision, null optional values, and undecodable raw packets."""
+    result = []
+    for row in csv.DictReader(io.StringIO(raw.decode())):
+        item = {"elapsed_ns": int(row["elapsed_ns"]), "raw_hex": row["raw_hex"]}
+        for key in ("bpm", "energy_kj"):
+            item[key] = int(row[key]) if row.get(key) else None
+        for key in ("contact_supported", "contact_detected"):
+            item[key] = row[key].lower() == "true" if row.get(key) else None
+        item["rr_ticks"] = json.loads(row["rr_ticks"]) if row.get("rr_ticks") else None
+        result.append(item)
+    return result
 
 
 def _parse_gps(raw: bytes) -> np.ndarray | None:
