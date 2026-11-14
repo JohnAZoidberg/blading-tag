@@ -83,6 +83,7 @@ class MainActivity : Activity() {
     private lateinit var gearField: AutoCompleteTextView
     private lateinit var tagsHint: TextView
     private lateinit var startHint: TextView
+    private lateinit var sessionsBox: LinearLayout
     private lateinit var sessionList: LinearLayout
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -119,26 +120,25 @@ class MainActivity : Activity() {
         recordingBox.addView(livePanel, lp(dp(8)))
         recordingText = TextView(this).apply { textSize = 15f; typeface = Typeface.MONOSPACE }
         recordingBox.addView(recordingText, lp(dp(16)))
-        recordingBox.addView(Button(this).apply {
-            text = "Description…"
-            setOnClickListener { editCurrentNotes() }
-        }, lp(dp(12)))
-        recordingBox.addView(Button(this).apply {
-            text = "Save and start new session"
-            setOnClickListener {
-                RecorderService.split(this@MainActivity)
-                toast("Saved. Recording a new session")
-            }
-        }, lp(dp(4)))
-        recordingBox.addView(TextView(this).apply {
-            text = "Keeps recording without a gap, so each movement pattern gets its own session."
+        val recordingActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        fun recordingAction(label: String, action: () -> Unit) = Button(this).apply {
+            text = label
             textSize = 14f
-            alpha = 0.7f
-        }, lp(dp(2)))
-        recordingBox.addView(Button(this).apply {
-            text = "Stop recording"
-            setOnClickListener { RecorderService.stop(this@MainActivity) }
-        }, lp(dp(12)))
+            isAllCaps = false
+            setOnClickListener { action() }
+            recordingActions.addView(this, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)))
+        }
+        recordingAction("Save and start new") {
+            RecorderService.split(this@MainActivity)
+            toast("Saved. Recording a new session")
+        }
+        recordingAction("Stop") { RecorderService.stop(this@MainActivity) }.apply {
+            (layoutParams as LinearLayout.LayoutParams).marginStart = dp(8)
+        }
+        recordingBox.addView(recordingActions, lp(dp(12)))
         root.addView(recordingBox, lp(dp(8)))
 
         // Standby, waiting for a tag's button
@@ -259,9 +259,11 @@ class MainActivity : Activity() {
         }, lp(dp(4)))
         root.addView(tagsBox, lp(dp(8)))
 
-        root.addView(heading("Sessions"), lp(dp(24)))
+        sessionsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        sessionsBox.addView(heading("Sessions"))
         sessionList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(sessionList, lp(dp(4)))
+        sessionsBox.addView(sessionList, lp(dp(4)))
+        root.addView(sessionsBox, lp(dp(24)))
 
         val scroll = ScrollView(this).apply { addView(root) }
         // targetSdk 35+ draws edge to edge; keep content out of the bars.
@@ -393,6 +395,7 @@ class MainActivity : Activity() {
 
         val standby = RecorderService.standby
         recordingBox.visibility = if (rec != null) View.VISIBLE else View.GONE
+        sessionsBox.visibility = if (rec == null) View.VISIBLE else View.GONE
         standbyBox.visibility = if (rec == null && standby != null) View.VISIBLE else View.GONE
         tagsBox.visibility = if (rec == null && standby == null) View.VISIBLE else View.GONE
         if (rec != null) {
@@ -779,26 +782,6 @@ class MainActivity : Activity() {
         setSelection(text.length)
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
             InputType.TYPE_TEXT_FLAG_MULTI_LINE
-    }
-
-    /** The description of the session being recorded. */
-    private fun editCurrentNotes() {
-        val rec = RecorderService.current ?: return
-        val field = notesField(rec.meta.notes)
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), 0)
-            addView(field)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Description")
-            .setView(box)
-            .setPositiveButton("Save") { _, _ ->
-                val notes = field.text.toString().trim()
-                io.execute { RecorderService.setNotes(rec, notes) }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     /** Description, activity, gear and body location of each tag for a saved session. */

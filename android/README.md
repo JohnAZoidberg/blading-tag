@@ -40,12 +40,13 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    then the session so far as two charts (rate and speed), and each tag's
    last 10 s of gyro (tap the plot for accel). The notification shows the
    rate, speed and distance too. See [Live push rate](#live-push-rate).
-4. **Save and start new session** (also in the notification) saves the
+4. During recording, previous sessions are hidden and the compact **Save and
+   start new** and **Stop** buttons sit side by side.
+   **Save and start new** (also in the notification) saves the
    session so far and keeps recording into a new one, to separate movement
    patterns. The tags stay connected and only the files change, so nothing
-   is lost at the cut. **Description…** sets a free-text description
-   (session.json `notes`) for the session being recorded.
-5. **Stop recording** sends STOP, waits for the tag to flush its buffer, and
+   is lost at the cut. Use **Edit** after recording to set a description.
+5. **Stop** sends STOP, waits for the tag to flush its buffer, and
    saves the session. Pressing a tag's button also stops it; the app notices
    and ends the recording (stopping the other tag too).
 6. **Standby** (instead of Start recording) is for starting from the tag
