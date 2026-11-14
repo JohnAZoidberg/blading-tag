@@ -86,6 +86,8 @@ class MainActivity : Activity() {
     private lateinit var gearField: AutoCompleteTextView
     private lateinit var tagsHint: TextView
     private lateinit var startHint: TextView
+    private lateinit var navigationTabs: RadioGroup
+    private lateinit var homeTab: RadioButton
     private var showingSessions = false
     private lateinit var sessionList: LinearLayout
 
@@ -286,7 +288,7 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
             setPadding(dp(20), dp(16), dp(20), dp(8))
         })
-        val tabs = RadioGroup(this).apply {
+        navigationTabs = RadioGroup(this).apply {
             orientation = RadioGroup.HORIZONTAL
             setPadding(dp(20), 0, dp(20), 0)
         }
@@ -296,9 +298,9 @@ class MainActivity : Activity() {
             textSize = 16f
             gravity = Gravity.CENTER
             setButtonDrawable(android.R.color.transparent)
-            tabs.addView(this, LinearLayout.LayoutParams(0, dp(48), 1f))
+            navigationTabs.addView(this, LinearLayout.LayoutParams(0, dp(48), 1f))
         }
-        val homeTab = tab("Home")
+        homeTab = tab("Home")
         val sessionsTab = tab("Past sessions")
         fun showTab(sessions: Boolean) {
             showingSessions = sessions
@@ -307,15 +309,15 @@ class MainActivity : Activity() {
             homeTab.setTypeface(null, if (sessions) Typeface.NORMAL else Typeface.BOLD)
             sessionsTab.setTypeface(null, if (sessions) Typeface.BOLD else Typeface.NORMAL)
         }
-        tabs.setOnCheckedChangeListener { _, id ->
+        navigationTabs.setOnCheckedChangeListener { _, id ->
             showTab(id == sessionsTab.id)
             if (showingSessions) refreshSessions()
         }
-        shell.addView(tabs)
+        shell.addView(navigationTabs)
         shell.addView(homeScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         shell.addView(sessionsScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         showingSessions = savedInstanceState?.getBoolean("showing_sessions") ?: false
-        tabs.check(if (showingSessions) sessionsTab.id else homeTab.id)
+        navigationTabs.check(if (showingSessions) sessionsTab.id else homeTab.id)
         // targetSdk 35+ draws edge to edge; keep content out of the bars.
         shell.setOnApplyWindowInsetsListener { v, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars())
@@ -468,6 +470,8 @@ class MainActivity : Activity() {
         ui.removeCallbacks(tick)
         ui.postDelayed(tick, 500)
         val rec = RecorderService.current
+        navigationTabs.visibility = if (rec != null) View.GONE else View.VISIBLE
+        if (rec != null) navigationTabs.check(homeTab.id)
         // A recording just ended, or was split: a session was saved.
         if (shownRecording != null && rec !== shownRecording) refreshSessions()
         shownRecording = rec

@@ -45,7 +45,8 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    then the session so far as two charts (rate and speed), and each tag's
    last 10 s of gyro (tap the plot for accel). The notification shows the
    rate, speed and distance too. See [Live push rate](#live-push-rate).
-4. During recording, previous sessions are hidden and the compact **Save and
+4. During recording, the **Home / Past sessions** tab selector is hidden,
+   keeping the live view on screen. It returns when recording ends. The compact **Save and
    start new** and **Stop** buttons sit side by side.
    Tapping either opens a confirmation: hold the left circle for one second,
    then slide fully right without lifting. Releasing, moving before the hold,
