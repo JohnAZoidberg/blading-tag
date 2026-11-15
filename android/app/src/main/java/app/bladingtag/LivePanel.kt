@@ -10,7 +10,7 @@ import android.widget.TextView
  * The glanceable top of the recording screen, for taking the phone out of
  * the pocket for a moment: the rate as the one big number (pushes/min,
  * steps/min or rpm, by the session's activity: [RateUnit]), speed, distance
- * and distance per push/step/turn under it, the session so far as two trend charts,
+ * and distance per push/step/turn under it, the session so far as rate, speed and optional heart-rate trend charts,
  * and each tag's last seconds of motion.
  *
  * [update] runs with the activity's 500 ms refresh; [animate] redraws the
@@ -45,6 +45,10 @@ class LivePanel(context: Context) : LinearLayout(context) {
         title = "Speed, km/h"; minSpan = 10f; emptyText = "no GPS speed yet"
         xLabel = ::clock
     }
+    private val heartRateTrend = PlotView(context).apply {
+        title = "Heart rate, bpm"; minSpan = 100f; emptyText = "waiting for heart rate…"
+        xLabel = ::clock
+    }
     private val scopeBox = LinearLayout(context).apply { orientation = VERTICAL }
     private var scopeLinks: List<TagLink> = emptyList()
     private val scopes = ArrayList<PlotView>()
@@ -60,6 +64,7 @@ class LivePanel(context: Context) : LinearLayout(context) {
         addView(gpsStats, lp(12))
         addView(rateTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(16) })
         addView(speedTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(8) })
+        addView(heartRateTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(8) })
         addView(scopeBox, lp(8))
     }
 
@@ -79,6 +84,7 @@ class LivePanel(context: Context) : LinearLayout(context) {
         gpsStats.visibility = if (rec.gps != null) VISIBLE else GONE
         speedTrend.visibility = if (rec.gps != null) VISIBLE else GONE
         heartRate.visibility = if (rec.heartRateLink != null) VISIBLE else GONE
+        heartRateTrend.visibility = if (rec.heartRateLink != null) VISIBLE else GONE
         heartRate.text = rec.heartRateLink?.display().orEmpty()
         val hasTags = rec.links.isNotEmpty()
         rateValue.visibility = if (hasTags) VISIBLE else GONE
@@ -113,6 +119,8 @@ class LivePanel(context: Context) : LinearLayout(context) {
         val rates = FloatArray(tr.size) { unit.rate(tr.cyclesPerMin[it]) }
         rateTrend.set(t, listOf(PlotView.Series(unit.rate, colors[0], rates)), 0f, xMax)
         speedTrend.set(t, listOf(PlotView.Series("km/h", colors[1], tr.speedKmh.copyOf(tr.size))), 0f, xMax)
+
+        heartRateTrend.set(t, listOf(PlotView.Series("bpm", colors[2], tr.heartRateBpm.copyOf(tr.size))), 0f, xMax)
 
         if (rec.links != scopeLinks) {
             scopeLinks = rec.links

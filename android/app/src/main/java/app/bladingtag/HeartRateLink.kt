@@ -30,11 +30,10 @@ class HeartRateLink(private val context: Context, private val address: String?,
     var reconnects = 0
         private set
     private var joined = false
+    fun liveBpm(): Float = HeartRate.liveBpm(measurement, SystemClock.elapsedRealtimeNanos() - lastNs)
     fun display(): String {
-        val m = measurement
-        val fresh = SystemClock.elapsedRealtimeNanos() - lastNs < 5_000_000_000L
-        return if (m != null && fresh && m.bpm > 0 && m.contactDetected != false)
-            "Heart rate  ${m.bpm} bpm" else "Heart rate  – · $state"
+        val bpm = liveBpm()
+        return if (!bpm.isNaN()) "Heart rate  ${bpm.toInt()} bpm" else "Heart rate  – · $state"
     }
     fun start() { active = true; search() }
     fun stop() {

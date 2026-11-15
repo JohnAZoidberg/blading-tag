@@ -173,7 +173,7 @@ class RateUnit(val perCycle: Int, val rate: String, val title: String, val one: 
 /**
  * One row per second of the live numbers, for the session trend charts.
  * Cycles/min (of the tagged foot, see [RateUnit]) and speed are NaN when
- * unknown (not moving, no GPS fix).
+ * unknown (not moving, no GPS fix). Heart rate is NaN without a fresh, valid reading.
  * Written and read on the main thread.
  */
 class Trend {
@@ -181,16 +181,19 @@ class Trend {
     var t = FloatArray(1024); private set
     var cyclesPerMin = FloatArray(1024); private set
     var speedKmh = FloatArray(1024); private set
+    var heartRateBpm = FloatArray(1024); private set
 
-    fun add(tS: Float, cycles: Float, speed: Float) {
+    fun add(tS: Float, cycles: Float, speed: Float, heartRate: Float = Float.NaN) {
         if (size == t.size) {
             t = t.copyOf(size * 2)
             cyclesPerMin = cyclesPerMin.copyOf(size * 2)
             speedKmh = speedKmh.copyOf(size * 2)
+            heartRateBpm = heartRateBpm.copyOf(size * 2)
         }
         t[size] = tS
         cyclesPerMin[size] = cycles
         speedKmh[size] = speed
+        heartRateBpm[size] = heartRate
         size++
     }
 

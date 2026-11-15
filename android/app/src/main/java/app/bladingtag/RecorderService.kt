@@ -322,7 +322,7 @@ class RecorderService : Service(), TagLink.Listener {
         }
     }
 
-    /** Cycles/min from each tag's last seconds, and GPS speed, into the trend. */
+    /** Cadence, GPS speed and fresh heart rate into the session trend. */
     private val liveTick = object : Runnable {
         override fun run() {
             val rec = current ?: return
@@ -343,6 +343,7 @@ class RecorderService : Service(), TagLink.Listener {
                 (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1e9f,
                 if (rates.isEmpty()) Float.NaN else rates.average().toFloat(),
                 if (fresh) fix!!.speed * 3.6f else Float.NaN,
+                rec.heartRateLink?.liveBpm() ?: Float.NaN,
             )
             main.postDelayed(this, LIVE_TICK_MS)
         }

@@ -10,6 +10,11 @@ object HeartRate {
     val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     data class Measurement(val bpm: Int, val contactSupported: Boolean, val contactDetected: Boolean?,
                            val energyKj: Int?, val rrTicks: List<Int>)
+    /** Display/chart value; unavailable readings break the live trend line. */
+    fun liveBpm(m: Measurement?, ageNs: Long): Float =
+        if (m != null && ageNs in 0 until 5_000_000_000L && m.bpm > 0 && m.contactDetected != false)
+            m.bpm.toFloat() else Float.NaN
+
     fun decode(raw: ByteArray): Measurement {
         require(raw.isNotEmpty()) { "empty measurement" }
         var offset = 1

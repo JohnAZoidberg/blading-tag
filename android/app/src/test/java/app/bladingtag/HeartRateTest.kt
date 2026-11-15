@@ -7,6 +7,25 @@ import java.nio.file.Files
 
 class HeartRateTest {
     private fun hex(s: String) = s.split(" ").map { it.toInt(16).toByte() }.toByteArray()
+    @Test fun liveValuesExcludeUnavailableMeasurements() {
+        val valid = HeartRate.decode(hex("06 48"))
+        assertEquals(72f, HeartRate.liveBpm(valid, 0), 0f)
+        assertEquals(72f, HeartRate.liveBpm(HeartRate.decode(hex("00 48")), 1), 0f)
+        for (m in listOf(null, HeartRate.decode(hex("04 48")), HeartRate.decode(hex("06 00"))))
+            assertTrue(HeartRate.liveBpm(m, 0).isNaN())
+        assertTrue(HeartRate.liveBpm(valid, 5_000_000_000L).isNaN())
+        assertEquals(72f, HeartRate.liveBpm(valid, 4_999_999_999L), 0f)
+    }
+    @Test fun trendRetainsHeartRateAndGapsAcrossGrowth() {
+        val trend = Trend()
+        repeat(1100) { i -> trend.add(i.toFloat(), Float.NaN, Float.NaN,
+            if (i == 10) Float.NaN else 72f) }
+        assertEquals(1100, trend.size)
+        assertTrue(trend.heartRateBpm[10].isNaN())
+        assertEquals(72f, trend.heartRateBpm[1099], 0f)
+        assertEquals(1099f, trend.t[1099], 0f)
+        assertEquals(0, Trend().size)
+    }
     @Test fun giantCapturedPackets() {
         val m = HeartRate.decode(hex("16 47 56 03 54 03"))
         assertEquals(71, m.bpm)

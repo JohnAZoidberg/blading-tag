@@ -187,6 +187,10 @@ It retries failed scans/connections/subscriptions and dropped links automaticall
 with a 10 s retry delay and 30 s scan/setup/no-notification timeout. Every new
 connection subscribes again. The live panel shows bpm, or an unavailable value
 with contact/stale/reconnecting status; readings become stale after 5 s.
+While recording with HRM enabled, a **Heart rate, bpm** chart shows the session
+so far alongside the other live charts, including in recordings without tags or
+GPS. It updates once a second and leaves gaps for stale, invalid, zero-bpm or
+no-contact readings. Save and start new resets the chart for the new session.
 A missing HRM never blocks or ends the tag recording. Standby connects the HRM
 when a tag starts recording and releases it when recording ends.
 
@@ -194,4 +198,4 @@ when a tag starts recording and releases it when recording ends.
 RR ticks and raw measurement bytes (PROTOCOL.md §2.5). Splitting sessions keeps
 the HRM connection and switches files. Export/pull includes the new file.
 The host's `load_session()` exposes notification rows as `session.heart_rate`;
-old sessions return an empty list. Charts and HRV analysis are not added yet.
+old sessions return an empty list. Host heart-rate charts and HRV analysis are not added yet.
