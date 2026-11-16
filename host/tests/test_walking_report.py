@@ -40,3 +40,18 @@ def test_activity_filter_and_explicit_wrong_activity(tmp_path, monkeypatch):
     assert result['skipped'] == [dict(id='ride', reason='activity: cycling')]
     with pytest.raises(ValueError, match='expected a walking'):
         report.build([tmp_path/'ride'])
+
+
+def test_review_notes_are_separate_and_embedded_safely(tmp_path, monkeypatch):
+    source = tmp_path/'walk'
+    source.mkdir()
+    (source/'session.json').write_text('{}')
+    review = dict(notes=['User reports a short fixed staircase', '</script><script>alert(1)</script>'],
+                  intervals=[dict(start_s=5, end_s=8, label='Possible ascent', evidence='Uncertain')])
+    (source/'terrain-review.json').write_text(json.dumps(review))
+    monkeypatch.setattr(report, 'load_session', lambda path: session(path))
+    output = tmp_path/'report.html'
+    result = report.write_report([source], output)
+    assert result['sessions'][0]['terrain']['review'] == review
+    assert not result['sessions'][0]['terrain']['tags']
+    assert review['notes'][1] not in output.read_text()

@@ -132,6 +132,18 @@ sensor saturation are excluded. GPS distance covers valid intervals only;
 accepted strides are not a complete step count. Landing acceleration is a sensor
 estimate, affected by pace, surface and mounting, rather than a cushioning test.
 
+The report also marks exploratory stair-like bouts and their timing relative to
+long GPS gaps. It looks for repeated signed vertical movement with short strides
+and compares standard and relaxed foot-plant detectors. Relaxed-only findings
+are less reliable. Quiet feet can mean standing still or standing on an
+escalator/lift; those cannot be distinguished here. Unflagged intervals are not
+confirmed level walking, and the gait/shoe summaries still mix terrain.
+A short staircase may contain fewer than the four strides required for a bout.
+The flags also cannot reliably separate stairs from hills. Optional
+`terrain-review.json` beside a session can preserve reviewed `notes` and
+`intervals` (`start_s`, `end_s`, `label`, `evidence`); these are displayed separately
+from automatic detections and embedded in the offline report.
+
 **Walking.** When the tag is worn walking, the summary also gives the stride
 length (from one plant of the tag's foot to the next; a step is about half
 of it), the walking speed, the distance compared with GPS, and the gait:

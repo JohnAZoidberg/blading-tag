@@ -28,6 +28,7 @@ def build(paths, title="Walking · a closer look", progress=None):
     from .report import session_paths
     from .walking_context import analyze_session as context
     from .walking_insights import analyze_session as gait, compare_sessions
+    from .walking_terrain import analyze_session as terrain
 
     expanded, from_folder = session_paths([str(p) for p in paths])
     sessions, skipped = [], []
@@ -40,9 +41,13 @@ def build(paths, title="Walking · a closer look", progress=None):
             continue
         if progress:
             progress(f'Walking: {path.name}')
+        terrain_data = terrain(s)
+        review_path = s.path / 'terrain-review.json'
+        if review_path.is_file():
+            terrain_data['review'] = json.loads(review_path.read_text())
         sessions.append(dict(id=path.name, start_utc=s.meta['start_utc'], gear=s.gear,
                              notes=s.meta.get('notes', ''), end_reason=s.meta.get('end_reason', ''),
-                             context=context(s), gait=gait(s)))
+                             context=context(s), gait=gait(s), terrain=terrain_data))
     if not sessions:
         raise ValueError('no sessions labelled walking')
     sessions.sort(key=lambda s: s['start_utc'])
@@ -67,6 +72,10 @@ def build(paths, title="Walking · a closer look", progress=None):
     changes = [(d['late']['stride_m'] / d['early']['stride_m'] - 1) * 100 for d in drifts if d['early']['stride_m']]
     if changes:
         study.append(f"In {len(changes)} walks with comparable early/late gait, speed-adjusted stride length changes range from {min(changes):+.1f}% to {max(changes):+.1f}%. These observational differences do not establish a fatigue trend.")
+    candidates = [r for s in sessions for t in s['terrain']['tags'] for r in t['candidates']]
+    if candidates:
+        boundary = sum(bool(r['near_gap']) for r in candidates)
+        study.append(f"Exploratory terrain check: {len(candidates)} vertical-motion bouts, {boundary} near the start/end of a GPS gap lasting at least two minutes. These are candidate annotations, not verified stairs. Gait and shoe summaries still mix terrain; unflagged strides are not proven level walking.")
     comparison = dict(rows=compared['groups'], sessions=compared['sessions'],
                       description='Adjusted to 4.5 km/h using strides within ±0.5 km/h, with a separate linear speed adjustment in each walk. At least 20 gait-valid strides per walk. Groups separate labelled feet and weight each walk equally; single-walk groups cannot estimate repeatability.')
     methods = ['Walking context: exact interval integration; GPS and HR held forward at most 5 seconds, never across longer gaps. GPS position accuracy ≤20 m, speed 0–18 km/h, speed accuracy ≤1.5 m/s when supplied. HR 25–240 bpm with no explicit contact loss. Moving means phone speed ≥1.8 km/h; pauses require at least 10 seconds below it.',
@@ -79,6 +88,7 @@ def build(paths, title="Walking · a closer look", progress=None):
                            'Foot height, pitch and landing acceleration are sensor estimates. Mounting, turns, surface and pace can change them. Landing g is not ground force or a clinical assessment.',
                            'Detected strides describe accepted walking intervals only. Shopping, shuffling, very slow steps, missing samples and pauses can be excluded. Summed strides are not a whole-walk distance.',
                            'Shoe comparisons are observational. Speed adjustment cannot remove route, surface, day, foot or mounting differences. Repeated walks are the comparison unit, not thousands of independent strides.',
+                           'Stair candidates are exploratory. Short, repeated signed vertical displacement supports stair-like motion, but slopes and integration errors can imitate it. No confirmed level-ground subset is available; speed matching does not remove terrain differences.',
                            'GPS and heart-rate gaps remain missing. Route points are approximate phone locations. Correlation and early/late differences do not establish fatigue or cause.'
                        ]))
 

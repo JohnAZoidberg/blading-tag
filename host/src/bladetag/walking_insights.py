@@ -99,7 +99,7 @@ def analyze_session(sess):
             med = st.median(numeric_only=True)
             local.append(f'{len(st)} detected strides: median length {med.stride_m:.2f} m, estimated cadence {med.cadence_spm:.0f} steps/min and speed {med.speed_kmh:.1f} km/h.')
             residual = float(st.dz_m.abs().median())
-            local.append(f'Median absolute vertical closure residual is {100 * residual:.1f} cm per stride; terrain and integration error both contribute.')
+            local.append(f'Median absolute estimated vertical change is {100 * residual:.1f} cm per stride; terrain and integration error both contribute.')
         else:
             local.append('No usable planted-foot strides were detected; this does not mean no walking occurred.')
         if clipped.any():
