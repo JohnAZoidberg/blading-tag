@@ -283,8 +283,16 @@ def cmd_analyze(a):
     if activity == "walking":
         return _analyze_walking(a, s, tags)
     if activity == "cycling":
-        _die("there's no cycling analysis yet (it waits for a first ride, see PLAN-activities.md);"
-             f" `bladetag explore {a.session}` shows the raw signal and cadence")
+        from .cycling import analyze
+        if a.plot or a.show or a.raw or a.csv:
+            _die("for cycling use `bladetag cycling-report SESSION -o ride.html` for the interactive report")
+        result = analyze(a.session)
+        if a.json:
+            print(json.dumps(result["summary"], allow_nan=False))
+        else:
+            print(json.dumps(result["summary"], indent=2, allow_nan=False))
+            print(f"\nInteractive report: bladetag cycling-report {a.session} -o ride.html")
+        return
     if activity == "unknown":
         _die(f"the session doesn't say what activity it is. Use --activity skating|walking, set it with"
              f" `bladetag label {a.session} --activity ...`, or look at it with `bladetag explore`")
@@ -337,6 +345,21 @@ def _analyze_skating(a, s, tags):
                 plot_session(r, _suffixed(a.plot, suffix) if a.plot else None, show=a.show)
             if a.raw:
                 plot_raw(r, a.raw_at, path=_suffixed(a.raw, suffix))
+
+
+def cmd_cycling_report(a):
+    from .cycling import write_report
+    from .session import load_session
+
+    try:
+        session = load_session(a.session)
+        _warn_simulated(session)
+        rep = write_report(session, a.output, a.title or "Cycling ride")
+    except ValueError as exc:
+        _die(str(exc))
+    for finding in rep["findings"]:
+        print(finding)
+    print(f"\nwrote {a.output} (open it in a browser; works offline)")
 
 
 def cmd_report(a):
@@ -655,6 +678,12 @@ def main(argv=None):
     c.add_argument("--csv", metavar="FILE", help="also write every stroke as .csv")
     c.add_argument("--title", help="page title")
     c.set_defaults(fn=cmd_report)
+
+    c = sub.add_parser("cycling-report", help="cycling ride: GPS route, speed, heart rate, stops and kilometre splits")
+    c.add_argument("session", help="session folder or .zip file")
+    c.add_argument("-o", "--output", default="cycling.html", help="self-contained page to write (default: cycling.html)")
+    c.add_argument("--title", help="page title")
+    c.set_defaults(fn=cmd_cycling_report)
 
     a = ap.parse_args(argv)
     a.fn(a)

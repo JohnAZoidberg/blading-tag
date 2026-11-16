@@ -167,5 +167,12 @@ def test_cli_label_compare_and_analyze(tmp_path, capsys):
         main(["compare", str(src)])
     main(["analyze", str(a)])
     assert "strides" in capsys.readouterr().out
-    with pytest.raises(SystemExit):
-        main(["analyze", str(src), "--activity", "cycling"])
+    main(["analyze", str(src), "--activity", "cycling", "--json"])
+    import json
+    cycling = json.loads(capsys.readouterr().out)
+    assert cycling["distance_km"] > 0
+    assert cycling["mean_hr_bpm"] is None
+    page = tmp_path / "cycling.html"
+    main(["cycling-report", str(src), "-o", str(page), "--title", "Test ride"])
+    assert "__CYCLING_DATA__" not in page.read_text()
+    assert "Test ride" in page.read_text()

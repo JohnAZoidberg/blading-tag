@@ -49,6 +49,11 @@ has joined; if it shows yellow blips instead, the phone hasn't. See
    adb with `make -C android pull`) and run the analysis in `host/` on a
    laptop. The app doesn't show results itself yet.
 
+For a cycling recording with GPS and an HRM, run
+`bladetag cycling-report SESSION -o sessions/cycling.html` in the host
+environment, then open the page locally. See the
+[cycling report instructions](host/README.md#cycling-ride-report).
+
 ## The button
 
 The firmware uses one button on the tag (`sw0`). The board file lists a

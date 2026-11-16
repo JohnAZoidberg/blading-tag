@@ -148,7 +148,8 @@ or the Android app.
 below, walking the stride and gait summary (`--csv` writes every stride).
 Sessions recorded before the activity existed are `unknown`; give
 `--activity skating` or mark them with `bladetag label SESSION --activity
-skating`. There's no cycling analysis yet.
+skating`. Cycling gets a GPS and heart-rate summary; use the cycling report
+below for the interactive page.
 
 What it does (`src/bladetag/analysis.py`):
 
@@ -302,6 +303,35 @@ out and on the right foot back) showed:
   ~3 km/h of wind. The tag changed feet at the turn, so left vs right can't be
   separated from the direction; next time keep one foot for a whole
   out-and-back.
+
+## Cycling ride report
+
+```sh
+bladetag cycling-report sessions/session-20261116-103912 -o sessions/cycling.html
+bladetag analyze sessions/session-20261116-103912 --json
+```
+
+`cycling-report` writes a self-contained local page, with no network or map
+tiles needed. It follows the skating report's approach: findings in words,
+a linked speed and heart-rate timeline, a route coloured by the selected
+measure, comparisons of speed, heart rate and estimated cadence, stops and
+kilometre splits. Select a time
+range to inspect part of the ride. The page includes the recording's quality
+and the calculation methods; missing data stays missing.
+
+Distance comes from GPS speed integrated over time, with poor fixes and long
+gaps excluded, rather than adding position jitter at stops. Heart-rate averages
+are weighted by time, reject zero BPM and lost skin contact, and don't bridge
+long gaps. Speed and heart rate together describe the ride, but don't measure
+power or isolate wind, slope or fatigue. No training zones are inferred.
+
+With a foot-mounted tag, repetitive gyro windows also give an experimental
+pedal cadence (one revolution of the tagged foot, without the skating ×2).
+Only clear repetition while moving with reliable GPS is accepted. Uncertain
+windows stay unclassified; they do not automatically count as coasting.
+Metres per crank turn is speed divided by cadence, a development proxy rather
+than a measured gear. Neither estimate has been checked against a bike cadence
+sensor yet.
 
 ## Simulated data
 

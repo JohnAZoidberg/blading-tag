@@ -138,7 +138,12 @@ between shoes means something only if it's clearly bigger than that.
 
 ## Cycling analysis
 
-Waits for a first recorded ride. What to record: 20–30 min with GPS, with
+The first ride (2026-11-16, 80 minutes with GPS and Giant HRM) now has a local
+`cycling-report`: route, speed, HR, stops, kilometre splits, experimental
+foot-IMU cadence and metres per crank turn. Cadence has no bike-sensor
+reference yet; uncertain windows are unclassified rather than called coasting.
+
+For validation, record 20–30 min with GPS, with
 steady seated riding at two or three cadences, a few gear changes at the
 same cadence, some coasting, a standing climb and a stop. Note roughly when
 each happened. A bike computer's cadence sensor at the same time gives a
@@ -176,8 +181,10 @@ that from the data.
       foot. The period range (0.3–3 s) already covers cycling, so the
       detector is the same for all three. Checked on the phone with the
       simulated tag as Cycling (40 rpm).
-- [ ] **5. First cycling ride**, then `cycling.py`: cadence,
-      pedalling/coasting, distance per turn; then decide on the rest.
+- [x] **5a. First cycling ride** and `cycling.py`: GPS/HR report,
+      experimental cadence and distance per turn.
+- [ ] **5b. Validate cadence** against a crank sensor and distinguish
+      pedalling/coasting before treating rejected windows as coasting.
 
 ## Open questions
 
