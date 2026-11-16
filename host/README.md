@@ -342,7 +342,10 @@ bladetag cycling3d sessions/session-20261116-103912 -o sessions/cycling3d.html
 This local, offline page replays reconstructed foot-tag loops with an
 illustrative shoe, an orbitable camera, a cadence timeline and early/late
 typical loops. Drag to orbit, scroll to zoom, click the timeline or use ←/→
-to choose a retained turn. Space plays/pauses; the phase slider scrubs a turn.
+to choose a retained turn. Playback advances through retained turns in order,
+skipping the time gaps between them, and restarts after the last turn. The
+typical-loop view repeats its early/late comparison. Space plays/pauses; the
+phase slider scrubs a turn.
 The right and left foot are not synthesized together. An optional schematic
 bike provides a size reference with an assumed 175 mm crank.
 
