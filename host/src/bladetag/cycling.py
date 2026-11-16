@@ -14,6 +14,7 @@ import numpy as np
 
 from .session import Session, load_session
 from .cycling_signals import cadence_track
+from .cycling_correlations import behavior_correlations
 
 GPS_HOLD_S = 10.0
 HR_HOLD_S = 5.0
@@ -161,7 +162,9 @@ def analyze(path: str | Path | Session) -> dict:
     return _finite(dict(session=sess.path.name, start_utc=sess.meta['start_utc'], gear=sess.gear,
                         summary=summary, findings=findings, timeline=timeline, splits=splits, stops=stops,
                         speed_matched_hr=comparison,
+                        behavior=behavior_correlations(timeline, stops),
                         methods=[
+                            'Behavior correlations use disjoint 30 s blocks: at least five paired five-second speed/HR bins at ≥8 km/h; cadence needs three accepted bins. Spearman r requires ≥10 blocks and variation in both measures. Break-crossing blocks are excluded from leg comparisons. Adjacent blocks remain dependent; no significance tests or causal effects are claimed.',
                             'One-second elapsed-time grid; most recent GPS held for under 10 s and HR for under 5 s. Unknown intervals stay blank and add no distance.',
                             'Distance integrates reported GPS speed, including slow riding, with horizontal accuracy ≤20 m. Reject negative speeds and speeds above 144 km/h. Instantaneous speed can be noisy; integrated distance is an estimate and omitted GPS intervals undercount it.',
                             'Moving means GPS speed ≥3.6 km/h. Stops are known speeds below that threshold for ≥10 s; these can include walking or slow cycling.',

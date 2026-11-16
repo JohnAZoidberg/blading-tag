@@ -78,3 +78,26 @@ def test_cadence_is_experimental_and_missing_windows_stay_blank(tmp_path, monkey
     assert result['summary']['development_m'] == 5
     assert [p['cadence'] for p in result['timeline']] == [60, None, None, 80]
     assert 'experimental' in ' '.join(result['findings'])
+
+
+def test_behavior_blocks_exclude_gaps_stops_and_sparse_cadence():
+    from bladetag.cycling_correlations import behavior_correlations
+    rows = [dict(t=t, speed=20+t/100, hr=100+t/20, cadence=60+t/200)
+            for t in range(0, 900, 5)]
+    result = behavior_correlations(rows, [dict(start_s=300, end_s=450, duration_s=150)])
+    assert len(result['blocks']) == 30
+    assert result['correlations'][0]['r'] == pytest.approx(1)
+    assert result['correlations'][3]['n'] == 10
+    assert result['correlations'][6]['n'] == 15
+    for r in rows[:2]:
+        r['hr'] = None
+    for r in rows[6:10]:
+        r['cadence'] = None
+    for r in rows[12:14]:
+        r['speed'] = 0
+    result = behavior_correlations(rows, [])
+    assert result['blocks'][0]['t'] == 30
+    assert result['blocks'][0]['cadence'] is None
+    assert all(b['t'] != 60 for b in result['blocks'])
+    constant = [dict(t=t, speed=20, hr=100, cadence=None) for t in range(0, 600, 5)]
+    assert all(r['r'] is None for r in behavior_correlations(constant, [])['correlations'])

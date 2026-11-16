@@ -359,7 +359,11 @@ tiles needed. It follows the skating report's approach: findings in words,
 a linked speed and heart-rate timeline, a route coloured by the selected
 measure, comparisons of speed, heart rate and estimated cadence, stops and
 kilometre splits. Select a time
-range to inspect part of the ride. The page includes the recording's quality
+range to inspect part of the ride. A behavior table compares speed, HR and
+cadence using separate 30-second moving blocks, both across the ride and
+before/after its longest break. It includes practical repeat-ride experiments;
+these associations do not establish an efficient cadence or a causal effect.
+The page includes the recording's quality
 and the calculation methods; missing data stays missing.
 
 Distance comes from GPS speed integrated over time, with poor fixes and long
