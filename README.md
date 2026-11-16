@@ -117,3 +117,8 @@ app, using `dfu_application.zip` from the build. A J-Link (`make flash`) is
 only needed to recover a tag that won't boot.
 
 See [`firmware/README.md`](firmware/README.md) for details.
+
+## Local analysis web app
+
+Launch a persistent recording library with uploads, background reports, comparisons
+and offline downloads. See [host/WEB.md](host/WEB.md) for setup and usage.
