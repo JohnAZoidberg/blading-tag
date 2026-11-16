@@ -455,6 +455,19 @@ def cmd_explore(a):
         plt.show()
 
 
+def cmd_cycling3d(a):
+    from .cycling3d import write_report
+    from .session import load_session
+
+    try:
+        session = load_session(a.session)
+        _warn_simulated(session)
+        write_report(session, a.output, a.title or "Cycling pedal replay")
+    except ValueError as exc:
+        _die(str(exc))
+    print(f"wrote {a.output} (open it locally; works offline)")
+
+
 def cmd_viz3d(a):
     from . import viz3d
     from .session import load_session
@@ -684,6 +697,12 @@ def main(argv=None):
     c.add_argument("-o", "--output", default="cycling.html", help="self-contained page to write (default: cycling.html)")
     c.add_argument("--title", help="page title")
     c.set_defaults(fn=cmd_cycling_report)
+
+    c = sub.add_parser("cycling3d", help="3D foot motion replay: measured pedal loops and early/late comparison")
+    c.add_argument("session", help="cycling session folder or .zip file with a foot tag")
+    c.add_argument("-o", "--output", default="cycling3d.html", help="offline page to write")
+    c.add_argument("--title", help="page title")
+    c.set_defaults(fn=cmd_cycling3d)
 
     a = ap.parse_args(argv)
     a.fn(a)

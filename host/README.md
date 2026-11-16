@@ -333,6 +333,28 @@ Metres per crank turn is speed divided by cadence, a development proxy rather
 than a measured gear. Neither estimate has been checked against a bike cadence
 sensor yet.
 
+### Cycling in 3D
+
+```sh
+bladetag cycling3d sessions/session-20261116-103912 -o sessions/cycling3d.html
+```
+
+This local, offline page replays reconstructed foot-tag loops with an
+illustrative shoe, an orbitable camera, a cadence timeline and early/late
+typical loops. Drag to orbit, scroll to zoom, click the timeline or use ←/→
+to choose a retained turn. Space plays/pauses; the phase slider scrubs a turn.
+The right and left foot are not synthesized together. An optional schematic
+bike provides a size reference with an assumed 175 mm crank.
+
+The acceleration is rotated using the IMU orientation and integrated with
+periodic boundary conditions for each accepted turn. This removes drift and
+constant velocity; it does not force a circular pedal path. Horizontal heading
+comes from the loop's principal axis, not a measured bike heading. Paths show
+the tag's movement; shoe mounting, absolute foot angles and actual crank
+geometry cannot be recovered from this recording alone. The page samples up
+to 600 reliable turns and compares the first/last 20% of those; missing turns
+are not labelled coasting. It includes all calculation assumptions.
+
 ## Simulated data
 
 ```sh
