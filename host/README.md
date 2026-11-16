@@ -98,17 +98,21 @@ bladetag walking3d SESSION --tag right_foot --title "Evening walk"
 
 Open the generated page locally; it works offline. Drag to orbit, use the
 side/top views, scrub through a stride, select a stride on the cadence timeline,
-or compare typical early and late strides. The default walking sequence places
-up to six consecutive measured strides end-to-end, with faded shoes marking
-foot plants. Playback advances along the lane and resets at gaps or the next
-bout. The lane assumes straight travel; route curvature is unknown. Up to 600
-strides are retained in consecutive groups. The selected foot must be labelled `left_foot` or
+or compare typical early and late strides. The default walking sequence plays
+each uninterrupted bout continuously, with the camera following the measured
+foot and a trail showing the last few strides. Faded shoes mark foot plants. The ground grid and origin remain fixed in
+world coordinates as the camera follows the foot.
+All accepted strides are retained; playback resets only when a bout is
+interrupted or the recording ends. The lane assumes straight travel; route
+curvature is unknown. The selected foot must be labelled `left_foot` or
 `right_foot`; the first labelled foot is used by default.
 
 Paths use the same zero-velocity updates at foot plants as walking analysis,
 with measured scale and an open path from one plant to the next. Each stride
 contains two steps; cadence is shown in steps/min. Heading is local to each
-stride. The dot follows the tag; the shoe mount is illustrative, and a tag on
+stride. The dot follows the tag; shoe rotation is interpolated continuously, with
+independently estimated shoe references eased over 150 ms at stride joins.
+The shoe mount is illustrative, and a tag on
 the shin measures shin rotation. Height error is retained rather than forced
 flat. Early/late differences can reflect pace, terrain and mounting.
 

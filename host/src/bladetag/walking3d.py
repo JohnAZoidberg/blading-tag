@@ -13,9 +13,9 @@ from .session import Session, load_session
 from .timesync import fit_clocks
 
 
-def build(path, *, tag=None, max_strides=600, frames=64):
-    if max_strides < 1 or frames < 16:
-        raise ValueError('max_strides must be positive and frames at least 16')
+def build(path, *, tag=None, max_strides=None, frames=64):
+    if (max_strides is not None and max_strides < 1) or frames < 16:
+        raise ValueError('max_strides must be positive or None and frames at least 16')
     sess = path if isinstance(path, Session) else load_session(path)
     if sess.activity not in ('walking', 'unknown'):
         raise ValueError('Walking replay requires a walking session')
@@ -50,20 +50,17 @@ def build(path, *, tag=None, max_strides=600, frames=64):
     if not cycles:
         raise ValueError('No complete walking strides passed reconstruction checks')
     accepted = len(cycles)
-    # Retain short consecutive bouts rather than isolated evenly spaced strides.
-    blocks = [list(range(i, min(i + 6, accepted))) for i in range(0, accepted, 6)]
-    chosen = np.unique(np.linspace(0, len(blocks)-1, min(len(blocks), max(1, (max_strides+5)//6))).astype(int))
-    keep = [i for b in chosen for i in blocks[b]][:max_strides]
-    cycles = [cycles[i] for i in keep]
-    bout, count = -1, 0
+    # Keep all accepted strides by default so long bouts remain continuous.
+    # An explicit limit retains a prefix, never samples holes into a bout.
+    if max_strides is not None:
+        cycles = cycles[:max_strides]
+    bout = -1
     previous = None
     for c in cycles:
         contiguous = previous is not None and abs(c['t_s'] - previous['t_s'] - previous['period_s']) < .03
-        if not contiguous or count >= 6:
+        if not contiguous:
             bout += 1
-            count = 0
         c['bout'] = bout
-        count += 1
         previous = c
     def typical(part):
         p = np.median([c['pos'] for c in part], axis=0)
@@ -77,7 +74,7 @@ def build(path, *, tag=None, max_strides=600, frames=64):
                 methods=[
                     f'{accepted} accepted plant-to-plant strides; {len(cycles)} retained for replay. Each stride is two steps of the tagged foot cycle. Only the labelled {foot.meta.position} tag is shown.',
                     'Gyro orientation and gravity-corrected acceleration are integrated between quiet foot plants. Velocity error is removed linearly to make velocity zero at the next plant. Sample gaps are never bridged.',
-                    'Forward is the measured horizontal displacement of each stride. Paths retain their measured scale and height error; absolute heading is unavailable. The path is open, from one plant to the next; consecutive strides are placed end-to-end along a straight local walking lane. Actual route curvature is unknown. Playback resets between bouts or recording gaps.',
+                    'Forward is the measured horizontal displacement of each stride. Paths retain their measured scale and height error; absolute heading is unavailable. The path is open, from one plant to the next; consecutive strides are placed end-to-end along a straight local walking lane. Actual route curvature is unknown. The camera follows the tag with a short trail. Playback resets only between interrupted bouts or at the end of the recording.',
                     'The dot is the tag, not the toe. The shoe has an illustrative neutral mount at the first plant; relative rotation is measured. A shin-mounted tag shows shin motion, not anatomical shoe angles.',
                     'Early and late are the first and last 20% of retained strides. Typical paths are phase-wise medians with representative stride rotation. Speed, terrain and mounting can affect differences.',
                 ])

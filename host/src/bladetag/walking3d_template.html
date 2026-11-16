@@ -6,11 +6,11 @@
 </style>
 <main><div class="eyebrow">Walking laboratory · measured strides</div><h1 id="title"></h1><p id="meta"></p>
 <section class="panel"><div class="controls"><h2 style="margin:0 auto 0 0">Foot motion in 3D</h2><label>View <select id="view"><option value="walk">Walking sequence</option><option value="cycle">Selected stride</option><option value="typical">Typical early / late</option></select></label><button id="side">Side</button><button id="orbit">Oblique</button><button id="top">Top</button></div>
-<p>Drag to orbit · scroll to zoom. The bright dot follows the reconstructed tag path. The small shoe shows relative orientation; its mounting is illustrative. Consecutive strides advance along a walking lane. Faded shoes mark foot plants of the measured foot; the camera shows up to six strides. The lane is straight because route heading is unknown.</p>
+<p>Drag to orbit · scroll to zoom. The bright dot follows the reconstructed tag path. The small shoe shows relative orientation; its mounting is illustrative. Consecutive strides advance along a walking lane. Faded shoes mark foot plants of the measured foot; the camera follows the foot with a trail of recent strides. Shoe reference changes are eased over 150 ms at stride joins. The grid stays fixed in world coordinates. The lane is straight because route heading is unknown.</p>
 <canvas id="scene" aria-label="Orbitable 3D reconstruction of a walking stride"></canvas>
 <div class="readout" id="readout"></div><div class="controls"><button id="previous" aria-label="Previous stride">←</button><button id="play">Pause</button><button id="next" aria-label="Next stride">→</button><label>Speed <select id="rate"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1">1×</option></select></label><input id="phase" type="range" min="0" max="1" step="0.001" value="0" aria-label="Position through stride"><span id="phaseLabel"></span></div>
 <div class="cards" id="cards"></div></section>
-<section class="panel"><h2>Across the walk</h2><p>Click to select the nearest retained stride. Playback advances through the retained strides in order, then restarts. Consecutive strides connect; playback resets at gaps and between six-stride bouts. Every dot is a reconstructed plant-to-plant stride; gaps remain blank. Space plays or pauses; ← / → selects a stride.</p><canvas id="timeline" aria-label="Step cadence across the recording"></canvas><label>Jump to stride <input type="range" id="turn" min="0" step="1" value="0"></label></section>
+<section class="panel"><h2>Across the walk</h2><p>Click to select the nearest retained stride. Playback advances through the retained strides in order, then restarts. Consecutive strides connect; playback resets only at interrupted bouts or the end of the recording. Every dot is a reconstructed plant-to-plant stride; gaps remain blank. Space plays or pauses; ← / → selects a stride.</p><canvas id="timeline" aria-label="Step cadence across the recording"></canvas><label>Jump to stride <input type="range" id="turn" min="0" step="1" value="0"></label></section>
 <section class="panel"><h2>Typical stride, early versus late</h2><p><span class="green">● Early</span> · <span class="orange">● Late</span> · phase aligned from one foot plant to the next. Shapes reflect the tag on the shoe and the zero-velocity reconstruction assumptions. Differences can include pace, terrain and sensor drift.</p><div class="scroll"><table><thead><tr><th>Measure</th><th>Early</th><th>Late</th></tr></thead><tbody id="comparison"></tbody></table></div></section>
 <section class="panel"><details open><summary>What is measured and what is assumed</summary><ul id="methods"></ul></details></section></main>
 <script type="application/json" id="motion-data">__WALKING3D_DATA__</script>
@@ -25,27 +25,70 @@ $('turn').max=Math.max(0,C.length-1);
 const add=(a,b)=>a.map((v,i)=>v+b[i]),mul=(a,s)=>a.map(v=>v*s),sub=(a,b)=>a.map((v,i)=>v-b[i]),dot=(a,b)=>a.reduce((v,x,i)=>v+x*b[i],0),cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],unit=a=>mul(a,1/(Math.hypot(...a)||1));
 function canvas(id){const el=$(id),r=el.getBoundingClientRect(),d=window.devicePixelRatio||1;if(el.width!==Math.round(r.width*d)||el.height!==Math.round(r.height*d)){el.width=Math.round(r.width*d);el.height=Math.round(r.height*d)}const c=el.getContext('2d');c.setTransform(d,0,0,d,0,0);c.clearRect(0,0,r.width,r.height);return [c,r.width,r.height]}
 function sample(loop,p){const a=loop.pos;if(!a?.length)return [0,0,0];const f=p*(a.length-1),i=Math.floor(f),j=Math.min(a.length-1,i+1);return add(mul(a[i],1-(f-i)),mul(a[j],f-i))}
+// Shortest-arc quaternion interpolation, including equivalent q / -q poses.
+function slerp(a,b,t){
+ let c=dot(a,b);if(c<0){b=mul(b,-1);c=-c;}
+ if(c>.9995)return unit(add(mul(a,1-t),mul(b,t)));
+ const angle=Math.acos(Math.min(1,c)),den=Math.sin(angle);
+ return add(mul(a,Math.sin((1-t)*angle)/den),mul(b,Math.sin(t*angle)/den));
+}
+function quaternion(loop,p){
+ const f=p*(loop.quat.length-1),i=Math.floor(f),j=Math.min(loop.quat.length-1,i+1);
+ return slerp(loop.quat[i],loop.quat[j],f-i);
+}
+function multiply(a,b){return [...add(add(mul(b.slice(0,3),a[3]),mul(a.slice(0,3),b[3])),cross(a.slice(0,3),b.slice(0,3))),a[3]*b[3]-dot(a.slice(0,3),b.slice(0,3))];}
 function rotate(q,v){if(!q)return v;const u=q.slice(0,3),s=q[3];return add(add(mul(u,2*dot(u,v)),mul(v,s*s-dot(u,u))),mul(cross(u,v),2*s))}
 // Place measured strides end-to-end only within uninterrupted bouts.
 const placed=C.map(c=>({...c,pos:c.pos.map(p=>p.slice())}));
 for(let i=0;i<C.length;i++){
  const start=i&&C[i].bout===C[i-1].bout?placed[i-1].pos.at(-1):[0,0,0];
  placed[i].pos=C[i].pos.map(p=>add(sub(p,C[i].pos[0]),start));
+ // Neutral shoe mounts are estimated independently per stride. Ease that
+ // display-only reference change over the first 150 ms, leaving data intact.
+ if(i&&C[i].bout===C[i-1].bout){
+  const q=C[i].quat[0],offset=multiply(placed[i-1].quat.at(-1),[-q[0],-q[1],-q[2],q[3]]);
+  placed[i].quat=C[i].quat.map((q,k)=>{
+   const t=Math.min(1,k/(C[i].quat.length-1)*C[i].period_s/.15),ease=t*t*(3-2*t);
+   return multiply(slerp(offset,[0,0,0,1],ease),q);
+  });
+ }
 }
-function walkingLoops(i){return placed.filter(c=>c.bout===C[i].bout)}
+function walkingLoops(i){
+ // A bounded trail keeps rendering cost independent of bout duration.
+ return placed.slice(Math.max(0,i-3),i+1).filter(c=>c.bout===C[i].bout);
+}
+// Grid coordinates belong to the world, never to the current stride or pose.
+const gridBounds=placed.reduce((b,c)=>[Math.min(b[0],c.pos[0][0]-5),Math.max(b[1],c.pos.at(-1)[0]+5)],[-5,5]);
+function gridLines(walking,x){
+ const ground=-.08,lo=walking?gridBounds[0]:-1,hi=walking?gridBounds[1]:1,spacing=walking?.5:.1,lines=[];
+ // Cull distant transverse lines, but retain the same world lattice.
+ const first=walking?Math.ceil(Math.max(lo,x-8)/spacing):Math.ceil(lo/spacing);
+ const last=walking?Math.floor(Math.min(hi,x+8)/spacing):Math.floor(hi/spacing);
+ for(let k=first;k<=last;k++)lines.push([[k*spacing,-.5,ground],[k*spacing,.5,ground]]);
+ for(let k=-5;k<=5;k++)lines.push([[lo,k*.1,ground],[hi,k*.1,ground]]);
+ return lines;
+}
+// Clip in 3D before perspective division. Clamping endpoint depths bends
+// segments crossing behind the camera and breaks grid intersections.
+function clipSegment(a,b,eye,forward,near=.05){
+ const da=dot(sub(a,eye),forward),db=dot(sub(b,eye),forward);
+ if(da<near&&db<near)return null;
+ if(da<near)a=add(a,mul(sub(b,a),(near-da)/(db-da)));
+ else if(db<near)b=add(a,mul(sub(b,a),(near-da)/(db-da)));
+ return [a,b];
+}
 function drawScene(){const [ctx,w,h]=canvas('scene');if(!C.length){ctx.fillStyle='#a5b9bb';ctx.fillText('No reliable strides to replay',24,40);return}const walking=$('view').value==='walk',current=walking?placed[index]:C[index],typical=$('view').value==='typical',loops=typical?[D.typical?.early,D.typical?.late].filter(Boolean):walking?walkingLoops(index):[current];
-const points=loops.flatMap(l=>l.pos),xs=points.map(p=>p[0]),target=walking?[(Math.min(...xs)+Math.max(...xs))/2,0,0]:[0,0,0],radius=Math.max(.22,...points.map(p=>Math.hypot(...sub(p,target))));
+const points=loops.flatMap(l=>l.pos),target=walking?sample(current,phase):[0,0,0],radius=walking?1.2:Math.max(.22,...points.map(p=>Math.hypot(...sub(p,target))));
 const distance=Math.max(.9,radius*3)/zoom,eye=add(target,[Math.sin(yaw)*Math.cos(elevation)*distance,Math.cos(yaw)*Math.cos(elevation)*distance,Math.sin(elevation)*distance]),forward=unit(sub(target,eye)),right=unit(cross(forward,[0,0,1])),up=cross(right,forward),scale=Math.min(w,h)*1.15;
-const project=p=>{const v=sub(p,eye),depth=Math.max(.05,dot(v,forward));return [w/2+dot(v,right)*scale/depth,h/2-dot(v,up)*scale/depth,depth]};
-function line(a,b,col,width=1){const p=project(a),q=project(b);ctx.strokeStyle=col;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke()}
-function path(points,col,width=2,close=false){if(points.length<2)return;ctx.strokeStyle=col;ctx.lineWidth=width;ctx.beginPath();points.forEach((p,i)=>{const q=project(p);i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1])});if(close)ctx.closePath();ctx.stroke()}
+const project=p=>{const v=sub(p,eye),depth=dot(v,forward);return [w/2+dot(v,right)*scale/depth,h/2-dot(v,up)*scale/depth,depth]};
+function line(a,b,col,width=1){const clipped=clipSegment(a,b,eye,forward);if(!clipped)return;const p=project(clipped[0]),q=project(clipped[1]);ctx.strokeStyle=col;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke()}
+function path(points,col,width=2,close=false){for(let i=1;i<points.length;i++)line(points[i-1],points[i],col,width);if(close&&points.length>1)line(points.at(-1),points[0],col,width)}
 function circle(center,r,col,plane='xz'){path(Array.from({length:73},(_,i)=>{const a=i/72*Math.PI*2;return add(center,plane==='xz'?[r*Math.cos(a),0,r*Math.sin(a)]:[r*Math.cos(a),r*Math.sin(a),0])}),col,1)}
-const ground=-0.08,lo=walking?Math.floor(Math.min(...xs)):-1,hi=walking?Math.ceil(Math.max(...xs)):1,spacing=walking?.5:.1;
-for(let x=lo;x<=hi;x+=spacing)line([x,-.5,ground],[x,.5,ground],'#27383d');
-for(let y=-.5;y<=.51;y+=.1)line([lo,y,ground],[hi,y,ground],'#27383d');
-line([0,0,ground],[.25,0,ground],'#87a0a6',2);line([0,0,ground],[0,.25,ground],'#668b77',2);line([0,0,ground],[0,0,ground+.25],'#b3977f',2);
-loops.forEach((loop,i)=>{const active=!walking||loop===current,col=typical?(i?'#ffad82':'#9de6ae'):active?'#9de6ae':'#49665b';path(loop.pos,col,active?2.5:1.5,false);
-if(walking){const p=loop.pos[0];path([[-.19,-.045,0],[.06,-.045,0],[.09,.045,0],[-.19,.045,0]].map(v=>add(p,v)),'#63776f',1,true);if(!active)return;}const pos=sample(loop,phase),p=project(pos);ctx.fillStyle=col;ctx.beginPath();ctx.arc(p[0],p[1],5,0,Math.PI*2);ctx.fill();if(!typical){const fi=Math.min((loop.quat?.length||1)-1,Math.round(phase*((loop.quat?.length||1)-1))),q=loop.quat?.[fi],points=[[-.19,-.045,-.035],[.06,-.045,-.035],[.09,.045,-.035],[-.19,.045,-.035]],corners=points.map(v=>add(pos,rotate(q,v)));path(corners,'#dbe6eb',2,true);path(points.map(v=>add(pos,rotate(q,add(v,[0,0,-.035])))),'#70878d',1,true);for(let j=0;j<4;j++)line(corners[j],add(pos,rotate(q,add(points[j],[0,0,-.035]))),'#70878d');line(pos,add(pos,rotate(q,[.1,0,0])),'#ffad82',2)}});
+for(const [a,b] of gridLines(walking,target[0]))line(a,b,'#27383d');
+// The axis marker stays at the world origin; hide it once outside the view.
+if(!walking||Math.abs(target[0])<5){const origin=[0,0,-.08];line(origin,add(origin,[.25,0,0]),'#87a0a6',2);line(origin,add(origin,[0,.25,0]),'#668b77',2);line(origin,add(origin,[0,0,.25]),'#b3977f',2);}
+loops.forEach((loop,i)=>{const active=!walking||loop===current,col=typical?(i?'#ffad82':'#9de6ae'):active?'#9de6ae':'#49665b';path(walking&&active?loop.pos.slice(0,Math.floor(phase*(loop.pos.length-1))+1).concat([sample(loop,phase)]):loop.pos,col,active?2.5:1.5,false);
+if(walking){const p=loop.pos[0];path([[-.19,-.045,0],[.06,-.045,0],[.09,.045,0],[-.19,.045,0]].map(v=>add(p,v)),'#63776f',1,true);if(!active)return;}const pos=sample(loop,phase),p=project(pos);ctx.fillStyle=col;ctx.beginPath();ctx.arc(p[0],p[1],5,0,Math.PI*2);ctx.fill();if(!typical){const q=quaternion(loop,phase),points=[[-.19,-.045,-.035],[.06,-.045,-.035],[.09,.045,-.035],[-.19,.045,-.035]],corners=points.map(v=>add(pos,rotate(q,v)));path(corners,'#dbe6eb',2,true);path(points.map(v=>add(pos,rotate(q,add(v,[0,0,-.035])))),'#70878d',1,true);for(let j=0;j<4;j++)line(corners[j],add(pos,rotate(q,add(points[j],[0,0,-.035]))),'#70878d');line(pos,add(pos,rotate(q,[.1,0,0])),'#ffad82',2)}});
 ctx.font='12px system-ui';ctx.fillStyle='#a5b9bb';ctx.fillText(typical?'Typical strides · early / late':walking?'Consecutive measured strides · foot plants shown along the lane':'Measured tag stride · shoe mounting illustrative',14,24);ctx.fillText(walking?'Lane marks: 50 cm · straight heading assumed':'Grid: 10 cm · forward displacement centred per stride',14,h-16);
 }
 function timeline(){const [ctx,w,h]=canvas('timeline');if(!C.length)return;const end=D.duration_s||C.at(-1).t_s+1,x=t=>42+t/end*(w-60),y=r=>h-25-r/240*(h-45);ctx.font='11px system-ui';for(let rpm=0;rpm<=240;rpm+=60){ctx.fillStyle='#a5b9bb';ctx.fillText(String(rpm),5,y(rpm)+3);ctx.strokeStyle='#334448';ctx.beginPath();ctx.moveTo(38,y(rpm));ctx.lineTo(w-15,y(rpm));ctx.stroke()}C.forEach((c,i)=>{ctx.fillStyle=i===index?'#fff':'#9de6ae';ctx.beginPath();ctx.arc(x(c.t_s),y(c.rpm),i===index?4:2,0,Math.PI*2);ctx.fill()});ctx.fillStyle='#a5b9bb';for(let i=0;i<=4;i++)ctx.fillText(time(end*i/4),x(end*i/4)-10,h-5);ctx.fillText('steps/min',3,12)}
