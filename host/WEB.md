@@ -20,9 +20,13 @@ a differently packed copy of the same session can appear twice.
 Walking, cycling and skating reports are queued automatically. One analysis
 runs at a time in a separate process; the library stays responsive. Select
 recordings and choose **Generate view** for a report, raw-signal overview,
-walking/cycling 3D replay, or walking/skating comparison. Raw overviews show
+walking/cycling/skating 3D replay, or walking/skating comparison. Each recording
+also has explicit **Report**, **3D replay**, and **Raw signals** actions; an
+unbuilt view has a Generate button, queued views show progress, and completed
+views have an Open link. Raw overviews show
 the first tag in a recording. Comparisons require
-recordings of the same activity; cycling and raw/3D views take one recording.
+recordings of the same activity; cycling, walking 3D and raw views take one recording. Skating 3D also supports
+multiple selected skating recordings.
 Unknown activity recordings support the raw overview but are not automatically
 classified. Analysis failures show their details and a Retry button.
 
@@ -35,8 +39,8 @@ upgrade, launch with a fresh `--library` directory and import again.
 **Open** displays a cached interactive page. **Download offline** saves that
 page with its data embedded: send the HTML file or open it locally without the
 server or internet. These views reuse the existing report renderers and retain
-their quality checks and scientific limitations. The older CDN-dependent skating
-3D renderer is not offered here; skating reports are available offline.
+their quality checks and scientific limitations. The skating 3D view embeds the pinned Three.js renderer and orbit controls
+(with their MIT license), and uses system fonts, so it also works offline.
 
 The library owns its recordings, generated HTML and job logs in one directory;
 there is no need to manage individual output files. Back up that entire directory

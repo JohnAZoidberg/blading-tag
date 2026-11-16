@@ -27,7 +27,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-bladetag = ["*.html"]
+bladetag = ["*.html", "vendor/*.js", "vendor/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

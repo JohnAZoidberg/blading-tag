@@ -83,3 +83,35 @@ def test_http_upload_and_origin_guard(tmp_path):
         server.server_close()
         thread.join()
         library.pool.shutdown(wait=True)
+
+
+def test_skating_3d_renders_and_embeds_offline_dependencies(tmp_path, monkeypatch):
+    from importlib import resources
+    from types import SimpleNamespace
+    from bladetag import web
+
+    library = Library(tmp_path / 'library')
+    library.state['datasets']['skate'] = dict(activity='skating')
+    calls = []
+
+    def render(command, **kwargs):
+        calls.append(command)
+        output = command[command.index('-o') + 1]
+        template = resources.files('bladetag').joinpath('viz3d_template.html').read_text()
+        from pathlib import Path
+        Path(output).write_text(template)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(web.subprocess, 'run', render)
+    identity = library.enqueue('viz3d', ['skate'])
+    library.pool.shutdown(wait=True)
+    assert library.state['jobs'][identity]['status'] == 'ready'
+    assert calls[0][3] == 'viz3d'
+    page = (library.root / 'reports' / identity / 'index.html').read_text()
+    assert '<script src=' not in page
+    assert 'https://fonts.googleapis.com' not in page
+    assert 'THREE.OrbitControls' in page
+    assert 'Permission is hereby granted' in page
+    assert library.enqueue('viz3d', ['skate']) == identity
+    with pytest.raises(ValueError, match='cycling'):
+        library.enqueue('cycling3d', ['skate'])

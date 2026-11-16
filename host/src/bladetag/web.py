@@ -16,7 +16,7 @@ import threading
 from urllib.parse import unquote, urlsplit
 import zipfile
 
-KINDS = {'walking-report', 'cycling-report', 'report', 'walking3d', 'cycling3d', 'overview'}
+KINDS = {'walking-report', 'cycling-report', 'report', 'walking3d', 'cycling3d', 'viz3d', 'overview'}
 DEFAULTS = {'walking': 'walking-report', 'cycling': 'cycling-report', 'skating': 'report'}
 
 
@@ -87,10 +87,10 @@ class Library:
         with self.lock:
             if any(i not in self.state['datasets'] for i in ids):
                 raise ValueError('Unknown recording')
-            if kind not in ('report', 'walking-report') and len(ids) != 1:
+            if kind not in ('report', 'walking-report', 'viz3d') and len(ids) != 1:
                 raise ValueError('This view needs exactly one recording')
             expected = {'report': 'skating', 'walking-report': 'walking', 'walking3d': 'walking',
-                        'cycling-report': 'cycling', 'cycling3d': 'cycling'}.get(kind)
+                        'cycling-report': 'cycling', 'cycling3d': 'cycling', 'viz3d': 'skating'}.get(kind)
             if expected and any(self.state['datasets'][i]['activity'] != expected for i in ids):
                 raise ValueError(f'This view needs {expected} recordings')
             key = hashlib.sha256(json.dumps([kind, ids]).encode()).hexdigest()[:24]
@@ -123,6 +123,8 @@ class Library:
                 result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=3600)
             if result.returncode or not output.is_file():
                 raise ValueError((folder / 'analysis.log').read_text()[-4000:] or 'Analysis produced no page')
+            if job['kind'] == 'viz3d':
+                output.write_text(offline_skating(output.read_text()))
             with self.lock:
                 job['status'] = 'ready'
                 self.save()
@@ -130,6 +132,20 @@ class Library:
             with self.lock:
                 job.update(status='failed', error=str(exc))
                 self.save()
+
+
+def offline_skating(page):
+    """Embed pinned renderer dependencies; no network is needed to view/export."""
+    import re
+    for name in ('three.min.js', 'OrbitControls.js'):
+        url = ('https://cdn.jsdelivr.net/npm/three@0.147.0/' +
+               ('build/' if name == 'three.min.js' else 'examples/js/controls/') + name)
+        script = resources.files('bladetag').joinpath('vendor', name).read_text()
+        script = script.replace('</script', '<\\/script')
+        page = page.replace(f'<script src="{url}"></script>', '<script>' + script + '</script>')
+    page = re.sub(r'<link[^>]*https://fonts.googleapis.com[^>]*>\n?', '', page)
+    license_text = resources.files('bladetag').joinpath('vendor', 'THREE-LICENSE.txt').read_text()
+    return page.replace('</head>', '<!-- Three.js license\n' + license_text + '\n-->\n</head>')
 
 
 class Handler(BaseHTTPRequestHandler):
