@@ -89,8 +89,12 @@ def stance_anchors(df: pd.DataFrame, fs: float, still: np.ndarray | None = None,
     return anchors[vib[anchors] < p.stance_vib_g]
 
 
-def strides(df: pd.DataFrame, fs: float, still: np.ndarray | None = None, p: Params = Params()) -> pd.DataFrame:
+def strides(df: pd.DataFrame, fs: float, still: np.ndarray | None = None, p: Params = Params(),
+            *, trajectories: list | None = None) -> pd.DataFrame:
     """One row per stride of the tag's foot.
+
+    If supplied, ``trajectories`` receives the time, position and orientation
+    arrays for each returned stride, in the same order.
 
     Columns: t_s (the plant it starts at), period_s, stride_m (horizontal
     distance to the next plant), step_m (half of that), speed_kmh, dz_m
@@ -125,6 +129,8 @@ def strides(df: pd.DataFrame, fs: float, still: np.ndarray | None = None, p: Par
         v = np.concatenate([[np.zeros(3)], np.cumsum(0.5 * (aw[1:] + aw[:-1]) * dt, axis=0)])
         v -= np.outer(np.linspace(0, 1, len(v)), v[-1])
         pos = np.concatenate([[np.zeros(3)], np.cumsum(0.5 * (v[1:] + v[:-1]) * dt, axis=0)])
+        if trajectories is not None:
+            trajectories.append((t[i0:i1 + 1].copy(), pos, rs))
         disp = pos[-1]
         length = float(np.hypot(disp[0], disp[1]))
         gait = _gait(rs, v, pos, df["a_mag"].to_numpy()[i0:i1 + 1], df["g_mag"].to_numpy()[i0:i1 + 1], dt)

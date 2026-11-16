@@ -89,6 +89,49 @@ shift-drag to zoom to a range, double-click for the whole session; the
 legend buttons hide axes, hovering reads out the values, and the URL keeps
 the zoomed range (`overview.html#t=230-360`).
 
+### Walking in 3D
+
+```sh
+bladetag walking3d SESSION -o walking3d.html
+bladetag walking3d SESSION --tag right_foot --title "Evening walk"
+```
+
+Open the generated page locally; it works offline. Drag to orbit, use the
+side/top views, scrub through a stride, select a stride on the cadence timeline,
+or compare typical early and late strides. The default walking sequence places
+up to six consecutive measured strides end-to-end, with faded shoes marking
+foot plants. Playback advances along the lane and resets at gaps or the next
+bout. The lane assumes straight travel; route curvature is unknown. Up to 600
+strides are retained in consecutive groups. The selected foot must be labelled `left_foot` or
+`right_foot`; the first labelled foot is used by default.
+
+Paths use the same zero-velocity updates at foot plants as walking analysis,
+with measured scale and an open path from one plant to the next. Each stride
+contains two steps; cadence is shown in steps/min. Heading is local to each
+stride. The dot follows the tag; the shoe mount is illustrative, and a tag on
+the shin measures shin rotation. Height error is retained rather than forced
+flat. Early/late differences can reflect pace, terrain and mounting.
+
+### Walking report
+
+```sh
+bladetag walking-report sessions -o walking.html
+bladetag walking-report sessions/session-20261115-110445 -o supermarket-walk.html
+```
+
+Open the self-contained HTML locally; it works offline. A folder of sessions
+includes only recordings labelled walking. Select a walk to inspect GPS pace,
+heart rate, route, accepted strides, gait distributions, and speed-matched
+first/second-half changes. Scatter controls compare stride measures; shoe
+summaries compare the same labelled foot at 4.5 km/h, with each walk weighted
+equally. Single-walk groups cannot establish a shoe effect.
+
+GPS/HR-only walks remain useful context but have no gait estimates. Simulated
+tags, unreliable clock fits, samples outside the recording, and strides touching
+sensor saturation are excluded. GPS distance covers valid intervals only;
+accepted strides are not a complete step count. Landing acceleration is a sensor
+estimate, affected by pace, surface and mounting, rather than a cushioning test.
+
 **Walking.** When the tag is worn walking, the summary also gives the stride
 length (from one plant of the tag's foot to the next; a step is about half
 of it), the walking speed, the distance compared with GPS, and the gait:

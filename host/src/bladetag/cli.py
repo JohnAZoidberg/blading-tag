@@ -347,6 +347,18 @@ def _analyze_skating(a, s, tags):
                 plot_raw(r, a.raw_at, path=_suffixed(a.raw, suffix))
 
 
+def cmd_walking_report(a):
+    from .walking_report import write_report
+    try:
+        result = write_report(a.sessions, a.output, a.title or "Walking · a closer look",
+                              progress=lambda message: print(message, file=sys.stderr))
+    except ValueError as exc:
+        _die(str(exc))
+    for finding in result['findings']:
+        print(finding)
+    print(f"\nwrote {a.output} (open it in a browser; works offline)")
+
+
 def cmd_cycling_report(a):
     from .cycling import write_report
     from .session import load_session
@@ -453,6 +465,18 @@ def cmd_explore(a):
         import matplotlib.pyplot as plt
 
         plt.show()
+
+
+def cmd_walking3d(a):
+    from .walking3d import write_report
+    from .session import load_session
+    try:
+        session = load_session(a.session)
+        _warn_simulated(session)
+        write_report(session, a.output, a.title or "Walking stride replay", tag=a.tag)
+    except ValueError as exc:
+        _die(str(exc))
+    print(f"wrote {a.output} (open it locally; works offline)")
 
 
 def cmd_cycling3d(a):
@@ -692,6 +716,12 @@ def main(argv=None):
     c.add_argument("--title", help="page title")
     c.set_defaults(fn=cmd_report)
 
+    c = sub.add_parser("walking-report", help="walking sessions: gait, pace, heart rate, coverage and comparisons")
+    c.add_argument("sessions", nargs="+", help="walking sessions, ZIPs, or a folder of sessions")
+    c.add_argument("-o", "--output", default="walking.html", help="self-contained offline page to write")
+    c.add_argument("--title", help="page title")
+    c.set_defaults(fn=cmd_walking_report)
+
     c = sub.add_parser("cycling-report", help="cycling ride: GPS route, speed, heart rate, stops and kilometre splits")
     c.add_argument("session", help="session folder or .zip file")
     c.add_argument("-o", "--output", default="cycling.html", help="self-contained page to write (default: cycling.html)")
@@ -703,6 +733,13 @@ def main(argv=None):
     c.add_argument("-o", "--output", default="cycling3d.html", help="offline page to write")
     c.add_argument("--title", help="page title")
     c.set_defaults(fn=cmd_cycling3d)
+
+    c = sub.add_parser("walking3d", help="3D walking stride replay with early/late comparison")
+    c.add_argument("session", help="walking session folder or .zip file")
+    c.add_argument("--tag", choices=["left_foot", "right_foot"], help="foot to replay (default: first foot tag)")
+    c.add_argument("-o", "--output", default="walking3d.html", help="offline page to write")
+    c.add_argument("--title", help="page title")
+    c.set_defaults(fn=cmd_walking3d)
 
     a = ap.parse_args(argv)
     a.fn(a)
