@@ -422,10 +422,26 @@ OpenTopoMap. Those work from a local file without an API key; CARTO serves
 Referer. Opening the page tells the tile provider the ride area. Pick "None"
 to draw the route without tiles; everything else works offline.
 
+GPS drops out in tunnels. When that happens, the rest of the bladetag tools
+count no distance and the profile shows a cliff, so `ride-map` fills each
+blackout along OpenStreetMap roads. It takes the shortest road path between
+the last good fix before the gap and the first good fix after it, and spreads
+the time evenly along that path at constant speed. Roads tagged as closed to
+bicycles are avoided unless the implied speed fits them better. Inside a gap,
+and for 10 s on either side where GPS altitude near a portal is unreliable,
+the altitude is a straight line between the portals. The command prints every
+gap with its road name and tunnel share so you can check it, and the page
+lists them too. Gaps under 50 m are stops, and the position is just held.
+Only small boxes around the gaps go to the Overpass API, in one request per
+ride, and the answer is cached in `~/.cache/bladetag/osm`. With `--no-osm`, or
+when Overpass can't be reached, a gap's distance is the speed around it times
+its duration, drawn as a straight line. Distances then differ from
+`cycling-report`, which still leaves gaps out.
+
 Elevation is the phone's GPS altitude, the height above the WGS84 ellipsoid,
 which differs from sea level by up to tens of metres. It is smoothed along
 distance (±60 m median, then mean). Climbing totals add the legs between
-turning points at least 3 m apart, and grade is the rise over ±50 m. A climb
+turning points at least 3 m apart, and grade is the rise over ±100 m. A climb
 gains at least 25 m at 2 % or more, and dips under 10 m don't split it. These
 are estimates without a barometer; short steep ramps get flattened.
 
@@ -488,6 +504,7 @@ The model is only meant to exercise the code. Don't tune thresholds on it.
 | `skating.py` | skating measures per stroke (impact, push-off, GPS), correlations, speed matching, same-place pairs, coasts |
 | `report.py`, `report.html` | `report`: several skating sessions on one page, findings in words |
 | `ride_map.py`, `ride_map.html` | `ride-map`: GPS/HR rides on a basemap, GPS-altitude profile, climbs |
+| `road_fill.py` | fills GPS gaps (tunnels) along OpenStreetMap roads for `ride-map` |
 | `viz3d.py`, `viz3d_template.html` | `viz3d`: skate path and angles per stroke, the 3D replay page |
 | `liveplot.py` | live plot during recording |
 | `cli.py` | the `bladetag` command |

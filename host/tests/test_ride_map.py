@@ -55,21 +55,89 @@ def test_hysteresis_and_pivots():
     assert [round(a[i]) for i in p] == [0, 80, 20]
 
 
-def test_gap_breaks_profile_and_missing_altitude(tmp_path):
-    r = analyze(ride(tmp_path, gap=(400, 500)))
-    alt = r['points']['alt']
-    t = r['points']['t']
-    assert all(a is None for a, s in zip(alt, t) if 405 <= s < 495)
-    none = analyze(ride(tmp_path, alt=lambda t: np.full(len(t), np.nan)))
+def test_gap_without_roads_is_estimated_from_speed(tmp_path):
+    r = analyze(ride(tmp_path, gap=(400, 500)), roads=False)
+    (g,) = r['gaps']
+    assert g['method'] == 'speed' and g['note'] == 'road matching off'
+    assert g['length_m'] == pytest.approx(5 * (g['t1_s'] - g['t0_s']))
+    s = r['summary']
+    assert s['distance_km'] == pytest.approx(4.5, abs=.03)   # nothing lost in the gap
+    assert s['filled_km'] == pytest.approx(g['length_m'] / 1000) and s['road_km'] == 0
+    assert s['gps_coverage'] == pytest.approx(.9, abs=.02)    # real fixes only
+    p = r['points']
+    inside = [i for i, t in enumerate(p['t']) if 405 <= t < 495]
+    assert all(p['fill'][i] == 2 for i in inside)
+    assert all(p['alt'][i] is not None for i in inside)       # interpolated, profile unbroken
+    # Default (online) mode falls back the same way when Overpass is unreachable.
+    offline = analyze(ride(tmp_path, gap=(400, 500)))
+    assert offline['gaps'][0]['method'] == 'speed' and 'network disabled' in offline['gaps'][0]['note']
+
+
+def test_missing_altitude(tmp_path):
+    none = analyze(ride(tmp_path, alt=lambda t: np.full(len(t), np.nan)), roads=False)
     assert none['summary']['alt_max_m'] is None
     assert none['climbs'] == []
     assert any('No usable GPS altitude' in f for f in none['findings'])
 
 
+M_LAT = 1 / 111_320
+M_LON = 1 / (111_320 * np.cos(np.radians(24.5)))
+
+
+def l_ride(tmp_path):
+    """North 1500 m, then east 1500 m, at 5 m/s; a 100 s tunnel around the corner."""
+    t = np.arange(600, dtype=float)
+    keep = (t < 250) | (t >= 350)
+    t = t[keep]
+    gps = np.full(len(t), np.nan, dtype=[(c, 'f8') for c in GPS_COLUMNS])
+    gps['elapsed_ns'] = ORIGIN + t * 1e9
+    gps['speed_mps'], gps['h_acc_m'], gps['speed_acc_mps'] = 5, 4, .5
+    north = np.minimum(t, 300) * 5
+    east = np.maximum(t - 300, 0) * 5
+    gps['lat'] = 24.5 + north * M_LAT
+    gps['lon'] = 121.8 + east * M_LON
+    # 30 m climb up to the corner, then flat; portal fixes are 15 m off.
+    gps['alt_m'] = np.minimum(north, 1500) / 50
+    gps['alt_m'][(t >= 240) & (t < 250) | (t >= 350) & (t < 360)] += 15
+    return Session(tmp_path, dict(start_elapsed_ns=ORIGIN, end_elapsed_ns=ORIGIN + 600e9,
+                                  start_utc='2026-11-22T00:00:00Z', activity='cycling'), [], gps, heart_rate=[])
+
+
+def way(i, tags, pts):
+    return dict(type='way', id=i, tags=tags, nodes=[f'{i}-{k}' for k in range(len(pts))],
+                geometry=[dict(lat=24.5 + n * M_LAT, lon=121.8 + e * M_LON) for n, e in pts])
+
+
+def test_gap_follows_the_road_not_a_shortcut(tmp_path):
+    corner = [(n, 0) for n in range(0, 1501, 100)] + [(1500, e) for e in range(100, 1501, 100)]
+    roads = [way(1, dict(highway='primary', ref='9', name='Coast Road', tunnel='yes'), corner),
+             # Shorter, but closed to bikes, and its implied speed wouldn't fit either.
+             way(2, dict(highway='primary', bicycle='no'), [(1200, 0), (1500, 300)])]
+    asked = []
+    r = analyze(l_ride(tmp_path), roads=lambda boxes: asked.append(boxes) or roads)
+    assert len(asked) == 1 and len(asked[0]) == 1
+    (g,) = r['gaps']
+    assert g['method'] == 'road' and g['road'] == '9 Coast Road' and g['bikes_allowed']
+    assert g['tunnel_share'] == pytest.approx(1)
+    assert g['length_m'] == pytest.approx(101 * 5, abs=5)      # along the road, not the 357 m diagonal
+    assert r['summary']['distance_km'] == pytest.approx(3.0, abs=.03)
+    assert r['summary']['tunnel_km'] == pytest.approx(.505, abs=.01)
+    p = r['points']
+    lat, lon = np.array(p['lat'], float), np.array(p['lon'], float)
+    inside = [i for i, t in enumerate(p['t']) if 255 <= t < 345]
+    # Every filled point lies on one of the two legs.
+    off = np.minimum(np.abs(lon[inside] - 121.8) / M_LON, np.abs(lat[inside] - (24.5 + 1500 * M_LAT)) / M_LAT)
+    assert off.max() < 15
+    # Portal fixes' bad altitude is replaced by a ramp from ~29 m to the flat 30 m.
+    alt = np.array([np.nan if a is None else a for a in p['alt']], float)
+    near = [i for i, t in enumerate(p['t']) if 230 <= t < 370]
+    assert np.nanmax(alt[near]) < 32
+
+
 def test_page_is_safe_and_only_fetches_tiles(tmp_path):
     out = tmp_path / 'map.html'
     rides = write_report([ride(tmp_path, start='2026-11-22T06:00:00Z'), ride(tmp_path)], out,
-                         title='</script><script>alert(1)</script>')
+                         title='</script><script>alert(1)</script>', roads=False)
     assert [r['start_utc'] for r in rides] == ['2026-11-22T00:00:00Z', '2026-11-22T06:00:00Z']
     html = out.read_text()
     assert '__RIDE_DATA__' not in html

@@ -487,13 +487,19 @@ def cmd_ride_map(a):
         sessions = [load_session(p) for p in a.sessions]
         for session in sessions:
             _warn_simulated(session)
-        rides = write_report(sessions, a.output, a.title)
+        rides = write_report(sessions, a.output, a.title, roads=False if a.no_osm else None)
     except ValueError as exc:
         _die(str(exc))
     for ride in rides:
         print(f"{ride['session']}:")
-        for finding in ride["findings"][3:]:
+        for finding in [ride["findings"][0], *ride["findings"][3:]]:
             print(f"  {finding}")
+        for g in ride["gaps"]:
+            if g["method"] == "stop":
+                continue
+            road = f"{g['road']} ({100 * (g['tunnel_share'] or 0):.0f}% tunnel)" if g["method"] == "road" else g["note"]
+            print(f"    gap at {g['t0_s'] / 60:5.1f} min, {g['duration_s']:4.0f} s: {g['length_m']:5.0f} m"
+                  f" at {g['speed_kmh']:4.1f} km/h, {g['method']}: {road}")
     print(f"\nwrote {a.output} (basemap tiles load from the internet; the rest works offline)")
 
 
@@ -750,6 +756,8 @@ def main(argv=None):
     c.add_argument("sessions", nargs="+", help="session folders or .zip files (several get a ride selector)")
     c.add_argument("-o", "--output", default="ride-map.html", help="page to write (default: ride-map.html)")
     c.add_argument("--title", help="page title")
+    c.add_argument("--no-osm", action="store_true",
+                   help="don't fetch OpenStreetMap roads for GPS gaps (tunnels); estimate them from the speed around them")
     c.set_defaults(fn=cmd_ride_map)
 
     c = sub.add_parser("cycling3d", help="3D foot motion replay: measured pedal loops and early/late comparison")

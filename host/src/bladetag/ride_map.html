@@ -62,6 +62,7 @@ details{color:var(--muted)}summary{cursor:pointer;color:var(--text);font-weight:
  <section class="panel"><div class="controls"><h2>Climbs</h2><small>click a row to select it</small></div><div class="scroll"><table id="climbs"></table></div></section>
  <section class="panel"><div class="controls"><h2>Speed and heart rate by grade</h2></div><div class="scroll"><table id="bands"></table></div></section>
 </div>
+<section class="panel" id="gapspanel" style="margin-top:18px"><div class="controls"><h2>GPS gaps</h2><small>tunnels and other blackouts, filled along OpenStreetMap roads (© OpenStreetMap contributors) · click a row to select it</small></div><div class="scroll"><table id="gaps"></table></div></section>
 <section class="panel" style="margin-top:18px"><details><summary>How this is calculated</summary><ul id="methods"></ul></details></section>
 </main>
 <script id="data" type="application/json">__RIDE_DATA__</script>
@@ -124,7 +125,8 @@ function prepColours(){
  buckets=[...m].map(([k,idx])=>({colour:k===-1?'#6b7b7e':mode==='grade'?div(k/2):seq(k/B),idx}));
  const lg=$('#legend');lg.replaceChildren(el('div',`${NAMES[mode]} (${UNITS[mode]})`));const bar=el('div',null,'bar');
  bar.style.background=mode==='grade'?`linear-gradient(90deg,${[-10,-5,-2,0,2,5,10].map(g=>div(g)).join(',')})`:`linear-gradient(90deg,${SEQ.join(',')})`;
- const ends=el('div',null,'ends');ends.append(el('span',fmt(domain[0],mode==='grade'?0:0)),el('span',mode==='grade'?'0':''),el('span',(mode==='grade'?'+':'')+fmt(domain[1],0)));lg.append(bar,ends)}
+ const ends=el('div',null,'ends');ends.append(el('span',fmt(domain[0],mode==='grade'?0:0)),el('span',mode==='grade'?'0':''),el('span',(mode==='grade'?'+':'')+fmt(domain[1],0)));lg.append(bar,ends);
+ if(P.fill&&P.fill.some(Boolean)){const k=el('div',null,'ends');k.style.marginTop='6px';const m=el('span',null,'key-line');m.style.borderTop='3px dashed #e5eeee';m.style.marginRight='6px';const w=el('span');w.append(m,'GPS gap, along the road');k.append(w);lg.append(k)}}
 const joined=(i)=>WORLD[RI][i]&&WORLD[RI][i-1]&&P.t[i]-P.t[i-1]<=GAP_S;
 let RI=0;
 function strokeIdx(ctx,idx,pts){ctx.beginPath();for(const i of idx){if(!joined(i))continue;const a=pts[i-1],b=pts[i];ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1])}ctx.stroke()}
@@ -142,6 +144,8 @@ function drawMap(){const ctx=map.c.getContext('2d');ctx.setTransform(map.dpr,0,0
  for(const pass of sel?[0,1]:[1]){ctx.globalAlpha=pass?1:.3;ctx.lineWidth=pass?4:3;
   for(const b of buckets){ctx.strokeStyle=b.colour;strokeIdx(ctx,sel?b.idx.filter(i=>inSel(i)===!!pass):b.idx,pts)}}
  ctx.globalAlpha=1;
+ // GPS gaps filled along the road: dark dashes over the colour, so they read as striped.
+ const fillIdx=all.filter(i=>P.fill&&P.fill[i]&&inSel(i));if(fillIdx.length){ctx.setLineDash([5,6]);ctx.lineCap='butt';ctx.strokeStyle='rgba(11,17,19,.85)';ctx.lineWidth=4.5;strokeIdx(ctx,fillIdx,pts);ctx.setLineDash([]);ctx.lineCap='round'}
  const dot=(p,fill,r=6)=>{if(!p)return;ctx.beginPath();ctx.arc(p[0],p[1],r,0,7);ctx.fillStyle=fill;ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#0b1113';ctx.stroke()};
  const first=pts.findIndex(Boolean),last=pts.length-1-[...pts].reverse().findIndex(Boolean);
  if(first>=0){dot(pts[first],'#9de6ae',7);dot(pts[last],'#ff6f6f',7)}
@@ -188,6 +192,7 @@ function drawProfile(){const c=prof.c,ctx=c.getContext('2d'),W=prof.W,H=prof.H,{
  for(let i=Math.max(i0,1);i<=i1;i++){const a=P.alt[i],b=P.alt[i-1];if(a==null||b==null||P.t[i]-P.t[i-1]>GAP_S)continue;const xa=X(P.d[i-1]),xb=X(P.d[i]);if(xb-xa<=0)continue;
   ctx.fillStyle=P.grade[i]==null?'#465a5e':div(P.grade[i]);ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(xa,Y(b));ctx.lineTo(xb,Y(a));ctx.lineTo(xb,T+ph);ctx.lineTo(xa,T+ph);ctx.fill()}
  ctx.globalAlpha=1;line(ctx,i0,i1,P.alt,X,Y,'#e5eeee',1.8);
+ if(P.fill){ctx.save();ctx.setLineDash([4,4]);ctx.strokeStyle='#192326';ctx.lineWidth=2.6;ctx.beginPath();for(let i=Math.max(i0,1);i<=i1;i++){if(!P.fill[i]||P.alt[i]==null||P.alt[i-1]==null)continue;ctx.moveTo(X(P.d[i-1]),Y(P.alt[i-1]));ctx.lineTo(X(P.d[i]),Y(P.alt[i]))}ctx.stroke();ctx.restore()}
  // overlay on right axis
  if(overlay!=='none'){const v=P[overlay];let o0=pct(v.slice(i0,i1+1),.01),o1=pct(v.slice(i0,i1+1),.99);if(o1>o0){const op=(o1-o0)*.1;o0-=op;o1+=op;const OY=x=>T+ph-(x-o0)/(o1-o0)*ph;const col=overlay==='hr'?'#ffad82':'#9de6ae';
   const k=Math.max(1,Math.round((i1-i0)/pw*3)),sm=v.map((_,i)=>{if(i<i0-k||i>i1+k)return null;let s=0,c=0;for(let j=Math.max(0,i-k);j<=Math.min(N-1,i+k);j++)if(v[j]!=null&&Math.abs(P.t[j]-P.t[i])<=GAP_S*k){s+=v[j];c++}return c?s/c:null});
@@ -207,7 +212,7 @@ prof.c.addEventListener('pointerleave',()=>{if(!prof.drag)setHover(-1)});
 $('#reset').onclick=()=>{select(null)};
 
 /* ---------- readouts, selection ---------- */
-function setHover(i){if(i===hover)return;hover=i;const txt=i<0?null:[['',clock(P.t[i])],['km ',fmt(P.d[i],2)],['',fmt(P.speed[i],1)+' km/h'],['',fmt(P.hr[i])+' bpm'],['',fmt(P.alt[i])+' m'],['grade ',(P.grade[i]>0?'+':'')+fmt(P.grade[i],1)+' %']];
+function setHover(i){if(i===hover)return;hover=i;const txt=i<0?null:[['',clock(P.t[i])],['km ',fmt(P.d[i],2)],['',fmt(P.speed[i],1)+' km/h'],['',fmt(P.hr[i])+' bpm'],['',fmt(P.alt[i])+' m'],['grade ',(P.grade[i]>0?'+':'')+fmt(P.grade[i],1)+' %']];if(i>=0&&P.fill&&P.fill[i])txt.push(['',P.fill[i]===1?'GPS gap: along the road, interpolated':'GPS gap: estimated']);
  for(const id of['#readout1','#readout2']){const r=$(id);if(!txt){r.textContent=id==='#readout1'?'Hover the route or the profile.':'Drag across the profile to select a stretch; the map follows.';continue}r.replaceChildren();txt.forEach(([k,v],j)=>{if(j)r.append(' · ');r.append(k,el('b',v))})}
  redraw()}
 // Same as ride_map.climb_descent: sum the legs between turning points ≥3 m apart, per gap-free run.
@@ -235,6 +240,7 @@ function profileLegend(){const box=$('#plegend');box.replaceChildren();
  const key=(cls,style,text)=>{const k=el('span'),m=el('span',null,cls);Object.assign(m.style,style);k.append(m,text);box.append(k)};
  key('key-band',{background:'#465a5e',opacity:.55},'no grade');
  key('key-line',{borderColor:'#e5eeee'},'GPS altitude (left axis)');
+ if(P&&P.fill&&P.fill.some(Boolean))key('key-line',{borderColor:'#e5eeee',borderTopStyle:'dashed'},'GPS gap (tunnel): interpolated');
  if(overlay!=='none')key('key-line',{borderColor:overlay==='hr'?'#ffad82':'#9de6ae'},(overlay==='hr'?'Heart rate':'Speed')+' (right axis)');
  key('key-band',{},'climb (number as in the table)');
  if(R&&R.combined)key('key-line',{borderColor:'#9de6ae',borderTopStyle:'dashed'},'start of the next ride')}
@@ -253,6 +259,10 @@ function setRide(k){RI=k;R=DATA.rides[k];P=R.points;N=P.t.length;sel=null;hover=
  const maxT=Math.max(1,...R.grade_bands.map(b=>b.time_s));
  table($('#bands'),['grade %','time','','km/h','bpm'],R.grade_bands.map(b=>{const tr=el('tr'),g=el('td'),sw=el('span',null,'sw');sw.style.background=div(b.lo===-99?b.hi-2:b.hi===99?b.lo+2:(b.lo+b.hi)/2);g.append(sw,b.band);
   const bc=el('td'),bar=el('div',null,'bar');bar.style.width=(100*b.time_s/maxT)+'%';bar.style.minWidth='2px';bc.style.width='30%';bc.append(bar);tr.append(g,el('td',dur(b.time_s)),bc,el('td',fmt(b.speed_kmh,1)),el('td',fmt(b.hr_bpm)));return tr}));
+ const gaps=(R.gaps||[]).filter(g=>g.method!=='stop');$('#gapspanel').hidden=!gaps.length;
+ table($('#gaps'),['at','gap','distance','km/h','tunnel','how'],gaps.map(g=>{const tr=el('tr');const a=Math.max(0,P.t.findIndex(t=>t+5>g.t0_s)-1);let b=P.t.findIndex(t=>t>=g.t1_s);if(b<0)b=N-1;tr.dataset.a=a;tr.dataset.b=b;
+  [clock(g.t0_s)+' · km '+fmt(P.d[a],1),dur(g.duration_s),fmt(g.length_m)+' m',fmt(g.speed_kmh,1),g.tunnel_share==null?'—':fmt(100*g.tunnel_share)+' %',g.method==='road'?(g.road||'road')+(g.bikes_allowed===false?' (closed to bikes in OSM)':''):'estimated from speed ('+g.note+')'].forEach(x=>tr.append(el('td',x)));
+  tr.style.cursor='pointer';tr.onclick=()=>{select(a,b);$('#map').scrollIntoView({behavior:'smooth',block:'center'})};return tr}));
  $('#methods').replaceChildren(...R.methods.map(m=>el('li',m)));
  prepColours();profileLegend();showStats();fit()}
 function resize(){const r=map.c.getBoundingClientRect();map.dpr=window.devicePixelRatio||1;map.W=r.width;map.H=r.height;map.c.width=r.width*map.dpr;map.c.height=r.height*map.dpr;
