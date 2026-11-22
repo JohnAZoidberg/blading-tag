@@ -27,6 +27,9 @@ label{font-size:13px;color:var(--muted)}
 .plegend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 22px;font-size:12px;color:var(--muted);margin-top:6px}.plegend>span{display:inline-flex;align-items:center;gap:7px}
 .plegend>.gscale{display:inline-grid;grid-template-columns:auto auto;align-items:center;gap:2px 8px}.gscale .gbar{position:relative;width:240px;height:10px;border-radius:3px;opacity:.55}.gscale .gticks{grid-column:2;position:relative;height:14px;width:240px;font-variant-numeric:tabular-nums}.gscale .gticks i{position:absolute;transform:translateX(-50%);font-style:normal}
 .key-line{display:inline-block;width:22px;height:0;border-top:2px solid}.key-band{display:inline-block;width:16px;height:12px;background:rgba(255,198,92,.18);border-radius:2px}
+#marks input{width:100%;min-width:140px;background:#101719;border:1px solid var(--line);border-radius:6px;color:var(--text);padding:5px 8px;font:inherit;font-size:13px}#marks input:focus{outline:2px solid var(--blue);border-color:transparent}
+#marks td{vertical-align:middle}#marks .pin{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--blue);color:#101719;font-weight:700;font-size:12px}
+#marks .act{white-space:nowrap}#marks .act button{padding:3px 8px;font-size:12px;margin-left:4px}#marks tr.on{background:#293b3f}#marks .empty{color:var(--muted);text-align:left}
 .seltitle{font-size:13px;color:var(--green);margin-top:12px}
 table{width:100%;border-collapse:collapse;text-align:right;font-variant-numeric:tabular-nums;font-size:13px}th,td{padding:8px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:500}th:first-child,td:first-child{text-align:left}
 #climbs tbody tr{cursor:pointer}#climbs tbody tr:hover,#climbs tbody tr.on{background:#293b3f}.scroll{overflow:auto}
@@ -47,7 +50,7 @@ details{color:var(--muted)}summary{cursor:pointer;color:var(--text);font-weight:
   <label>Map <select id="tiles"><option value="dark">Dark</option><option value="topo">Topographic</option><option value="relief">Relief (OpenTopoMap)</option><option value="satellite">Satellite</option><option value="none">None (offline)</option></select></label>
   <button id="fit">Fit route</button></div>
  <div class="mapwrap"><canvas id="map" aria-label="Route map"></canvas><div class="zoom"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button></div><div id="legend"></div><div id="tilenote">Map tiles didn't load (offline?). The route is drawn without them.</div><div id="attrib"></div></div>
- <div class="readout" id="readout1">Hover the route or the profile.</div>
+ <div class="readout" id="readout1">Hover the route or the profile; click the route to mark a point.</div>
 </section>
 <section class="panel">
  <div class="controls"><h2>Elevation</h2>
@@ -55,8 +58,12 @@ details{color:var(--muted)}summary{cursor:pointer;color:var(--text);font-weight:
   <button id="reset">Whole ride</button></div>
  <canvas id="profile" aria-label="Elevation profile"></canvas>
  <div class="plegend" id="plegend"></div>
- <div class="readout" id="readout2">Drag across the profile to select a stretch; the map follows.</div>
+ <div class="readout" id="readout2">Drag across the profile to select a stretch; click it to mark a point.</div>
  <div class="seltitle" id="seltitle"></div><div class="selstats" id="selstats"></div>
+</section>
+<section class="panel" id="markspanel">
+ <div class="controls"><h2>Marked points</h2><small>click the route or the elevation profile to mark a point · saved in this browser</small></div>
+ <div class="scroll"><table id="marks"></table></div>
 </section>
 <div class="grid">
  <section class="panel"><div class="controls"><h2>Climbs</h2><small>click a row to select it</small></div><div class="scroll"><table id="climbs"></table></div></section>
@@ -150,6 +157,10 @@ function drawMap(){const ctx=map.c.getContext('2d');ctx.setTransform(map.dpr,0,0
  const first=pts.findIndex(Boolean),last=pts.length-1-[...pts].reverse().findIndex(Boolean);
  if(first>=0){dot(pts[first],'#9de6ae',7);dot(pts[last],'#ff6f6f',7)}
  R.climbs.forEach((c,k)=>{const p=pts[c.end_i];if(!p)return;dot(p,'#ffc65c',9);ctx.fillStyle='#101719';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(k+1,p[0],p[1]+.5)});
+ rideMarks().forEach((x,k)=>{const p=pts[x.i];if(!p)return;
+  ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(p[0]-6,p[1]-13);ctx.arc(p[0],p[1]-19,9,Math.PI*.78,Math.PI*.22);ctx.closePath();ctx.fillStyle='#8cc8ff';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#0b1113';ctx.stroke();
+  ctx.fillStyle='#101719';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(letter(k),p[0],p[1]-18.5);
+  if(x.m.name){ctx.font='600 12px system-ui';ctx.textAlign='left';ctx.lineWidth=4;ctx.strokeStyle='rgba(11,17,19,.9)';ctx.strokeText(x.m.name,p[0]+12,p[1]-19);ctx.fillStyle='#e5eeee';ctx.fillText(x.m.name,p[0]+12,p[1]-19)}});
  if(hover>=0&&pts[hover]){const p=pts[hover];ctx.beginPath();ctx.arc(p[0],p[1],9,0,7);ctx.lineWidth=3;ctx.strokeStyle='#fff';ctx.stroke();dot(p,colourOf(value(hover)),5)}
  const T=TILES[tileKey];$('#attrib').textContent=T?T.attr:''}
 function fit(i0=0,i1=N-1){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(let i=i0;i<=i1;i++){const w=WORLD[RI][i];if(!w)continue;x0=Math.min(x0,w[0]);x1=Math.max(x1,w[0]);y0=Math.min(y0,w[1]);y1=Math.max(y1,w[1])}
@@ -157,16 +168,21 @@ function fit(i0=0,i1=N-1){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(let i=i0;i<=i1;i
  map.z=Math.min(17,Math.log2(Math.min((map.W-pad*2)/Math.max(x1-x0,1e-6),(map.H-pad*2)/Math.max(y1-y0,1e-6))));redraw()}
 function zoomAt(f,sx,sy){const s0=Math.pow(2,map.z),wx=map.cx+(sx-map.W/2)/s0,wy=map.cy+(sy-map.H/2)/s0;map.z=Math.max(2,Math.min(19,map.z+f));const s1=Math.pow(2,map.z);map.cx=wx-(sx-map.W/2)/s1;map.cy=wy-(sy-map.H/2)/s1;redraw()}
 const ptrs=new Map();let pinch=0;
-map.c.addEventListener('pointerdown',e=>{map.c.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.offsetX,e.offsetY]);map.c.classList.add('drag')});
+let tap=null,tapTimer=0;
+map.c.addEventListener('pointerdown',e=>{map.c.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.offsetX,e.offsetY]);map.c.classList.add('drag');tap=ptrs.size===1?[e.offsetX,e.offsetY]:null});
 map.c.addEventListener('pointermove',e=>{const prev=ptrs.get(e.pointerId);
  if(prev){const cur=[e.offsetX,e.offsetY];if(ptrs.size===2){ptrs.set(e.pointerId,cur);const [a,b]=[...ptrs.values()],d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(pinch)zoomAt(Math.log2(d/pinch),(a[0]+b[0])/2,(a[1]+b[1])/2);pinch=d;return}
   const s=Math.pow(2,map.z);map.cx-=(cur[0]-prev[0])/s;map.cy-=(cur[1]-prev[1])/s;ptrs.set(e.pointerId,cur);redraw();return}
  let best=-1,bd=196;const s=Math.pow(2,map.z);for(let i=0;i<N;i++){const w=WORLD[RI][i];if(!w)continue;const dx=(w[0]-map.cx)*s+map.W/2-e.offsetX,dy=(w[1]-map.cy)*s+map.H/2-e.offsetY,d=dx*dx+dy*dy;if(d<bd){bd=d;best=i}}
  setHover(best)});
+function nearestOnMap(x,y,r=14){let best=-1,bd=r*r;const s=Math.pow(2,map.z);for(let i=0;i<N;i++){const w=WORLD[RI][i];if(!w)continue;const dx=(w[0]-map.cx)*s+map.W/2-x,dy=(w[1]-map.cy)*s+map.H/2-y,d=dx*dx+dy*dy;if(d<bd){bd=d;best=i}}return best}
 const up=e=>{ptrs.delete(e.pointerId);pinch=0;if(!ptrs.size)map.c.classList.remove('drag')};
-map.c.addEventListener('pointerup',up);map.c.addEventListener('pointercancel',up);map.c.addEventListener('pointerleave',()=>{if(!ptrs.size)setHover(-1)});
+map.c.addEventListener('pointerup',e=>{const t=tap;tap=null;up(e);
+ if(!t||Math.hypot(e.offsetX-t[0],e.offsetY-t[1])>5)return;const i=nearestOnMap(e.offsetX,e.offsetY,e.pointerType==='touch'?22:14);if(i<0)return;
+ clearTimeout(tapTimer);tapTimer=setTimeout(()=>addMark(i),250)});   // wait: a double click zooms instead
+map.c.addEventListener('pointercancel',e=>{tap=null;up(e)});map.c.addEventListener('pointerleave',()=>{if(!ptrs.size)setHover(-1)});
 map.c.addEventListener('wheel',e=>{e.preventDefault();zoomAt(-Math.sign(e.deltaY)*.5,e.offsetX,e.offsetY)},{passive:false});
-map.c.addEventListener('dblclick',e=>zoomAt(1,e.offsetX,e.offsetY));
+map.c.addEventListener('dblclick',e=>{clearTimeout(tapTimer);zoomAt(1,e.offsetX,e.offsetY)});
 $('#zin').onclick=()=>zoomAt(1,map.W/2,map.H/2);$('#zout').onclick=()=>zoomAt(-1,map.W/2,map.H/2);
 $('#fit').onclick=()=>sel?fit(sel[0],sel[1]):fit();
 
@@ -199,6 +215,9 @@ function drawProfile(){const c=prof.c,ctx=c.getContext('2d'),W=prof.W,H=prof.H,{
   ctx.globalAlpha=.9;line(ctx,i0,i1,sm,X,OY,col,1.4);ctx.globalAlpha=1;ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';const os=niceStep((o1-o0)/4);
   for(let x=Math.ceil(o0/os)*os;x<=o1;x+=os)ctx.fillText(fmt(x),W-Rm+6,OY(x));ctx.textBaseline='top';ctx.fillText(UNITS[overlay],W-Rm+6,H-B+8)}}
  if(prof.drag&&Math.abs(prof.drag[1]-prof.drag[0])>2){ctx.fillStyle='rgba(157,230,174,.18)';ctx.fillRect(Math.min(...prof.drag),T,Math.abs(prof.drag[1]-prof.drag[0]),ph)}
+ rideMarks().forEach((m,k)=>{const d=P.d[m.i];if(d<d0||d>d1)return;const x=X(d),y=P.alt[m.i]!=null?Y(P.alt[m.i]):T+ph;
+  ctx.save();ctx.setLineDash([2,3]);ctx.strokeStyle='rgba(140,200,255,.7)';ctx.beginPath();ctx.moveTo(x+.5,y-12);ctx.lineTo(x+.5,T+ph);ctx.stroke();ctx.restore();
+  ctx.beginPath();ctx.arc(x,y-18,8,0,7);ctx.fillStyle='#8cc8ff';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#0b1113';ctx.stroke();ctx.fillStyle='#101719';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(letter(k),x,y-17.5)});
  if(hover>=0&&P.d[hover]>=d0&&P.d[hover]<=d1){const x=X(P.d[hover]);ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x+.5,T);ctx.lineTo(x+.5,T+ph);ctx.stroke();if(P.alt[hover]!=null){ctx.beginPath();ctx.arc(x,Y(P.alt[hover]),4,0,7);ctx.fillStyle='#fff';ctx.fill()}}}
 function line(ctx,i0,i1,v,X,Y,col,w){ctx.strokeStyle=col;ctx.lineWidth=w;ctx.beginPath();let on=false;for(let i=i0;i<=i1;i++){if(v[i]==null||(i>i0&&P.t[i]-P.t[i-1]>GAP_S)){on=false;if(v[i]==null)continue}const x=X(P.d[i]),y=Y(v[i]);if(on)ctx.lineTo(x,y);else ctx.moveTo(x,y);on=true}ctx.stroke()}
 function niceStep(r){const p=Math.pow(10,Math.floor(Math.log10(r||1))),m=r/p;return(m<1.5?1:m<3.5?2:m<7.5?5:10)*p}
@@ -206,14 +225,15 @@ const pd=e=>{const [d0,d1]=view();return d0+(Math.max(prof.L,Math.min(prof.W-pro
 prof.c.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button)return;prof.c.setPointerCapture(e.pointerId);prof.drag=[e.offsetX,e.offsetX]});
 prof.c.addEventListener('pointermove',e=>{if(prof.drag){prof.drag[1]=e.offsetX}setHover(idxAtD(pd(e)))});
 prof.c.addEventListener('pointerup',e=>{const g=prof.drag;prof.drag=null;if(g&&Math.abs(g[1]-g[0])>6){const [d0,d1]=view(),f=x=>d0+(Math.max(prof.L,Math.min(prof.W-prof.Rm,x))-prof.L)/(prof.W-prof.L-prof.Rm)*(d1-d0);
- const a=idxAtD(f(Math.min(...g))),b=Math.min(N-1,idxAtD(f(Math.max(...g))));if(b>a){select(a,b);return}}redraw()});
+ const a=idxAtD(f(Math.min(...g))),b=Math.min(N-1,idxAtD(f(Math.max(...g))));if(b>a){select(a,b);return}}
+ if(g&&Math.abs(g[1]-g[0])<=6){addMark(idxAtD(pd(e)));return}redraw()});
 prof.c.addEventListener('pointercancel',()=>{prof.drag=null;redraw()});
 prof.c.addEventListener('pointerleave',()=>{if(!prof.drag)setHover(-1)});
 $('#reset').onclick=()=>{select(null)};
 
 /* ---------- readouts, selection ---------- */
 function setHover(i){if(i===hover)return;hover=i;const txt=i<0?null:[['',clock(P.t[i])],['km ',fmt(P.d[i],2)],['',fmt(P.speed[i],1)+' km/h'],['',fmt(P.hr[i])+' bpm'],['',fmt(P.alt[i])+' m'],['grade ',(P.grade[i]>0?'+':'')+fmt(P.grade[i],1)+' %']];if(i>=0&&P.fill&&P.fill[i])txt.push(['',P.fill[i]===1?'GPS gap: along the road, interpolated':'GPS gap: estimated']);
- for(const id of['#readout1','#readout2']){const r=$(id);if(!txt){r.textContent=id==='#readout1'?'Hover the route or the profile.':'Drag across the profile to select a stretch; the map follows.';continue}r.replaceChildren();txt.forEach(([k,v],j)=>{if(j)r.append(' · ');r.append(k,el('b',v))})}
+ for(const id of['#readout1','#readout2']){const r=$(id);if(!txt){r.textContent=id==='#readout1'?'Hover the route or the profile; click the route to mark a point.':'Drag across the profile to select a stretch; click it to mark a point.';continue}r.replaceChildren();txt.forEach(([k,v],j)=>{if(j)r.append(' · ');r.append(k,el('b',v))})}
  redraw()}
 // Same as ride_map.climb_descent: sum the legs between turning points ≥3 m apart, per gap-free run.
 function climbDescent(i0,i1){let up=0,dn=0,run=[],last=-1;const flush=()=>{if(run.length<2){run=[];return}
@@ -243,7 +263,37 @@ function profileLegend(){const box=$('#plegend');box.replaceChildren();
  if(P&&P.fill&&P.fill.some(Boolean))key('key-line',{borderColor:'#e5eeee',borderTopStyle:'dashed'},'GPS gap (tunnel): interpolated');
  if(overlay!=='none')key('key-line',{borderColor:overlay==='hr'?'#ffad82':'#9de6ae'},(overlay==='hr'?'Heart rate':'Speed')+' (right axis)');
  key('key-band',{},'climb (number as in the table)');
+ {const k=el('span'),m=el('span','A');Object.assign(m.style,{display:'inline-grid',placeItems:'center',width:'16px',height:'16px',borderRadius:'50%',background:'#8cc8ff',color:'#101719',fontWeight:700,fontSize:'10px'});k.append(m,'your marked point');box.append(k)}
  if(R&&R.combined)key('key-line',{borderColor:'#9de6ae',borderTopStyle:'dashed'},'start of the next ride')}
+
+/* ---------- marked points ----------
+ Stored per browser by absolute time, so they survive regenerating the page and
+ show in both a single ride and its whole-day view. */
+const MARK_KEY='bladetag.rideMarks.v1';let MARKS=[];
+try{const v=JSON.parse(localStorage.getItem(MARK_KEY)||'[]');if(Array.isArray(v))MARKS=v.filter(m=>m&&isFinite(m.utc))}catch(e){}
+const saveMarks=()=>{try{localStorage.setItem(MARK_KEY,JSON.stringify(MARKS))}catch(e){}};
+const letter=k=>k<26?String.fromCharCode(65+k):String(k+1);
+const idxAtT=t=>{let lo=0,hi=N-1;while(lo<hi){const m=(lo+hi)>>1;if(P.t[m]<t)lo=m+1;else hi=m}return lo>0&&Math.abs(P.t[lo-1]-t)<Math.abs(P.t[lo]-t)?lo-1:lo};
+function rideMarks(){if(!R)return[];const a=Date.parse(R.start_utc),t0=P.t[0],t1=P.t[N-1]+5;
+ return MARKS.map(m=>({m,t:(m.utc-a)/1000})).filter(x=>x.t>=t0&&x.t<=t1).sort((p,q)=>p.t-q.t).map(x=>({...x,i:idxAtT(x.t)}))}
+function addMark(i){if(i<0||i>=N)return;const near=rideMarks().find(x=>Math.abs(x.i-i)<=1);
+ if(near){renderMarks(near.m);return}
+ const m={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),utc:Date.parse(R.start_utc)+P.t[i]*1000,name:''};
+ MARKS.push(m);saveMarks();renderMarks(m);redraw()}
+function renderMarks(focus){const list=rideMarks(),t=$('#marks');
+ table(t,['','name','time','km','altitude','from previous mark',''],list.map((x,k)=>{const tr=el('tr'),i=x.i;tr.dataset.id=x.m.id;
+  const pin=el('td');pin.append(el('span',letter(k),'pin'));
+  const nm=el('td'),inp=el('input');inp.value=x.m.name||'';inp.placeholder='Name this point';inp.maxLength=60;inp.setAttribute('aria-label','Name of point '+letter(k));
+  inp.oninput=()=>{x.m.name=inp.value;saveMarks();redraw()};inp.onfocus=()=>setHover(i);nm.append(inp);
+  let prev='—';if(k){const p=list[k-1].i,[u,dn]=climbDescent(p,i);prev=`${fmt(P.d[i]-P.d[p],2)} km · ${dur(P.t[i]-P.t[p])} · ↑${fmt(u)} ↓${fmt(dn)} m`}
+  const act=el('td',null,'act');
+  if(k){const b=el('button','Select from '+letter(k-1));b.title='Select the stretch from the previous mark to this one';b.onclick=ev=>{ev.stopPropagation();select(list[k-1].i,i)};act.append(b)}
+  const rm=el('button','Remove');rm.setAttribute('aria-label','Remove point '+letter(k));rm.onclick=ev=>{ev.stopPropagation();MARKS=MARKS.filter(m=>m!==x.m);saveMarks();renderMarks();redraw()};act.append(rm);
+  tr.append(pin,nm,el('td',clock(P.t[i])),el('td',fmt(P.d[i],2)),el('td',fmt(P.alt[i])+' m'),el('td',prev),act);
+  tr.onclick=ev=>{if(ev.target.closest('input,button'))return;centerOn(i)};return tr}));
+ if(!list.length){const tr=el('tr'),td=el('td','No marked points yet. Click the route on the map, or click the elevation profile.','empty');td.colSpan=7;tr.append(td);t.tBodies[0].append(tr)}
+ if(focus){const tr=t.querySelector(`tr[data-id="${focus.id}"]`);if(tr){tr.classList.add('on');setTimeout(()=>tr.classList.remove('on'),1200);tr.querySelector('input').focus({preventScroll:true})}}}
+function centerOn(i){const w=WORLD[RI][i];if(w){map.cx=w[0];map.cy=w[1];map.z=Math.max(map.z,14)}setHover(i);redraw()}
 
 /* ---------- page ---------- */
 function table(t,head,rows){t.replaceChildren();const th=el('thead'),tr=el('tr');head.forEach(h=>tr.append(el('th',h)));th.append(tr);const tb=el('tbody');rows.forEach(r=>tb.append(r));t.append(th,tb)}
@@ -264,7 +314,7 @@ function setRide(k){RI=k;R=DATA.rides[k];P=R.points;N=P.t.length;sel=null;hover=
   [clock(g.t0_s)+' · km '+fmt(P.d[a],1),dur(g.duration_s),fmt(g.length_m)+' m',fmt(g.speed_kmh,1),g.tunnel_share==null?'—':fmt(100*g.tunnel_share)+' %',g.method==='road'?(g.road||'road')+(g.bikes_allowed===false?' (closed to bikes in OSM)':''):'estimated from speed ('+g.note+')'].forEach(x=>tr.append(el('td',x)));
   tr.style.cursor='pointer';tr.onclick=()=>{select(a,b);$('#map').scrollIntoView({behavior:'smooth',block:'center'})};return tr}));
  $('#methods').replaceChildren(...R.methods.map(m=>el('li',m)));
- prepColours();profileLegend();showStats();fit()}
+ prepColours();profileLegend();showStats();renderMarks();fit()}
 function resize(){const r=map.c.getBoundingClientRect();map.dpr=window.devicePixelRatio||1;map.W=r.width;map.H=r.height;map.c.width=r.width*map.dpr;map.c.height=r.height*map.dpr;
  const q=prof.c.getBoundingClientRect();prof.dpr=map.dpr;prof.W=q.width;prof.H=q.height;prof.c.width=q.width*prof.dpr;prof.c.height=q.height*prof.dpr;redraw()}
 $('#title').textContent=DATA.title;document.title=DATA.title;

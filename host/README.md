@@ -408,7 +408,15 @@ elevation profile with heart rate or speed overlaid, then the detected climbs
 and speed and heart rate by grade band. Hover the map or the profile to see
 the same point in both. Drag across the profile, or click a climb, to select
 a stretch; the map zooms to it and the totals below the profile cover only
-that stretch. Several sessions go on one page with a ride selector, and the
+that stretch. Click the route or the profile to mark a point. Marks are
+lettered A, B, C… on the map and the profile and listed under the profile,
+where you can name them, remove them, see the distance, time and climbing
+from the previous mark, and select the stretch between two marks. They are
+saved in the browser's local storage by time of day, so they survive
+regenerating the page and show in both the ride and its whole-day view. They
+don't go into the session folder, and another browser (or the web library,
+which is a different origin) has its own marks.
+Several sessions go on one page with a ride selector, and the
 other rides show faintly on the map. Each day with two or more rides also gets
 an "All rides of <day>" entry, selected first, that joins that day's rides end
 to end. Distance continues from ride to ride, the profile marks where each ride
