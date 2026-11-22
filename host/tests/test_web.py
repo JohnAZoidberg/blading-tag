@@ -115,3 +115,18 @@ def test_skating_3d_renders_and_embeds_offline_dependencies(tmp_path, monkeypatc
     assert library.enqueue('viz3d', ['skate']) == identity
     with pytest.raises(ValueError, match='cycling'):
         library.enqueue('cycling3d', ['skate'])
+
+
+def test_ride_map_accepts_several_cycling_recordings(tmp_path):
+    library = Library(tmp_path / 'library')
+    a = library.ingest(recording(tmp_path))
+    other = tmp_path / 'ride2.zip'
+    with zipfile.ZipFile(other, 'w') as z:
+        z.writestr('session.json', json.dumps(dict(format_version=1, activity='cycling',
+            start_utc='2026-11-16T06:00:00Z', start_elapsed_ns=0, tags=[])))
+    b = library.ingest(other)
+    key = library.enqueue('ride-map', [a, b])
+    library.pool.shutdown(wait=True)
+    job = library.state['jobs'][key]
+    assert job['status'] == 'ready', job['error']
+    assert '<html' in (library.root / 'reports' / key / 'index.html').read_text().lower()

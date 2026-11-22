@@ -396,6 +396,34 @@ Metres per crank turn is speed divided by cadence, a development proxy rather
 than a measured gear. Neither estimate has been checked against a bike cadence
 sensor yet.
 
+### Ride map and elevation
+
+```sh
+bladetag ride-map sessions/session-20261122-001025 sessions/session-20261122-064843 -o sessions/rides.html
+```
+
+For rides with only phone GPS and heart rate. `ride-map` draws the route on a
+basemap, coloured by speed, heart rate, grade or altitude. Below it is an
+elevation profile with heart rate or speed overlaid, then the detected climbs
+and speed and heart rate by grade band. Hover the map or the profile to see
+the same point in both. Drag across the profile, or click a climb, to select
+a stretch; the map zooms to it and the totals below the profile cover only
+that stretch. Several sessions go on one page with a ride selector, and the
+other rides show faintly on the map.
+
+The basemap tiles come from Esri (dark, topographic, satellite) or
+OpenTopoMap. Those work from a local file without an API key; CARTO serves
+"API key required" tiles and OpenStreetMap blocks requests without a
+Referer. Opening the page tells the tile provider the ride area. Pick "None"
+to draw the route without tiles; everything else works offline.
+
+Elevation is the phone's GPS altitude, the height above the WGS84 ellipsoid,
+which differs from sea level by up to tens of metres. It is smoothed along
+distance (±60 m median, then mean). Climbing totals add the legs between
+turning points at least 3 m apart, and grade is the rise over ±50 m. A climb
+gains at least 25 m at 2 % or more, and dips under 10 m don't split it. These
+are estimates without a barometer; short steep ramps get flattened.
+
 ### Cycling in 3D
 
 ```sh
@@ -454,12 +482,13 @@ The model is only meant to exercise the code. Don't tune thresholds on it.
 | `analysis.py`, `plots.py` | analysis v1 and its plots |
 | `skating.py` | skating measures per stroke (impact, push-off, GPS), correlations, speed matching, same-place pairs, coasts |
 | `report.py`, `report.html` | `report`: several skating sessions on one page, findings in words |
+| `ride_map.py`, `ride_map.html` | `ride-map`: GPS/HR rides on a basemap, GPS-altitude profile, climbs |
 | `viz3d.py`, `viz3d_template.html` | `viz3d`: skate path and angles per stroke, the 3D replay page |
 | `liveplot.py` | live plot during recording |
 | `cli.py` | the `bladetag` command |
 
 ```sh
-pytest           # protocol vectors, session round-trip, recorder against the fake tag, analysis vs sim truth, explore, walking, viz3d, report
+pytest           # protocol vectors, session round-trip, recorder against the fake tag, analysis vs sim truth, explore, walking, viz3d, report, ride map
 ```
 
 The hardware tests in `tests/hw/` run against a real tag with a J-Link

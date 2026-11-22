@@ -479,6 +479,24 @@ def cmd_walking3d(a):
     print(f"wrote {a.output} (open it locally; works offline)")
 
 
+def cmd_ride_map(a):
+    from .ride_map import write_report
+    from .session import load_session
+
+    try:
+        sessions = [load_session(p) for p in a.sessions]
+        for session in sessions:
+            _warn_simulated(session)
+        rides = write_report(sessions, a.output, a.title)
+    except ValueError as exc:
+        _die(str(exc))
+    for ride in rides:
+        print(f"{ride['session']}:")
+        for finding in ride["findings"][3:]:
+            print(f"  {finding}")
+    print(f"\nwrote {a.output} (basemap tiles load from the internet; the rest works offline)")
+
+
 def cmd_cycling3d(a):
     from .cycling3d import write_report
     from .session import load_session
@@ -727,6 +745,12 @@ def main(argv=None):
     c.add_argument("-o", "--output", default="cycling.html", help="self-contained page to write (default: cycling.html)")
     c.add_argument("--title", help="page title")
     c.set_defaults(fn=cmd_cycling_report)
+
+    c = sub.add_parser("ride-map", help="GPS + heart-rate rides: route on a basemap, elevation profile and climbs")
+    c.add_argument("sessions", nargs="+", help="session folders or .zip files (several get a ride selector)")
+    c.add_argument("-o", "--output", default="ride-map.html", help="page to write (default: ride-map.html)")
+    c.add_argument("--title", help="page title")
+    c.set_defaults(fn=cmd_ride_map)
 
     c = sub.add_parser("cycling3d", help="3D foot motion replay: measured pedal loops and early/late comparison")
     c.add_argument("session", help="cycling session folder or .zip file with a foot tag")

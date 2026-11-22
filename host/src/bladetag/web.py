@@ -16,7 +16,7 @@ import threading
 from urllib.parse import unquote, urlsplit
 import zipfile
 
-KINDS = {'walking-report', 'cycling-report', 'report', 'walking3d', 'cycling3d', 'viz3d', 'overview'}
+KINDS = {'walking-report', 'cycling-report', 'ride-map', 'report', 'walking3d', 'cycling3d', 'viz3d', 'overview'}
 DEFAULTS = {'walking': 'walking-report', 'cycling': 'cycling-report', 'skating': 'report'}
 
 
@@ -87,10 +87,10 @@ class Library:
         with self.lock:
             if any(i not in self.state['datasets'] for i in ids):
                 raise ValueError('Unknown recording')
-            if kind not in ('report', 'walking-report', 'viz3d') and len(ids) != 1:
+            if kind not in ('report', 'walking-report', 'viz3d', 'ride-map') and len(ids) != 1:
                 raise ValueError('This view needs exactly one recording')
             expected = {'report': 'skating', 'walking-report': 'walking', 'walking3d': 'walking',
-                        'cycling-report': 'cycling', 'cycling3d': 'cycling', 'viz3d': 'skating'}.get(kind)
+                        'cycling-report': 'cycling', 'ride-map': 'cycling', 'cycling3d': 'cycling', 'viz3d': 'skating'}.get(kind)
             if expected and any(self.state['datasets'][i]['activity'] != expected for i in ids):
                 raise ValueError(f'This view needs {expected} recordings')
             key = hashlib.sha256(json.dumps([kind, ids]).encode()).hexdigest()[:24]

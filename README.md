@@ -54,6 +54,8 @@ For a cycling recording with GPS and an HRM, run
 environment, then open the page locally. See the
 [cycling report instructions](host/README.md#cycling-ride-report).
 For a 3D pedal-loop replay, use `bladetag cycling3d SESSION -o sessions/cycling3d.html`.
+For a route on a map with an elevation profile and climbs (GPS and HR only,
+several rides per page), use `bladetag ride-map SESSION... -o sessions/rides.html`.
 
 ## The button
 
