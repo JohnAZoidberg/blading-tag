@@ -409,7 +409,12 @@ and speed and heart rate by grade band. Hover the map or the profile to see
 the same point in both. Drag across the profile, or click a climb, to select
 a stretch; the map zooms to it and the totals below the profile cover only
 that stretch. Several sessions go on one page with a ride selector, and the
-other rides show faintly on the map.
+other rides show faintly on the map. Each day with two or more rides also gets
+an "All rides of <day>" entry, selected first, that joins that day's rides end
+to end. Distance continues from ride to ride, the profile marks where each ride
+starts, and the time between rides counts as neither elapsed nor moving time.
+Days are calendar days in the time zone of the computer that generates the
+page.
 
 The basemap tiles come from Esri (dark, topographic, satellite) or
 OpenTopoMap. Those work from a local file without an API key; CARTO serves

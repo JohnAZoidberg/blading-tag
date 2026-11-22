@@ -126,13 +126,13 @@ let RI=0;
 function strokeIdx(ctx,idx,pts){ctx.beginPath();for(const i of idx){if(!joined(i))continue;const a=pts[i-1],b=pts[i];ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1])}ctx.stroke()}
 function drawMap(){const ctx=map.c.getContext('2d');ctx.setTransform(map.dpr,0,0,map.dpr,0,0);ctx.fillStyle='#0b1113';ctx.fillRect(0,0,map.W,map.H);drawTiles(ctx);
  ctx.lineCap='round';ctx.lineJoin='round';
- WORLD.forEach((w,r)=>{if(r===RI)return;const p=DATA.rides[r].points;ctx.strokeStyle='rgba(210,225,228,.45)';ctx.lineWidth=2.5;ctx.beginPath();
+ WORLD.forEach((w,r)=>{const o=DATA.rides[r];if(r===RI||o.combined||(R.members||[]).includes(o.session))return;const p=DATA.rides[r].points;ctx.strokeStyle='rgba(210,225,228,.45)';ctx.lineWidth=2.5;ctx.beginPath();
   for(let i=1;i<w.length;i++){if(!w[i]||!w[i-1]||p.t[i]-p.t[i-1]>GAP_S)continue;const a=toScreen(w[i-1]),b=toScreen(w[i]);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1])}ctx.stroke()});
  const pts=WORLD[RI].map(w=>w&&toScreen(w));const all=[];for(let i=1;i<N;i++)all.push(i);
  const inSel=i=>!sel||(i>sel[0]&&i<=sel[1]);
  // GPS gaps: a dashed straight line, so the route doesn't look like it ends.
  ctx.setLineDash([4,6]);ctx.lineWidth=2;ctx.strokeStyle='rgba(220,230,232,.6)';ctx.beginPath();let lastP=null;
- for(let i=0;i<N;i++){const p=pts[i];if(!p)continue;if(lastP!=null&&(lastP!==i-1||P.t[i]-P.t[lastP]>GAP_S)){const a=pts[lastP];ctx.moveTo(a[0],a[1]);ctx.lineTo(p[0],p[1])}lastP=i}
+ for(let i=0;i<N;i++){const p=pts[i];if(!p)continue;if(lastP!=null&&!(R.ride_starts||[]).includes(i)&&(lastP!==i-1||P.t[i]-P.t[lastP]>GAP_S)){const a=pts[lastP];ctx.moveTo(a[0],a[1]);ctx.lineTo(p[0],p[1])}lastP=i}
  ctx.stroke();ctx.setLineDash([]);
  ctx.strokeStyle='rgba(0,0,0,.75)';ctx.lineWidth=7;strokeIdx(ctx,sel?all.filter(inSel):all,pts);
  for(const pass of sel?[0,1]:[1]){ctx.globalAlpha=pass?1:.3;ctx.lineWidth=pass?4:3;
@@ -178,6 +178,8 @@ function drawProfile(){const c=prof.c,ctx=c.getContext('2d'),W=prof.W,H=prof.H,{
  ctx.textAlign='center';ctx.textBaseline='top';const ds=niceStep((d1-d0)/7);for(let d=Math.ceil(d0/ds)*ds;d<=d1+1e-9;d+=ds)ctx.fillText(fmt(d,ds<1?1:0)+' km',X(d),H-B+8);
  // climbs
  R.climbs.forEach((cl,k)=>{const xa=X(P.d[cl.start_i]),xb=X(P.d[cl.end_i]);if(xb<L||xa>W-Rm)return;ctx.fillStyle='rgba(255,198,92,.07)';ctx.fillRect(Math.max(L,xa),T,Math.min(W-Rm,xb)-Math.max(L,xa),ph);ctx.fillStyle='#ffc65c';ctx.textBaseline='top';ctx.fillText(k+1,Math.max(L+6,Math.min(W-Rm-6,(xa+xb)/2)),T+2)});
+ // ride boundaries in a combined day
+ (R.ride_starts||[]).forEach((i,k)=>{if(!k)return;const x=X(P.d[i]);if(x<L||x>W-Rm)return;ctx.save();ctx.setLineDash([3,4]);ctx.strokeStyle='#9de6ae';ctx.beginPath();ctx.moveTo(x+.5,T);ctx.lineTo(x+.5,T+ph);ctx.stroke();ctx.restore();ctx.fillStyle='#9de6ae';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('Ride '+(k+1),x+4,T+14)});
  // area coloured by grade
  for(let i=Math.max(i0,1);i<=i1;i++){const a=P.alt[i],b=P.alt[i-1];if(a==null||b==null||P.t[i]-P.t[i-1]>GAP_S)continue;const xa=X(P.d[i-1]),xb=X(P.d[i]);if(xb-xa<=0)continue;
   ctx.fillStyle=P.grade[i]==null?'#465a5e':div(P.grade[i]);ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(xa,Y(b));ctx.lineTo(xb,Y(a));ctx.lineTo(xb,T+ph);ctx.lineTo(xa,T+ph);ctx.fill()}
@@ -215,7 +217,7 @@ function climbDescent(i0,i1){let up=0,dn=0,run=[],last=-1;const flush=()=>{if(ru
 function stats(i0,i1){let mv=0,sp=0,spn=0,hr=0,hrn=0,hi=-1e9;for(let i=i0;i<=i1;i++){if(P.speed[i]!=null&&P.speed[i]>=MOVING){mv+=5;sp+=P.speed[i];spn++}if(P.hr[i]!=null){hr+=P.hr[i];hrn++}if(P.alt[i]!=null)hi=Math.max(hi,P.alt[i])}
  const [u,dn]=climbDescent(i0,i1),dist=P.d[i1]-P.d[i0];let a0=null,a1=null;for(let i=i0;i<=i1&&a0==null;i++)a0=P.alt[i];for(let i=i1;i>=i0&&a1==null;i--)a1=P.alt[i];
  const S=R.summary,whole=!sel;
- return[[fmt(whole?S.distance_km:dist,2)+' km','distance'],[dur(whole?S.duration_s:P.t[i1]-P.t[i0]+5),'elapsed'],[dur(whole?S.moving_s:mv),'moving'],[fmt(whole?S.moving_speed_kmh:spn?sp/spn:null,1)+' km/h','moving speed'],[fmt(whole?S.mean_hr_bpm:hrn?hr/hrn:null)+' bpm','heart rate'],['+'+fmt(whole?S.climb_m:u)+' / −'+fmt(whole?S.descent_m:dn)+' m','climb / descent'],[(a0!=null&&dist>0?((a1-a0)/(dist*10)>0?'+':'')+fmt((a1-a0)/(dist*10),1):'—')+' %','net grade'],[fmt(hi>-1e9?hi:null)+' m','high point']]}
+ return[[fmt(whole?S.distance_km:dist,2)+' km','distance'],[dur(whole?S.duration_s:P.t[i1]-P.t[i0]+5),'elapsed'],[dur(whole?S.moving_s:mv),'moving'],[fmt(whole?S.moving_speed_kmh:spn?sp/spn:null,1)+' km/h','moving speed'],[fmt(whole?S.mean_hr_bpm:hrn?hr/hrn:null)+' bpm','heart rate'],['↑'+fmt(whole?S.climb_m:u)+' ↓'+fmt(whole?S.descent_m:dn)+' m','climb / descent'],[(a0!=null&&dist>0?((a1-a0)/(dist*10)>0?'+':'')+fmt((a1-a0)/(dist*10),1):'—')+' %','net grade'],[fmt(hi>-1e9?hi:null)+' m','high point']]}
 function showStats(){const i0=sel?sel[0]:0,i1=sel?sel[1]:N-1;$('#seltitle').textContent=sel?`Selection · km ${fmt(P.d[i0],1)}–${fmt(P.d[i1],1)} · ${clock(P.t[i0])}–${clock(P.t[i1])}`:'Whole ride';
  const s=$('#selstats');s.replaceChildren();stats(i0,i1).forEach(([v,k])=>{const d=el('div');d.append(el('b',v),el('span',k));s.append(d)})}
 function select(a,b){sel=a==null?null:[a,b];document.querySelectorAll('#climbs tbody tr').forEach(tr=>tr.classList.toggle('on',sel&&+tr.dataset.a===a&&+tr.dataset.b===b));showStats();sel?fit(a,b):fit()}
@@ -223,8 +225,8 @@ function select(a,b){sel=a==null?null:[a,b];document.querySelectorAll('#climbs t
 /* ---------- page ---------- */
 function table(t,head,rows){t.replaceChildren();const th=el('thead'),tr=el('tr');head.forEach(h=>tr.append(el('th',h)));th.append(tr);const tb=el('tbody');rows.forEach(r=>tb.append(r));t.append(th,tb)}
 function setRide(k){RI=k;R=DATA.rides[k];P=R.points;N=P.t.length;sel=null;hover=-1;const S=R.summary;
- const start=new Date(R.start_utc),end=new Date(Date.parse(R.start_utc)+S.duration_s*1000);
- $('#meta').textContent=`${start.toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'})} · ${clock(0)}–${end.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${R.gear?' · '+R.gear:''} · ${R.session}`;
+ const start=new Date(R.start_utc),end=new Date(Date.parse(R.start_utc)+(S.span_s??S.duration_s)*1000);
+ $('#meta').textContent=`${start.toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'})} · ${clock(0)}–${end.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${R.gear?' · '+R.gear:''} · ${R.combined?S.rides+' rides combined':R.session}`;
  const cards=[[fmt(S.distance_km,1)+' km','distance'],[dur(S.moving_s),`moving of ${dur(S.duration_s)}`],[fmt(S.climb_m)+' m','estimated climbing'],[fmt(S.alt_max_m)+' m',`high point (low ${fmt(S.alt_min_m)} m)`],[fmt(S.moving_speed_kmh,1)+' km/h',`moving speed (peak ${fmt(S.peak_speed_kmh)})`],[fmt(S.mean_hr_bpm)+' bpm',`heart rate (max ${fmt(S.max_hr_bpm)})`]];
  $('#cards').replaceChildren(...cards.map(([v,k])=>{const c=el('div',null,'card');c.append(el('strong',v),el('span',k));return c}));
  $('#findings').replaceChildren(...R.findings.map(f=>el('p',f)));
@@ -239,7 +241,7 @@ function setRide(k){RI=k;R=DATA.rides[k];P=R.points;N=P.t.length;sel=null;hover=
 function resize(){const r=map.c.getBoundingClientRect();map.dpr=window.devicePixelRatio||1;map.W=r.width;map.H=r.height;map.c.width=r.width*map.dpr;map.c.height=r.height*map.dpr;
  const q=prof.c.getBoundingClientRect();prof.dpr=map.dpr;prof.W=q.width;prof.H=q.height;prof.c.width=q.width*prof.dpr;prof.c.height=q.height*prof.dpr;redraw()}
 $('#title').textContent=DATA.title;document.title=DATA.title;
-if(DATA.rides.length>1){$('#ridepick').hidden=false;DATA.rides.forEach((r,i)=>{const o=el('option',`${new Date(r.start_utc).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · ${fmt(r.summary.distance_km,1)} km`);o.value=i;$('#ride').append(o)});$('#ride').onchange=e=>setRide(+e.target.value)}
+if(DATA.rides.length>1){$('#ridepick').hidden=false;DATA.rides.forEach((r,i)=>{const o=el('option',r.combined?`All rides of ${new Date(r.start_utc).toLocaleDateString([],{month:'short',day:'numeric'})} (${r.summary.rides}) · ${fmt(r.summary.distance_km,1)} km`:`${new Date(r.start_utc).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · ${fmt(r.summary.distance_km,1)} km`);o.value=i;$('#ride').append(o)});$('#ride').onchange=e=>setRide(+e.target.value)}
 $('#colour').onchange=e=>{mode=e.target.value;prepColours();redraw()};
 $('#tiles').onchange=e=>{tileKey=e.target.value;tileOK=tileFail=0;$('#tilenote').style.display='none';redraw()};
 $('#overlay').onchange=e=>{overlay=e.target.value;redraw()};

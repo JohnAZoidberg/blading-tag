@@ -76,6 +76,37 @@ def test_page_is_safe_and_only_fetches_tiles(tmp_path):
     assert '</script><script>alert(1)' not in html
     payload = re.search(r'<script id="data" type="application/json">(.*?)</script>', html, re.S).group(1)
     data = json.loads(payload)
-    assert data['title'] == '</script><script>alert(1)</script>' and len(data['rides']) == 2
+    assert data['title'] == '</script><script>alert(1)</script>' and len(data['rides']) == 3  # day + 2 rides
     hosts = set(re.findall(r'https://([^/\'"]+)', html))
     assert hosts <= {'server.arcgisonline.com', '{s}.tile.opentopomap.org'}, hosts
+
+
+def test_day_combines_rides_end_to_end(tmp_path):
+    from bladetag.ride_map import combine
+    a = analyze(ride(tmp_path, start='2026-11-22T01:00:00Z'))
+    b = analyze(ride(tmp_path, start='2026-11-22T03:00:00Z'))
+    day = combine([b, a], '2026-11-22')
+    s = day['summary']
+    assert s['rides'] == 2 and day['members'] == [a['session'], b['session']]
+    assert s['distance_km'] == pytest.approx(a['summary']['distance_km'] * 2)
+    assert s['duration_s'] == pytest.approx(1800)
+    assert s['span_s'] == pytest.approx(7200 + 900)
+    # Same terrain per ride: totals and climbs add up; nothing spans the break.
+    assert s['climb_m'] == pytest.approx(2 * a['summary']['climb_m'], abs=1)
+    assert len(day['climbs']) == 2
+    n = len(a['points']['t'])
+    assert day['ride_starts'] == [0, n]
+    assert day['points']['t'][n] == pytest.approx(7200)
+    assert day['points']['d'][n] == pytest.approx(a['summary']['distance_km'] + .025, abs=.01)  # end of its first 5 s bin
+    assert day['climbs'][1]['start_i'] >= n
+    assert day['findings'][0].startswith('2 rides cover')
+
+
+def test_page_lists_day_before_its_rides(tmp_path):
+    out = tmp_path / 'map.html'
+    write_report([ride(tmp_path, start='2026-11-22T03:00:00Z'), ride(tmp_path, start='2026-11-22T04:00:00Z')], out)
+    data = json.loads(re.search(r'<script id="data" type="application/json">(.*?)</script>', out.read_text(), re.S).group(1))
+    assert [bool(r.get('combined')) for r in data['rides']] == [True, False, False]
+    write_report([ride(tmp_path)], out)
+    data = json.loads(re.search(r'<script id="data" type="application/json">(.*?)</script>', out.read_text(), re.S).group(1))
+    assert len(data['rides']) == 1
