@@ -24,6 +24,9 @@ label{font-size:13px;color:var(--muted)}
 #profile{display:block;width:100%;height:260px;touch-action:pan-y;cursor:crosshair}
 .readout{font-variant-numeric:tabular-nums;min-height:24px;color:var(--muted);font-size:14px;margin-top:8px}.readout b{color:var(--text);font-weight:600}
 .selstats{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-top:12px}.selstats div{border-top:1px solid var(--line);padding-top:6px}.selstats b{display:block;font-size:18px;font-variant-numeric:tabular-nums}.selstats span{font-size:12px;color:var(--muted)}
+.plegend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 22px;font-size:12px;color:var(--muted);margin-top:6px}.plegend>span{display:inline-flex;align-items:center;gap:7px}
+.plegend>.gscale{display:inline-grid;grid-template-columns:auto auto;align-items:center;gap:2px 8px}.gscale .gbar{position:relative;width:240px;height:10px;border-radius:3px;opacity:.55}.gscale .gticks{grid-column:2;position:relative;height:14px;width:240px;font-variant-numeric:tabular-nums}.gscale .gticks i{position:absolute;transform:translateX(-50%);font-style:normal}
+.key-line{display:inline-block;width:22px;height:0;border-top:2px solid}.key-band{display:inline-block;width:16px;height:12px;background:rgba(255,198,92,.18);border-radius:2px}
 .seltitle{font-size:13px;color:var(--green);margin-top:12px}
 table{width:100%;border-collapse:collapse;text-align:right;font-variant-numeric:tabular-nums;font-size:13px}th,td{padding:8px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:500}th:first-child,td:first-child{text-align:left}
 #climbs tbody tr{cursor:pointer}#climbs tbody tr:hover,#climbs tbody tr.on{background:#293b3f}.scroll{overflow:auto}
@@ -31,7 +34,7 @@ table{width:100%;border-collapse:collapse;text-align:right;font-variant-numeric:
 .bar{height:6px;border-radius:3px;background:var(--green)}
 details{color:var(--muted)}summary{cursor:pointer;color:var(--text);font-weight:600}details li{margin:6px 0}
 @media(max-width:1000px){.cards{grid-template-columns:repeat(3,1fr)}.grid,.findings{grid-template-columns:1fr}.grid .panel{margin-bottom:18px}.selstats{grid-template-columns:repeat(4,1fr)}}
-@media(max-width:560px){main{padding:24px 14px}.panel{padding:14px}.cards{grid-template-columns:repeat(2,1fr)}.selstats{grid-template-columns:repeat(2,1fr)}#legend .bar{width:120px}}
+@media(max-width:560px){.gscale .gbar,.gscale .gticks{width:170px}main{padding:24px 14px}.panel{padding:14px}.cards{grid-template-columns:repeat(2,1fr)}.selstats{grid-template-columns:repeat(2,1fr)}#legend .bar{width:120px}}
 </style></head><body><main>
 <div class="eyebrow">Ride map · phone GPS and heart rate</div>
 <div class="titlerow"><h1 id="title"></h1><label id="ridepick" hidden>Ride <select id="ride"></select></label></div>
@@ -51,6 +54,7 @@ details{color:var(--muted)}summary{cursor:pointer;color:var(--text);font-weight:
   <label>Overlay <select id="overlay"><option value="hr">Heart rate</option><option value="speed">Speed</option><option value="none">None</option></select></label>
   <button id="reset">Whole ride</button></div>
  <canvas id="profile" aria-label="Elevation profile"></canvas>
+ <div class="plegend" id="plegend"></div>
  <div class="readout" id="readout2">Drag across the profile to select a stretch; the map follows.</div>
  <div class="seltitle" id="seltitle"></div><div class="selstats" id="selstats"></div>
 </section>
@@ -175,7 +179,7 @@ function drawProfile(){const c=prof.c,ctx=c.getContext('2d'),W=prof.W,H=prof.H,{
  // grid + axes
  ctx.strokeStyle='#26363a';ctx.lineWidth=1;ctx.textAlign='right';ctx.textBaseline='middle';
  const step=niceStep((a1-a0)/4);for(let a=Math.ceil(a0/step)*step;a<=a1;a+=step){ctx.beginPath();ctx.moveTo(L,Y(a)+.5);ctx.lineTo(W-Rm,Y(a)+.5);ctx.stroke();ctx.fillText(fmt(a)+' m',L-6,Y(a))}
- ctx.textAlign='center';ctx.textBaseline='top';const ds=niceStep((d1-d0)/7);for(let d=Math.ceil(d0/ds)*ds;d<=d1+1e-9;d+=ds)ctx.fillText(fmt(d,ds<1?1:0)+' km',X(d),H-B+8);
+ ctx.textAlign='center';ctx.textBaseline='top';const ds=niceStep((d1-d0)/Math.max(2,Math.min(7,pw/80)));for(let d=Math.ceil(d0/ds)*ds;d<=d1+1e-9;d+=ds)ctx.fillText(fmt(d,ds<1?1:0)+' km',X(d),H-B+8);
  // climbs
  R.climbs.forEach((cl,k)=>{const xa=X(P.d[cl.start_i]),xb=X(P.d[cl.end_i]);if(xb<L||xa>W-Rm)return;ctx.fillStyle='rgba(255,198,92,.07)';ctx.fillRect(Math.max(L,xa),T,Math.min(W-Rm,xb)-Math.max(L,xa),ph);ctx.fillStyle='#ffc65c';ctx.textBaseline='top';ctx.fillText(k+1,Math.max(L+6,Math.min(W-Rm-6,(xa+xb)/2)),T+2)});
  // ride boundaries in a combined day
@@ -217,10 +221,23 @@ function climbDescent(i0,i1){let up=0,dn=0,run=[],last=-1;const flush=()=>{if(ru
 function stats(i0,i1){let mv=0,sp=0,spn=0,hr=0,hrn=0,hi=-1e9;for(let i=i0;i<=i1;i++){if(P.speed[i]!=null&&P.speed[i]>=MOVING){mv+=5;sp+=P.speed[i];spn++}if(P.hr[i]!=null){hr+=P.hr[i];hrn++}if(P.alt[i]!=null)hi=Math.max(hi,P.alt[i])}
  const [u,dn]=climbDescent(i0,i1),dist=P.d[i1]-P.d[i0];let a0=null,a1=null;for(let i=i0;i<=i1&&a0==null;i++)a0=P.alt[i];for(let i=i1;i>=i0&&a1==null;i--)a1=P.alt[i];
  const S=R.summary,whole=!sel;
- return[[fmt(whole?S.distance_km:dist,2)+' km','distance'],[dur(whole?S.duration_s:P.t[i1]-P.t[i0]+5),'elapsed'],[dur(whole?S.moving_s:mv),'moving'],[fmt(whole?S.moving_speed_kmh:spn?sp/spn:null,1)+' km/h','moving speed'],[fmt(whole?S.mean_hr_bpm:hrn?hr/hrn:null)+' bpm','heart rate'],['↑'+fmt(whole?S.climb_m:u)+' ↓'+fmt(whole?S.descent_m:dn)+' m','climb / descent'],[(a0!=null&&dist>0?((a1-a0)/(dist*10)>0?'+':'')+fmt((a1-a0)/(dist*10),1):'—')+' %','net grade'],[fmt(hi>-1e9?hi:null)+' m','high point']]}
+ return[[fmt(whole?S.distance_km:dist,2)+' km','distance'],[dur(whole?S.duration_s:P.t[i1]-P.t[i0]+5),'elapsed'],[dur(whole?S.moving_s:mv),'moving'],[fmt(whole?S.moving_speed_kmh:spn?sp/spn:null,1)+' km/h','moving speed'],[fmt(whole?S.mean_hr_bpm:hrn?hr/hrn:null)+' bpm','heart rate'],['↑'+fmt(whole?S.climb_m:u)+' ↓'+fmt(whole?S.descent_m:dn),'climb / descent (m)'],[(a0!=null&&dist>0?((a1-a0)/(dist*10)>0?'+':'')+fmt((a1-a0)/(dist*10),1):'—')+' %','net grade'],[fmt(hi>-1e9?hi:null)+' m','high point']]}
 function showStats(){const i0=sel?sel[0]:0,i1=sel?sel[1]:N-1;$('#seltitle').textContent=sel?`Selection · km ${fmt(P.d[i0],1)}–${fmt(P.d[i1],1)} · ${clock(P.t[i0])}–${clock(P.t[i1])}`:'Whole ride';
  const s=$('#selstats');s.replaceChildren();stats(i0,i1).forEach(([v,k])=>{const d=el('div');d.append(el('b',v),el('span',k));s.append(d)})}
 function select(a,b){sel=a==null?null:[a,b];document.querySelectorAll('#climbs tbody tr').forEach(tr=>tr.classList.toggle('on',sel&&+tr.dataset.a===a&&+tr.dataset.b===b));showStats();sel?fit(a,b):fit()}
+
+/* ---------- profile legend ---------- */
+const G0=-12,G1=14,gpos=g=>(g-G0)/(G1-G0)*100;
+function profileLegend(){const box=$('#plegend');box.replaceChildren();
+ const scale=el('span',null,'gscale'),bar=el('span',null,'gbar'),stops=[];for(let g=G0;g<=G1;g+=.5)stops.push(`${div(g)} ${gpos(g).toFixed(1)}%`);bar.style.background=`linear-gradient(90deg,${stops.join(',')})`;
+ const ticks=el('span',null,'gticks');for(const g of[-10,-5,0,5,10]){const t=el('i',(g>0?'+':g<0?'−':'')+Math.abs(g));t.style.left=gpos(g)+'%';ticks.append(t)}
+ scale.append(el('span','Fill: grade %'),bar,ticks);box.append(scale);
+ const key=(cls,style,text)=>{const k=el('span'),m=el('span',null,cls);Object.assign(m.style,style);k.append(m,text);box.append(k)};
+ key('key-band',{background:'#465a5e',opacity:.55},'no grade');
+ key('key-line',{borderColor:'#e5eeee'},'GPS altitude (left axis)');
+ if(overlay!=='none')key('key-line',{borderColor:overlay==='hr'?'#ffad82':'#9de6ae'},(overlay==='hr'?'Heart rate':'Speed')+' (right axis)');
+ key('key-band',{},'climb (number as in the table)');
+ if(R&&R.combined)key('key-line',{borderColor:'#9de6ae',borderTopStyle:'dashed'},'start of the next ride')}
 
 /* ---------- page ---------- */
 function table(t,head,rows){t.replaceChildren();const th=el('thead'),tr=el('tr');head.forEach(h=>tr.append(el('th',h)));th.append(tr);const tb=el('tbody');rows.forEach(r=>tb.append(r));t.append(th,tb)}
@@ -237,14 +254,14 @@ function setRide(k){RI=k;R=DATA.rides[k];P=R.points;N=P.t.length;sel=null;hover=
  table($('#bands'),['grade %','time','','km/h','bpm'],R.grade_bands.map(b=>{const tr=el('tr'),g=el('td'),sw=el('span',null,'sw');sw.style.background=div(b.lo===-99?b.hi-2:b.hi===99?b.lo+2:(b.lo+b.hi)/2);g.append(sw,b.band);
   const bc=el('td'),bar=el('div',null,'bar');bar.style.width=(100*b.time_s/maxT)+'%';bar.style.minWidth='2px';bc.style.width='30%';bc.append(bar);tr.append(g,el('td',dur(b.time_s)),bc,el('td',fmt(b.speed_kmh,1)),el('td',fmt(b.hr_bpm)));return tr}));
  $('#methods').replaceChildren(...R.methods.map(m=>el('li',m)));
- prepColours();showStats();fit()}
+ prepColours();profileLegend();showStats();fit()}
 function resize(){const r=map.c.getBoundingClientRect();map.dpr=window.devicePixelRatio||1;map.W=r.width;map.H=r.height;map.c.width=r.width*map.dpr;map.c.height=r.height*map.dpr;
  const q=prof.c.getBoundingClientRect();prof.dpr=map.dpr;prof.W=q.width;prof.H=q.height;prof.c.width=q.width*prof.dpr;prof.c.height=q.height*prof.dpr;redraw()}
 $('#title').textContent=DATA.title;document.title=DATA.title;
 if(DATA.rides.length>1){$('#ridepick').hidden=false;DATA.rides.forEach((r,i)=>{const o=el('option',r.combined?`All rides of ${new Date(r.start_utc).toLocaleDateString([],{month:'short',day:'numeric'})} (${r.summary.rides}) · ${fmt(r.summary.distance_km,1)} km`:`${new Date(r.start_utc).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · ${fmt(r.summary.distance_km,1)} km`);o.value=i;$('#ride').append(o)});$('#ride').onchange=e=>setRide(+e.target.value)}
 $('#colour').onchange=e=>{mode=e.target.value;prepColours();redraw()};
 $('#tiles').onchange=e=>{tileKey=e.target.value;tileOK=tileFail=0;$('#tilenote').style.display='none';redraw()};
-$('#overlay').onchange=e=>{overlay=e.target.value;redraw()};
+$('#overlay').onchange=e=>{overlay=e.target.value;profileLegend();redraw()};
 new ResizeObserver(resize).observe(map.c);new ResizeObserver(resize).observe(prof.c);
 resize();if(DATA.rides.length)setRide(0);
 </script></body></html>
