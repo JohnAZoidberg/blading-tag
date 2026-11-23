@@ -34,6 +34,9 @@ CLIMB_PIVOT_M = 10.0   # a climb may contain dips up to this deep
 CLIMB_MIN_GAIN_M = 25.0
 TRIM_M = 2.0           # climb ends: first within this of the top, last within it of the bottom
 CLIMB_MIN_GRADE = 2.0  # percent
+REST_MIN_S = 300.0     # rest stops: at least this long, from first to last stopped second
+REST_JOIN_S = 90.0     # stops this close together, with little movement between, are one rest
+REST_JOIN_M = 150.0
 GRADE_BANDS = [(-99, -6), (-6, -3), (-3, -1), (-1, 1), (1, 3), (3, 6), (6, 9), (9, 99)]
 
 
@@ -144,6 +147,47 @@ def pivots(alt, threshold=CLIMB_PIVOT_M):
     return out
 
 
+def rest_stops(stops, t, d, hr, alt) -> list[dict]:
+    """Rests of at least REST_MIN_S, merging stops split by a short shuffle (walking the bike, rolling a few metres)."""
+    if not len(t):
+        return []
+    at = lambda s: int(min(len(t) - 1, max(0, np.searchsorted(t, s, side='right') - 1)))
+    merged = []
+    for s in sorted(stops, key=lambda s: s['start_s']):
+        if merged:
+            m = merged[-1]
+            if s['start_s'] - m['end_s'] <= REST_JOIN_S and d[at(s['start_s'])] - d[at(m['end_s'])] <= REST_JOIN_M:
+                m['end_s'], m['stopped_s'] = s['end_s'], m['stopped_s'] + s['duration_s']
+                continue
+        merged.append(dict(start_s=s['start_s'], end_s=s['end_s'], stopped_s=s['duration_s']))
+    rests, prev_i = [], 0
+    end = t[-1] + BIN_S
+    for m in merged:
+        # Waiting before the start or after the finish isn't a rest.
+        if m['end_s'] - m['start_s'] < REST_MIN_S or m['start_s'] <= 10 or m['end_s'] >= end - 10:
+            continue
+        i0, i1 = at(m['start_s']), at(m['end_s'] - 1e-6)
+        sl = slice(i0, i1 + 1)
+        before = hr[max(0, i0 - 6):i0 + 1]
+        rests.append(dict(start_i=i0, end_i=i1, mid_i=(i0 + i1) // 2, start_s=m['start_s'], end_s=m['end_s'],
+                          duration_s=m['end_s'] - m['start_s'], stopped_s=m['stopped_s'], km=float(d[i0] / 1000),
+                          alt_m=_mean(alt[sl]), hr_bpm=_mean(hr[sl]),
+                          hr_min_bpm=float(np.nanmin(hr[sl])) if np.isfinite(hr[sl]).any() else None,
+                          hr_arrive_bpm=_mean(before),
+                          since_km=float((d[i0] - d[prev_i]) / 1000), since_s=float(t[i0] - t[prev_i])))
+        prev_i = i1
+    return rests
+
+
+def _rest_finding(rests):
+    if not rests:
+        return []
+    total = sum(r['duration_s'] for r in rests)
+    longest = max(rests, key=lambda r: r['duration_s'])
+    return [f"{len(rests)} rest stop{'s' if len(rests) != 1 else ''} of at least {REST_MIN_S / 60:.0f} minutes add up to {total / 60:.0f} min. "
+            f"The longest is {longest['duration_s'] / 60:.0f} min at km {longest['km']:.1f}."]
+
+
 def _mean(x):
     x = np.asarray(x, float)
     x = x[np.isfinite(x)]
@@ -159,6 +203,7 @@ METHODS = [
     'The basemap is fetched from the selected tile provider (Esri or OpenTopoMap) when the page is opened, which tells that provider the ride area. Choose "None" to draw the route without tiles. Dashed lines bridge GPS gaps longer than 30 s.',
     'GPS gaps (tunnels) between stable stretches of fixes with horizontal accuracy ≤15 m are filled along OpenStreetMap roads: the shortest road path between the gap ends, preferring roads open to bicycles unless the implied speed fits the other route better. The time is spread evenly along it at constant speed. Only boxes around the gaps are sent to the Overpass API; answers are cached. Without a road path the distance is the speed around the gap times its duration, on a straight line. Map data © OpenStreetMap contributors (ODbL).',
     'Altitude in a gap, and for 10 s beyond each end where GPS altitude near a tunnel portal is unreliable, is linear in distance between the median altitudes 10–20 fixes outside the gap. Gaps under 50 m are stops: the position is held.',
+    f'Rest stops join stops (GPS speed under 3.6 km/h for 10 s or more) that are under {REST_JOIN_S:.0f} s and {REST_JOIN_M:.0f} m apart, and keep those lasting {REST_MIN_S / 60:.0f} minutes or more from first to last stopped second, except waiting at the start or the finish of a recording. "Since previous" counts from the ride start or the end of the previous rest. Arrival HR is the mean over the 30 s before the stop.',
     'A whole day combines its rides end to end: distance continues from one ride to the next, the profile breaks between rides, and time between rides counts as neither elapsed nor moving time.',
 ]
 
@@ -291,7 +336,9 @@ def analyze(path: str | Path | Session, roads=None) -> dict:
     raw[~(np.isfinite(lat) & np.isfinite(lon))] = np.nan
     fill = _gap_altitude(t, d, raw, gaps)
     terrain, findings, points, climbs, bands = _terrain(t, d, speed, hr, lat, lon, raw, fill)
-    summary = dict(base['summary'], **terrain)
+    alt = np.array([np.nan if v is None else v for v in points['alt']], float)
+    rests = rest_stops(base['stops'], t, d, hr, alt)
+    summary = dict(base['summary'], **terrain, rests=len(rests), rest_s=sum(r['duration_s'] for r in rests))
     journeys = [g for g in gaps if g['method'] in ('road', 'speed')]
     summary.update(gps_coverage=_measured_coverage(sess, summary['duration_s']),
                    filled_km=sum(g['length_m'] for g in journeys) / 1000,
@@ -308,8 +355,8 @@ def analyze(path: str | Path | Session, roads=None) -> dict:
                    + f". {S['moving_s'] / 60:.1f} minutes at or above 3.6 km/h. Real GPS covers {100 * S['gps_coverage']:.1f}% of elapsed time.")
     rides_gaps = [{k: v for k, v in g.items() if k != 'portal_alt_m'} for g in gaps]
     return cycling._finite(dict(session=base['session'], start_utc=base['start_utc'], gear=base['gear'],
-                                summary=summary, findings=head + findings,
-                                points=points, climbs=climbs, grade_bands=bands, stops=base['stops'],
+                                summary=summary, findings=head + findings + _rest_finding(rests),
+                                points=points, climbs=climbs, rests=rests, grade_bands=bands, stops=base['stops'],
                                 gaps=rides_gaps, methods=METHODS))
 
 
@@ -327,10 +374,12 @@ def combine(rides: list[dict], day: str) -> dict:
     t0 = _utc(rides[0])
     cols = {k: [] for k in ('t', 'd', 'speed', 'hr', 'lat', 'lon', 'raw', 'fill')}
     gaps = []
-    stops, starts, d_off, n = [], [], 0., 0
+    stops, starts, rests, d_off, n = [], [], [], 0., 0
     for ride in rides:
         off = (_utc(ride) - t0).total_seconds()
         p = ride['points']
+        rests += [dict(r, start_i=r['start_i'] + n, end_i=r['end_i'] + n, mid_i=r['mid_i'] + n, start_s=r['start_s'] + off,
+                       end_s=r['end_s'] + off, km=r['km'] + d_off / 1000) for r in ride.get('rests', [])]
         starts.append(n)
         n += len(p['t'])
         arr = lambda k: np.array([np.nan if v is None else v for v in p[k]], float)
@@ -359,7 +408,7 @@ def combine(rides: list[dict], day: str) -> dict:
                    mean_hr_bpm=weighted('mean_hr_bpm', lambda s: s['hr_coverage'] * s['duration_s']),
                    hr_coverage=sum(s['hr_coverage'] * s['duration_s'] for s in S) / duration if duration else 0,
                    gps_coverage=sum(s['gps_coverage'] * s['duration_s'] for s in S) / duration if duration else 0,
-                   rides=len(rides), **terrain,
+                   rides=len(rides), **terrain, rests=len(rests), rest_s=sum(r['duration_s'] for r in rests),
                    **{k: total(k) for k in ('filled_km', 'road_km', 'tunnel_km', 'gaps') if all(k in s for s in S)})
     between = sum(((_utc(b) - _utc(a)).total_seconds() - a['summary']['duration_s']) for a, b in zip(rides, rides[1:]))
     findings = [f"{len(rides)} rides cover {summary['distance_km']:.1f} km" + (f" ({summary['filled_km']:.1f} km of it across GPS gaps, {summary['tunnel_km']:.1f} km in tunnels)" if summary.get('filled_km') else '') + f" with {summary['moving_s'] / 3600:.1f} h moving out of {duration / 3600:.1f} h recorded, plus {between / 3600:.1f} h between rides."]
@@ -367,7 +416,8 @@ def combine(rides: list[dict], day: str) -> dict:
         findings.append(f"Heart rate averages {summary['mean_hr_bpm']:.0f} bpm across the day and reaches {summary['max_hr_bpm']:.0f} bpm; valid contact covers {100 * summary['hr_coverage']:.1f}% of recorded time.")
     return cycling._finite(dict(session=' + '.join(r['session'] for r in rides), start_utc=rides[0]['start_utc'],
                                 gear=' / '.join(dict.fromkeys(r['gear'] for r in rides if r['gear'])),
-                                combined=True, day=day, members=[r['session'] for r in rides], ride_starts=starts, summary=summary, findings=findings + t_findings,
+                                combined=True, day=day, members=[r['session'] for r in rides], ride_starts=starts, summary=summary,
+                                findings=findings + t_findings + _rest_finding(rests), rests=rests,
                                 points=points, climbs=climbs, grade_bands=bands, stops=stops, gaps=gaps, methods=METHODS))
 
 

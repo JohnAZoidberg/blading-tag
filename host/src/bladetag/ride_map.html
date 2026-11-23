@@ -13,7 +13,7 @@ h1{font-size:clamp(30px,5vw,52px);letter-spacing:-2px;line-height:1.1;margin:10p
 .findings{display:grid;grid-template-columns:repeat(2,1fr);gap:0 24px;margin-top:10px}.findings p{margin:0;padding:12px 0;border-top:1px solid var(--line)}
 .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}.controls h2{margin-right:auto}
 button,select{background:#223438;color:var(--text);border:1px solid #486065;border-radius:6px;padding:6px 8px;font:inherit;font-size:14px}button{cursor:pointer}button:hover{background:#2b4146}
-label{font-size:13px;color:var(--muted)}label.check{display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--text);font-size:14px}label.check input{accent-color:#ffc65c;width:16px;height:16px;margin:0}
+label{font-size:13px;color:var(--muted)}label.check{display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--text);font-size:14px}label.rests input{accent-color:#c59bff}label.check input{accent-color:#ffc65c;width:16px;height:16px;margin:0}
 .mapwrap{position:relative;height:min(68vh,640px);min-height:340px;border-radius:10px;overflow:hidden;background:#0b1113;border:1px solid var(--line)}
 #map{position:absolute;inset:0;width:100%;height:100%;cursor:grab;touch-action:none}#map.drag{cursor:grabbing}
 #attrib{position:absolute;right:0;bottom:0;font-size:11px;padding:2px 6px;background:rgba(16,23,25,.75);color:var(--muted)}
@@ -49,6 +49,7 @@ details{color:var(--muted)}summary{cursor:pointer;color:var(--text);font-weight:
   <label>Colour <select id="colour"><option value="speed">Speed</option><option value="hr">Heart rate</option><option value="grade">Grade</option><option value="alt">Altitude</option></select></label>
   <label>Map <select id="tiles"><option value="dark">Dark</option><option value="topo">Topographic</option><option value="relief">Relief (OpenTopoMap)</option><option value="satellite">Satellite</option><option value="none">None (offline)</option></select></label>
   <label class="check"><input type="checkbox" id="showclimbs" checked> Climbs</label>
+  <label class="check rests"><input type="checkbox" id="showrests" checked> Rests</label>
   <button id="fit">Fit route</button></div>
  <div class="mapwrap"><canvas id="map" aria-label="Route map"></canvas><div class="zoom"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button></div><div id="legend"></div><div id="tilenote">Map tiles didn't load (offline?). The route is drawn without them.</div><div id="attrib"></div></div>
  <div class="readout" id="readout1">Hover the route or the profile; click the route to mark a point.</div>
@@ -70,6 +71,7 @@ details{color:var(--muted)}summary{cursor:pointer;color:var(--text);font-weight:
  <section class="panel"><div class="controls"><h2>Climbs</h2><small>click a row to select it</small></div><div class="scroll"><table id="climbs"></table></div></section>
  <section class="panel"><div class="controls"><h2>Speed and heart rate by grade</h2></div><div class="scroll"><table id="bands"></table></div></section>
 </div>
+<section class="panel" style="margin-top:18px"><div class="controls"><h2>Rest stops</h2><small>stopped 5 minutes or more · click a row to show it on the map</small></div><div class="scroll"><table id="rests"></table></div></section>
 <section class="panel" id="gapspanel" style="margin-top:18px"><div class="controls"><h2>GPS gaps</h2><small>tunnels and other blackouts, filled along OpenStreetMap roads (© OpenStreetMap contributors) · click a row to select it</small></div><div class="scroll"><table id="gaps"></table></div></section>
 <section class="panel" style="margin-top:18px"><details><summary>How this is calculated</summary><ul id="methods"></ul></details></section>
 </main>
@@ -157,6 +159,8 @@ function drawMap(){const ctx=map.c.getContext('2d');ctx.setTransform(map.dpr,0,0
  const dot=(p,fill,r=6)=>{if(!p)return;ctx.beginPath();ctx.arc(p[0],p[1],r,0,7);ctx.fillStyle=fill;ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#0b1113';ctx.stroke()};
  const first=pts.findIndex(Boolean),last=pts.length-1-[...pts].reverse().findIndex(Boolean);
  if(first>=0){dot(pts[first],'#9de6ae',7);dot(pts[last],'#ff6f6f',7)}
+ if(showRests)(R.rests||[]).forEach((r,k)=>{const p=pts[r.mid_i];if(!p)return;ctx.beginPath();ctx.roundRect(p[0]-9,p[1]-9,18,18,4);ctx.fillStyle='#c59bff';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#0b1113';ctx.stroke();
+  ctx.fillStyle='#101719';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(k+1,p[0],p[1]+.5)});
  if(showClimbs)R.climbs.forEach((c,k)=>{const p=pts[c.end_i];if(!p)return;dot(p,'#ffc65c',9);ctx.fillStyle='#101719';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(k+1,p[0],p[1]+.5)});
  rideMarks().forEach((x,k)=>{const p=pts[x.i];if(!p)return;
   ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(p[0]-6,p[1]-13);ctx.arc(p[0],p[1]-19,9,Math.PI*.78,Math.PI*.22);ctx.closePath();ctx.fillStyle='#8cc8ff';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#0b1113';ctx.stroke();
@@ -216,6 +220,8 @@ function drawProfile(){const c=prof.c,ctx=c.getContext('2d'),W=prof.W,H=prof.H,{
   ctx.globalAlpha=.9;line(ctx,i0,i1,sm,X,OY,col,1.4);ctx.globalAlpha=1;ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';const os=niceStep((o1-o0)/4);
   for(let x=Math.ceil(o0/os)*os;x<=o1;x+=os)ctx.fillText(fmt(x),W-Rm+6,OY(x));ctx.textBaseline='top';ctx.fillText(UNITS[overlay],W-Rm+6,H-B+8)}}
  if(prof.drag&&Math.abs(prof.drag[1]-prof.drag[0])>2){ctx.fillStyle='rgba(157,230,174,.18)';ctx.fillRect(Math.min(...prof.drag),T,Math.abs(prof.drag[1]-prof.drag[0]),ph)}
+ if(showRests)(R.rests||[]).forEach((r,k)=>{const d=P.d[r.mid_i];if(d<d0||d>d1)return;const x=X(d);ctx.strokeStyle='rgba(197,155,255,.55)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x+.5,T+ph-22);ctx.lineTo(x+.5,T);ctx.stroke();
+  ctx.beginPath();ctx.roundRect(x-8,T+ph-20,16,16,3);ctx.fillStyle='#c59bff';ctx.fill();ctx.fillStyle='#101719';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(k+1,x,T+ph-11.5)});
  rideMarks().forEach((m,k)=>{const d=P.d[m.i];if(d<d0||d>d1)return;const x=X(d),y=P.alt[m.i]!=null?Y(P.alt[m.i]):T+ph;
   ctx.save();ctx.setLineDash([2,3]);ctx.strokeStyle='rgba(140,200,255,.7)';ctx.beginPath();ctx.moveTo(x+.5,y-12);ctx.lineTo(x+.5,T+ph);ctx.stroke();ctx.restore();
   ctx.beginPath();ctx.arc(x,y-18,8,0,7);ctx.fillStyle='#8cc8ff';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#0b1113';ctx.stroke();ctx.fillStyle='#101719';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(letter(k),x,y-17.5)});
@@ -264,6 +270,7 @@ function profileLegend(){const box=$('#plegend');box.replaceChildren();
  if(P&&P.fill&&P.fill.some(Boolean))key('key-line',{borderColor:'#e5eeee',borderTopStyle:'dashed'},'GPS gap (tunnel): interpolated');
  if(overlay!=='none')key('key-line',{borderColor:overlay==='hr'?'#ffad82':'#9de6ae'},(overlay==='hr'?'Heart rate':'Speed')+' (right axis)');
  if(showClimbs)key('key-band',{},'climb (number as in the table)');
+ if(showRests)key('key-band',{background:'#c59bff',borderRadius:'3px',width:'12px',height:'12px'},'rest stop ≥5 min');
  {const k=el('span'),m=el('span','A');Object.assign(m.style,{display:'inline-grid',placeItems:'center',width:'16px',height:'16px',borderRadius:'50%',background:'#8cc8ff',color:'#101719',fontWeight:700,fontSize:'10px'});k.append(m,'your marked point');box.append(k)}
  if(R&&R.combined)key('key-line',{borderColor:'#9de6ae',borderTopStyle:'dashed'},'start of the next ride')}
 
@@ -271,6 +278,10 @@ function profileLegend(){const box=$('#plegend');box.replaceChildren();
 let showClimbs=true;try{showClimbs=localStorage.getItem('bladetag.showClimbs')!=='0'}catch(e){}
 $('#showclimbs').checked=showClimbs;
 $('#showclimbs').onchange=e=>{showClimbs=e.target.checked;try{localStorage.setItem('bladetag.showClimbs',showClimbs?'1':'0')}catch(err){}profileLegend();redraw()};
+
+let showRests=true;try{showRests=localStorage.getItem('bladetag.showRests')!=='0'}catch(e){}
+$('#showrests').checked=showRests;
+$('#showrests').onchange=e=>{showRests=e.target.checked;try{localStorage.setItem('bladetag.showRests',showRests?'1':'0')}catch(err){}profileLegend();redraw()};
 
 /* ---------- marked points ----------
  Stored per browser by absolute time, so they survive regenerating the page and
@@ -315,6 +326,11 @@ function setRide(k){RI=k;R=DATA.rides[k];P=R.points;N=P.t.length;sel=null;hover=
  const maxT=Math.max(1,...R.grade_bands.map(b=>b.time_s));
  table($('#bands'),['grade %','time','','km/h','bpm'],R.grade_bands.map(b=>{const tr=el('tr'),g=el('td'),sw=el('span',null,'sw');sw.style.background=div(b.lo===-99?b.hi-2:b.hi===99?b.lo+2:(b.lo+b.hi)/2);g.append(sw,b.band);
   const bc=el('td'),bar=el('div',null,'bar');bar.style.width=(100*b.time_s/maxT)+'%';bar.style.minWidth='2px';bc.style.width='30%';bc.append(bar);tr.append(g,el('td',dur(b.time_s)),bc,el('td',fmt(b.speed_kmh,1)),el('td',fmt(b.hr_bpm)));return tr}));
+ const rr=(R.rests||[]).map((r,k)=>{const tr=el('tr');tr.style.cursor='pointer';
+  [String(k+1),clock(r.start_s)+'–'+clock(r.end_s),fmt(r.km,1),dur(r.duration_s),fmt(r.alt_m)+' m',fmt(r.hr_arrive_bpm)+' → '+fmt(r.hr_min_bpm),fmt(r.since_km,1)+' km · '+dur(r.since_s)].forEach(x=>tr.append(el('td',x)));
+  tr.onclick=()=>{centerOn(r.mid_i);$('#map').scrollIntoView({behavior:'smooth',block:'center'})};return tr});
+ table($('#rests'),['#','time','at km','rest','altitude','HR arrive → lowest','ridden since previous rest'],rr);
+ if(!rr.length){const tr=el('tr'),td=el('td','No stops of 5 minutes or more.');td.colSpan=7;tr.append(td);$('#rests tbody').append(tr)}
  const gaps=(R.gaps||[]).filter(g=>g.method!=='stop');$('#gapspanel').hidden=!gaps.length;
  table($('#gaps'),['at','gap','distance','km/h','tunnel','how'],gaps.map(g=>{const tr=el('tr');const a=Math.max(0,P.t.findIndex(t=>t+5>g.t0_s)-1);let b=P.t.findIndex(t=>t>=g.t1_s);if(b<0)b=N-1;tr.dataset.a=a;tr.dataset.b=b;
   [clock(g.t0_s)+' · km '+fmt(P.d[a],1),dur(g.duration_s),fmt(g.length_m)+' m',fmt(g.speed_kmh,1),g.tunnel_share==null?'—':fmt(100*g.tunnel_share)+' %',g.method==='road'?(g.road||'road')+(g.bikes_allowed===false?' (closed to bikes in OSM)':''):'estimated from speed ('+g.note+')'].forEach(x=>tr.append(el('td',x)));

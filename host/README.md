@@ -408,7 +408,12 @@ elevation profile with heart rate or speed overlaid, then the detected climbs
 and speed and heart rate by grade band. Hover the map or the profile to see
 the same point in both. Drag across the profile, or click a climb, to select
 a stretch; the map zooms to it and the totals below the profile cover only
-that stretch. The Climbs checkbox hides the climb markers on the map and the profile
+that stretch. Rest stops of 5 minutes or more are marked as violet numbered squares and
+listed with their time, length, altitude, heart rate on arrival and the
+lowest heart rate during the stop, and how far you rode since the previous
+one. A stop broken by a short shuffle (under 90 s and 150 m) counts as one
+rest; waiting at the start or the finish of a recording doesn't count. The
+Climbs and Rests checkboxes hide those markers on the map and the profile
 (remembered in the browser). Click the route or the profile to mark a point. Marks are
 lettered A, B, C… on the map and the profile and listed under the profile,
 where you can name them, remove them, see the distance, time and climbing

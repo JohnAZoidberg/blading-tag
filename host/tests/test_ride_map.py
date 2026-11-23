@@ -178,3 +178,21 @@ def test_page_lists_day_before_its_rides(tmp_path):
     write_report([ride(tmp_path)], out)
     data = json.loads(re.search(r'<script id="data" type="application/json">(.*?)</script>', out.read_text(), re.S).group(1))
     assert len(data['rides']) == 1
+
+
+def test_rest_stops_merge_shuffles_and_skip_start_and_finish():
+    from bladetag.ride_map import rest_stops
+    t = np.arange(0, 3600, 5.)
+    d = np.minimum(t, 3000) * 5.               # metres; standing still after 3000 s
+    hr = np.full(len(t), 120.)
+    alt = np.full(len(t), 50.)
+    stops = [dict(start_s=0, end_s=400, duration_s=400),           # waiting at the start
+             dict(start_s=1000, end_s=1180, duration_s=180),       # 3 min, then a 60 s shuffle…
+             dict(start_s=1240, end_s=1400, duration_s=160),       # …then 160 s more: one 400 s rest
+             dict(start_s=2000, end_s=2200, duration_s=200),       # too short
+             dict(start_s=3000, end_s=3600, duration_s=600)]       # standing at the finish
+    d[(t >= 1180) & (t < 1240)] = 1180 * 5     # the shuffle moves less than 150 m
+    d[t >= 1240] -= 60 * 5
+    (r,) = rest_stops(stops, t, d, hr, alt)
+    assert (r['start_s'], r['end_s'], r['duration_s'], r['stopped_s']) == (1000, 1400, 400, 340)
+    assert r['since_s'] == 1000 and r['km'] == pytest.approx(5.0)
