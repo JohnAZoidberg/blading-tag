@@ -13,7 +13,14 @@ h1{font-size:clamp(30px,5vw,52px);letter-spacing:-2px;line-height:1.1;margin:10p
 .findings{display:grid;grid-template-columns:repeat(2,1fr);gap:0 24px;margin-top:10px}.findings p{margin:0;padding:12px 0;border-top:1px solid var(--line)}
 .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}.controls h2{margin-right:auto}
 button,select{background:#223438;color:var(--text);border:1px solid #486065;border-radius:6px;padding:6px 8px;font:inherit;font-size:14px}button{cursor:pointer}button:hover{background:#2b4146}
-label{font-size:13px;color:var(--muted)}label.check{display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--text);font-size:14px}label.rests input{accent-color:#c59bff}label.check input{accent-color:#ffc65c;width:16px;height:16px;margin:0}
+label{font-size:13px;color:var(--muted)}label.check{display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--text);font-size:14px}label.rests input{accent-color:#c59bff}label.photos input{accent-color:#e5eeee}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}.gallery button{all:unset;cursor:pointer;display:block;border-radius:8px;overflow:hidden;background:#101719;border:1px solid var(--line);position:relative}
+.gallery button:focus-visible,.gallery button:hover{outline:2px solid var(--blue)}.gallery img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover}.gallery span{display:block;font-size:12px;color:var(--muted);padding:5px 8px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gallery .off img{opacity:.7}.gallery h3{grid-column:1/-1;margin:8px 0 0;font-size:13px;font-weight:600;color:var(--muted)}
+#viewer{position:fixed;inset:0;z-index:10;background:rgba(5,9,10,.94);display:none;grid-template-rows:1fr auto;padding:16px}#viewer.on{display:grid}#viewer .stage img{position:absolute;inset:0;margin:auto;max-width:100%;max-height:100%}
+#viewer .stage{position:relative;display:grid;place-items:center;min-height:0}#viewer img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;min-height:0}
+#viewer .vbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:12px;font-variant-numeric:tabular-nums}#viewer .vbar .cap{margin-right:auto;color:var(--muted);font-size:14px}#viewer .vbar .cap b{color:var(--text)}
+#viewer .nav{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:64px;font-size:26px;background:rgba(34,52,56,.8)}#viewer .prev{left:0}#viewer .next{right:0}label.check input{accent-color:#ffc65c;width:16px;height:16px;margin:0}
 .mapwrap{position:relative;height:min(68vh,640px);min-height:340px;border-radius:10px;overflow:hidden;background:#0b1113;border:1px solid var(--line)}
 #map{position:absolute;inset:0;width:100%;height:100%;cursor:grab;touch-action:none}#map.drag{cursor:grabbing}
 #attrib{position:absolute;right:0;bottom:0;font-size:11px;padding:2px 6px;background:rgba(16,23,25,.75);color:var(--muted)}
@@ -50,6 +57,7 @@ details{color:var(--muted)}summary{cursor:pointer;color:var(--text);font-weight:
   <label>Map <select id="tiles"><option value="dark">Dark</option><option value="topo">Topographic</option><option value="relief">Relief (OpenTopoMap)</option><option value="satellite">Satellite</option><option value="none">None (offline)</option></select></label>
   <label class="check"><input type="checkbox" id="showclimbs" checked> Climbs</label>
   <label class="check rests"><input type="checkbox" id="showrests" checked> Rests</label>
+  <label class="check photos" id="photopick" hidden><input type="checkbox" id="showphotos" checked> Photos</label>
   <button id="fit">Fit route</button></div>
  <div class="mapwrap"><canvas id="map" aria-label="Route map"></canvas><div class="zoom"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button></div><div id="legend"></div><div id="tilenote">Map tiles didn't load (offline?). The route is drawn without them.</div><div id="attrib"></div></div>
  <div class="readout" id="readout1">Hover the route or the profile; click the route to mark a point.</div>
@@ -67,6 +75,12 @@ details{color:var(--muted)}summary{cursor:pointer;color:var(--text);font-weight:
  <div class="controls"><h2>Marked points</h2><small>click the route or the elevation profile to mark a point · saved in this browser</small></div>
  <div class="scroll"><table id="marks"></table></div>
 </section>
+<section class="panel" id="photospanel" hidden>
+ <div class="controls"><h2>Photos</h2><small id="photonote"></small></div>
+ <div class="gallery" id="gallery"></div>
+</section>
+<div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="Photo"><div class="stage"><img id="vimg" alt=""><button class="nav prev" id="vprev" aria-label="Previous photo">‹</button><button class="nav next" id="vnext" aria-label="Next photo">›</button></div>
+ <div class="vbar"><div class="cap" id="vcap"></div><button id="vmap">Show on map</button><a id="vfull" target="_blank" rel="noopener"><button tabindex="-1">Full size</button></a><button id="vclose">Close (Esc)</button></div></div>
 <div class="grid">
  <section class="panel"><div class="controls"><h2>Climbs</h2><small>click a row to select it</small></div><div class="scroll"><table id="climbs"></table></div></section>
  <section class="panel"><div class="controls"><h2>Speed and heart rate by grade</h2></div><div class="scroll"><table id="bands"></table></div></section>
@@ -159,6 +173,7 @@ function drawMap(){const ctx=map.c.getContext('2d');ctx.setTransform(map.dpr,0,0
  const dot=(p,fill,r=6)=>{if(!p)return;ctx.beginPath();ctx.arc(p[0],p[1],r,0,7);ctx.fillStyle=fill;ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#0b1113';ctx.stroke()};
  const first=pts.findIndex(Boolean),last=pts.length-1-[...pts].reverse().findIndex(Boolean);
  if(first>=0){dot(pts[first],'#9de6ae',7);dot(pts[last],'#ff6f6f',7)}
+ photoClusters=[];if(showPhotos)drawPhotos(ctx,pts);
  if(showRests)(R.rests||[]).forEach((r,k)=>{const p=pts[r.mid_i];if(!p)return;ctx.beginPath();ctx.roundRect(p[0]-9,p[1]-9,18,18,4);ctx.fillStyle='#c59bff';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#0b1113';ctx.stroke();
   ctx.fillStyle='#101719';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(k+1,p[0],p[1]+.5)});
  if(showClimbs)R.climbs.forEach((c,k)=>{const p=pts[c.end_i];if(!p)return;dot(p,'#ffc65c',9);ctx.fillStyle='#101719';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(k+1,p[0],p[1]+.5)});
@@ -183,7 +198,9 @@ map.c.addEventListener('pointermove',e=>{const prev=ptrs.get(e.pointerId);
 function nearestOnMap(x,y,r=14){let best=-1,bd=r*r;const s=Math.pow(2,map.z);for(let i=0;i<N;i++){const w=WORLD[RI][i];if(!w)continue;const dx=(w[0]-map.cx)*s+map.W/2-x,dy=(w[1]-map.cy)*s+map.H/2-y,d=dx*dx+dy*dy;if(d<bd){bd=d;best=i}}return best}
 const up=e=>{ptrs.delete(e.pointerId);pinch=0;if(!ptrs.size)map.c.classList.remove('drag')};
 map.c.addEventListener('pointerup',e=>{const t=tap;tap=null;up(e);
- if(!t||Math.hypot(e.offsetX-t[0],e.offsetY-t[1])>5)return;const i=nearestOnMap(e.offsetX,e.offsetY,e.pointerType==='touch'?22:14);if(i<0)return;
+ if(!t||Math.hypot(e.offsetX-t[0],e.offsetY-t[1])>5)return;
+ const hit=photoClusters.find(c=>Math.hypot(c.x-e.offsetX,c.y-e.offsetY)<=c.r+3);if(hit){clearTimeout(tapTimer);openViewer(hit.items[0]);return}
+ const i=nearestOnMap(e.offsetX,e.offsetY,e.pointerType==='touch'?22:14);if(i<0)return;
  clearTimeout(tapTimer);tapTimer=setTimeout(()=>addMark(i),250)});   // wait: a double click zooms instead
 map.c.addEventListener('pointercancel',e=>{tap=null;up(e)});map.c.addEventListener('pointerleave',()=>{if(!ptrs.size)setHover(-1)});
 map.c.addEventListener('wheel',e=>{
@@ -228,6 +245,7 @@ function drawProfile(){const c=prof.c,ctx=c.getContext('2d'),W=prof.W,H=prof.H,{
  if(prof.drag&&Math.abs(prof.drag[1]-prof.drag[0])>2){ctx.fillStyle='rgba(157,230,174,.18)';ctx.fillRect(Math.min(...prof.drag),T,Math.abs(prof.drag[1]-prof.drag[0]),ph)}
  if(showRests)(R.rests||[]).forEach((r,k)=>{const d=P.d[r.mid_i];if(d<d0||d>d1)return;const x=X(d);ctx.strokeStyle='rgba(197,155,255,.55)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x+.5,T+ph-22);ctx.lineTo(x+.5,T);ctx.stroke();
   ctx.beginPath();ctx.roundRect(x-8,T+ph-20,16,16,3);ctx.fillStyle='#c59bff';ctx.fill();ctx.fillStyle='#101719';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(k+1,x,T+ph-11.5)});
+ if(showPhotos)viewPhotos().forEach(ph=>{if(ph.i<0)return;const d=P.d[ph.i];if(d<d0||d>d1||P.alt[ph.i]==null)return;ctx.beginPath();ctx.arc(X(d),Y(P.alt[ph.i]),3.5,0,7);ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle='#0b1113';ctx.stroke()});
  rideMarks().forEach((m,k)=>{const d=P.d[m.i];if(d<d0||d>d1)return;const x=X(d),y=P.alt[m.i]!=null?Y(P.alt[m.i]):T+ph;
   ctx.save();ctx.setLineDash([2,3]);ctx.strokeStyle='rgba(140,200,255,.7)';ctx.beginPath();ctx.moveTo(x+.5,y-12);ctx.lineTo(x+.5,T+ph);ctx.stroke();ctx.restore();
   ctx.beginPath();ctx.arc(x,y-18,8,0,7);ctx.fillStyle='#8cc8ff';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#0b1113';ctx.stroke();ctx.fillStyle='#101719';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(letter(k),x,y-17.5)});
@@ -277,6 +295,7 @@ function profileLegend(){const box=$('#plegend');box.replaceChildren();
  if(overlay!=='none')key('key-line',{borderColor:overlay==='hr'?'#ffad82':'#9de6ae'},(overlay==='hr'?'Heart rate':'Speed')+' (right axis)');
  if(showClimbs)key('key-band',{},'climb (number as in the table)');
  if(showRests)key('key-band',{background:'#c59bff',borderRadius:'3px',width:'12px',height:'12px'},'rest stop ≥5 min');
+ if(showPhotos&&PHOTOS.length)key('key-band',{background:'#fff',borderRadius:'50%',width:'8px',height:'8px',border:'1.5px solid #0b1113'},'photo');
  {const k=el('span'),m=el('span','A');Object.assign(m.style,{display:'inline-grid',placeItems:'center',width:'16px',height:'16px',borderRadius:'50%',background:'#8cc8ff',color:'#101719',fontWeight:700,fontSize:'10px'});k.append(m,'your marked point');box.append(k)}
  if(R&&R.combined)key('key-line',{borderColor:'#9de6ae',borderTopStyle:'dashed'},'start of the next ride')}
 
@@ -288,6 +307,47 @@ $('#showclimbs').onchange=e=>{showClimbs=e.target.checked;try{localStorage.setIt
 let showRests=true;try{showRests=localStorage.getItem('bladetag.showRests')!=='0'}catch(e){}
 $('#showrests').checked=showRests;
 $('#showrests').onchange=e=>{showRests=e.target.checked;try{localStorage.setItem('bladetag.showRests',showRests?'1':'0')}catch(err){}profileLegend();redraw()};
+
+/* ---------- photos ----------
+ Placed on the track by capture time (within 60 s of a recorded point); photos
+ taken while no ride was recording use their own GPS position. */
+const PHOTOS=DATA.photos||[];PHOTOS.forEach(p=>{p.img=new Image();p.img.onload=redraw;p.img.src=p.thumb});
+let photoClusters=[],showPhotos=true,viewIdx=-1;try{showPhotos=localStorage.getItem('bladetag.showPhotos')!=='0'}catch(e){}
+$('#showphotos').checked=showPhotos;
+$('#showphotos').onchange=e=>{showPhotos=e.target.checked;try{localStorage.setItem('bladetag.showPhotos',showPhotos?'1':'0')}catch(err){}profileLegend();redraw()};
+// Photos for this view: during it, or up to an hour before/after (waiting at the start, a coffee between rides).
+function viewPhotos(){if(!R)return[];const a=Date.parse(R.start_utc),t0=P.t[0]-3600,t1=P.t[N-1]+3600;
+ return PHOTOS.map(p=>{const t=(p.utc-a)/1000;if(t<t0||t>t1)return null;const i=idxAtT(t),on=Math.abs(P.t[i]-t)<=60;
+  const w=on&&WORLD[RI][i]?WORLD[RI][i]:p.lat!=null?proj(p.lat,p.lon):null;return{p,t,i:on?i:-1,w}}).filter(Boolean)}
+function drawPhotos(ctx){const R0=17;for(const ph of viewPhotos()){if(!ph.w)continue;const [x,y]=toScreen(ph.w);if(x<-30||y<-30||x>map.W+30||y>map.H+30)continue;
+  const c=photoClusters.find(c=>Math.hypot(c.x-x,c.y-y)<R0*1.7);if(c)c.items.push(ph.p);else photoClusters.push({x,y,r:R0,items:[ph.p],on:ph.i>=0})}
+ for(const c of photoClusters){const p=c.items[0],im=p.img;ctx.save();ctx.beginPath();ctx.arc(c.x,c.y,c.r,0,7);ctx.fillStyle='#101719';ctx.fill();
+  if(im.complete&&im.naturalWidth){ctx.clip();const s=Math.max(2*c.r/im.naturalWidth,2*c.r/im.naturalHeight);ctx.drawImage(im,c.x-im.naturalWidth*s/2,c.y-im.naturalHeight*s/2,im.naturalWidth*s,im.naturalHeight*s)}
+  ctx.restore();ctx.beginPath();ctx.arc(c.x,c.y,c.r,0,7);ctx.lineWidth=2.5;ctx.strokeStyle=c.on?'#fff':'rgba(255,255,255,.55)';if(!c.on)ctx.setLineDash([4,3]);ctx.stroke();ctx.setLineDash([]);
+  if(c.items.length>1){const bx=c.x+c.r*.75,by=c.y-c.r*.75;ctx.beginPath();ctx.arc(bx,by,9,0,7);ctx.fillStyle='#fff';ctx.fill();ctx.fillStyle='#101719';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(c.items.length,bx,by+.5)}}}
+function photoState(ph){if(ph.i<0){const before=ph.t<P.t[0];return before?'before the ride':ph.t>P.t[N-1]?'after the ride':'between rides'}
+ const i=ph.i,c=R.climbs.findIndex(c=>i>=c.start_i&&i<=c.end_i),r=(R.rests||[]).findIndex(r=>i>=r.start_i&&i<=r.end_i);
+ return [r>=0?'rest stop '+(r+1):'',c>=0?'climb '+(c+1):'',P.fill&&P.fill[i]?'GPS gap':''].filter(Boolean).join(' · ')}
+function renderGallery(){const list=viewPhotos(),g=$('#gallery');g.replaceChildren();$('#photospanel').hidden=!list.length;$('#photopick').hidden=!PHOTOS.length;
+ $('#photonote').textContent=list.length?`${list.length} photos · click one to open it · ${DATA.photo_note||''}`:'';
+ const rideOf=i=>{const s=R.ride_starts||[0];let k=0;while(k+1<s.length&&s[k+1]<=i)k++;return s.length>1?'Ride '+(k+1):'During the ride'};
+ let group=null;list.forEach(ph=>{const st=ph.i<0?photoState(ph):rideOf(ph.i);if(st!==group){group=st;g.append(el('h3',st[0].toUpperCase()+st.slice(1)))}
+  const b=el('button',null,ph.i<0?'off':''),im=el('img');im.src=ph.p.thumb;im.alt=ph.p.name;im.loading='lazy';
+  b.append(im,el('span',new Date(ph.p.utc).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+(ph.i>=0?' · km '+fmt(P.d[ph.i],1):'')));
+  b.onmouseenter=()=>{if(ph.i>=0)setHover(ph.i)};b.onclick=()=>openViewer(ph.p);g.append(b)})}
+function openViewer(p){const list=viewPhotos();viewIdx=list.findIndex(x=>x.p===p);if(viewIdx<0)return;showViewer();$('#viewer').classList.add('on');$('#vclose').focus()}
+function showViewer(){const list=viewPhotos(),ph=list[viewIdx],p=ph.p,img=$('#vimg');img.src=p.thumb;img.dataset.name=p.name;const full=new Image();full.onload=()=>{if(img.dataset.name===p.name)img.src=p.src};full.src=p.src;
+ img.alt=p.name;$('#vfull').href=p.src;const c=$('#vcap');c.replaceChildren();const i=ph.i;
+ const bits=[['',new Date(p.utc).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})]];
+ if(i>=0)bits.push(['km ',fmt(P.d[i],1)],['',fmt(P.alt[i])+' m'],['',fmt(P.speed[i],1)+' km/h'],['',fmt(P.hr[i])+' bpm'],['grade ',(P.grade[i]>0?'+':'')+fmt(P.grade[i],1)+' %']);
+ const st=photoState(ph);if(st)bits.push(['',st]);bits.push(['',`${viewIdx+1} / ${list.length}`]);
+ bits.forEach(([k,v],j)=>{if(j)c.append(' · ');c.append(k,el('b',v))});$('#vmap').disabled=!ph.w;if(i>=0)setHover(i)}
+const closeViewer=()=>{$('#viewer').classList.remove('on')};
+const step=k=>{const n=viewPhotos().length;viewIdx=(viewIdx+k+n)%n;showViewer()};
+$('#vprev').onclick=()=>step(-1);$('#vnext').onclick=()=>step(1);$('#vclose').onclick=closeViewer;
+$('#viewer').onclick=e=>{if(e.target.id==='viewer'||e.target.classList.contains('stage'))closeViewer()};
+$('#vmap').onclick=()=>{const ph=viewPhotos()[viewIdx];closeViewer();if(ph.i>=0)centerOn(ph.i);else if(ph.w){map.cx=ph.w[0];map.cy=ph.w[1];map.z=Math.max(map.z,14);redraw()}$('#map').scrollIntoView({behavior:'smooth',block:'center'})};
+document.addEventListener('keydown',e=>{if(!$('#viewer').classList.contains('on'))return;if(e.key==='Escape')closeViewer();else if(e.key==='ArrowLeft')step(-1);else if(e.key==='ArrowRight')step(1)});
 
 /* ---------- marked points ----------
  Stored per browser by absolute time, so they survive regenerating the page and
@@ -342,7 +402,7 @@ function setRide(k){RI=k;R=DATA.rides[k];P=R.points;N=P.t.length;sel=null;hover=
   [clock(g.t0_s)+' · km '+fmt(P.d[a],1),dur(g.duration_s),fmt(g.length_m)+' m',fmt(g.speed_kmh,1),g.tunnel_share==null?'—':fmt(100*g.tunnel_share)+' %',g.method==='road'?(g.road||'road')+(g.bikes_allowed===false?' (closed to bikes in OSM)':''):'estimated from speed ('+g.note+')'].forEach(x=>tr.append(el('td',x)));
   tr.style.cursor='pointer';tr.onclick=()=>{select(a,b);$('#map').scrollIntoView({behavior:'smooth',block:'center'})};return tr}));
  $('#methods').replaceChildren(...R.methods.map(m=>el('li',m)));
- prepColours();profileLegend();showStats();renderMarks();fit()}
+ prepColours();profileLegend();showStats();renderMarks();renderGallery();fit()}
 function resize(){const r=map.c.getBoundingClientRect();map.dpr=window.devicePixelRatio||1;map.W=r.width;map.H=r.height;map.c.width=r.width*map.dpr;map.c.height=r.height*map.dpr;
  const q=prof.c.getBoundingClientRect();prof.dpr=map.dpr;prof.W=q.width;prof.H=q.height;prof.c.width=q.width*prof.dpr;prof.c.height=q.height*prof.dpr;redraw()}
 $('#title').textContent=DATA.title;document.title=DATA.title;

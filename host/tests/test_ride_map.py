@@ -196,3 +196,37 @@ def test_rest_stops_merge_shuffles_and_skip_start_and_finish():
     (r,) = rest_stops(stops, t, d, hr, alt)
     assert (r['start_s'], r['end_s'], r['duration_s'], r['stopped_s']) == (1000, 1400, 400, 340)
     assert r['since_s'] == 1000 and r['km'] == pytest.approx(5.0)
+
+
+def _photo(path, local, lat=None, lon=None):
+    from PIL import Image
+    im = Image.new('RGB', (800, 600), (40, 120, 200))
+    exif = Image.Exif()
+    exif.get_ifd(0x8769)[36867] = local
+    if lat is not None:
+        dms = lambda v: (float(int(v)), float(int(v * 60 % 60)), round(v * 3600 % 60, 4))
+        gps = exif.get_ifd(0x8825)
+        gps.update({1: 'N', 2: dms(lat), 3: 'E', 4: dms(lon)})
+    im.save(path, exif=exif)
+
+
+def test_photos_are_timed_by_the_track_and_linked_relative(tmp_path):
+    pics = tmp_path / 'pictures'
+    pics.mkdir()
+    # Local wall-clock times without a zone; the ride runs 00:00–00:15 UTC = 08:00–08:15 in UTC+8.
+    for k, s in enumerate((60, 300, 600)):
+        _photo(pics / f'IMG_{k}.jpg', f'2026:11:22 08:{s // 60:02d}:00', 24.5 + s * 5 / 111_320, 121.8)
+    _photo(pics / 'no_gps.jpg', '2026:11:22 07:50:00')
+    (pics / 'notes.txt').write_text('not a photo')
+    out = tmp_path / 'site' / 'map.html'
+    out.parent.mkdir()
+    write_report([ride(tmp_path)], out, roads=False, photos=[pics])
+    data = json.loads(re.search(r'<script id="data" type="application/json">(.*?)</script>', out.read_text(), re.S).group(1))
+    photos = data['photos']
+    assert [p['name'] for p in photos] == ['no_gps.jpg', 'IMG_0.jpg', 'IMG_1.jpg', 'IMG_2.jpg']
+    assert 'UTC+08:00' in data['photo_note'] and 'median' in data['photo_note']
+    start = 1795305600000                       # 2026-11-22T00:00:00Z
+    assert [(p['utc'] - start) // 1000 for p in photos] == [-600, 60, 300, 600]
+    assert photos[1]['src'] == '../pictures/IMG_0.jpg'
+    assert photos[1]['thumb'].startswith('data:image/jpeg;base64,') and max(photos[1]['w'], photos[1]['h']) <= 320
+    assert photos[0]['lat'] is None

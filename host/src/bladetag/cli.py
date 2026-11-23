@@ -487,7 +487,7 @@ def cmd_ride_map(a):
         sessions = [load_session(p) for p in a.sessions]
         for session in sessions:
             _warn_simulated(session)
-        rides = write_report(sessions, a.output, a.title, roads=False if a.no_osm else None)
+        rides = write_report(sessions, a.output, a.title, roads=False if a.no_osm else None, photos=a.photos or ())
     except ValueError as exc:
         _die(str(exc))
     for ride in rides:
@@ -756,6 +756,9 @@ def main(argv=None):
     c.add_argument("sessions", nargs="+", help="session folders or .zip files (several get a ride selector)")
     c.add_argument("-o", "--output", default="ride-map.html", help="page to write (default: ride-map.html)")
     c.add_argument("--title", help="page title")
+    c.add_argument("--photos", nargs="+", metavar="PATH",
+                   help="photo files or folders: placed on the route by capture time, thumbnails embedded,"
+                        " full size linked relative to the page")
     c.add_argument("--no-osm", action="store_true",
                    help="don't fetch OpenStreetMap roads for GPS gaps (tunnels); estimate them from the speed around them")
     c.set_defaults(fn=cmd_ride_map)

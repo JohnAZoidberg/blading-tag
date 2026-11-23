@@ -422,6 +422,21 @@ saved in the browser's local storage by time of day, so they survive
 regenerating the page and show in both the ride and its whole-day view. They
 don't go into the session folder, and another browser (or the web library,
 which is a different origin) has its own marks.
+`--photos DIR_OR_FILES` adds the day's photos (JPEG, PNG, WebP). Each is
+placed on the route by its capture time, so photos taken in a tunnel land in
+the right place too. A photo taken while no ride was recording, up to an hour
+before, after or between rides, uses its own GPS position and gets a dashed
+border. Phones usually save the capture time without a time zone. The page
+takes the zone from `OffsetTimeOriginal` when it's there; otherwise it tries
+offsets until the photos' GPS positions fall on the track, and falls back to
+this computer's zone. The photos show as round thumbnails on the map (nearby
+ones grouped with a count) and as white dots on the profile. Below the marked
+points there's a gallery grouped by ride, and a viewer with ←/→/Esc that shows
+km, altitude, speed, heart rate, grade and any climb or rest at that moment.
+Small thumbnails go into the page (about 12 KB each). Full-size images are
+linked relative to the page and never copied, so keep the page where it can
+reach the photos, for example both under one folder served with
+`python -m http.server`. The Photos checkbox hides them on the map.
 Several sessions go on one page with a ride selector, and the
 other rides show faintly on the map. Each day with two or more rides also gets
 an "All rides of <day>" entry, selected first, that joins that day's rides end
@@ -518,6 +533,7 @@ The model is only meant to exercise the code. Don't tune thresholds on it.
 | `skating.py` | skating measures per stroke (impact, push-off, GPS), correlations, speed matching, same-place pairs, coasts |
 | `report.py`, `report.html` | `report`: several skating sessions on one page, findings in words |
 | `ride_map.py`, `ride_map.html` | `ride-map`: GPS/HR rides on a basemap, GPS-altitude profile, climbs |
+| `ride_photos.py` | `ride-map --photos`: EXIF time/GPS, time zone check, embedded thumbnails |
 | `road_fill.py` | fills GPS gaps (tunnels) along OpenStreetMap roads for `ride-map` |
 | `viz3d.py`, `viz3d_template.html` | `viz3d`: skate path and angles per stroke, the 3D replay page |
 | `liveplot.py` | live plot during recording |

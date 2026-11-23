@@ -429,7 +429,7 @@ def by_day(rides: list[dict]) -> dict[str, list[dict]]:
     return days
 
 
-def write_report(paths, output: str | Path, title: str | None = None, roads=None) -> list[dict]:
+def write_report(paths, output: str | Path, title: str | None = None, roads=None, photos=()) -> list[dict]:
     """Write one page for one or more rides (a selector switches between them).
 
     Returns the single rides; the page also holds one combined ride per day with several.
@@ -440,6 +440,9 @@ def write_report(paths, output: str | Path, title: str | None = None, roads=None
     # Each day with several rides also gets a combined entry, listed before its rides.
     days = [combine(group, day) for day, group in by_day(rides).items() if len(group) > 1]
     data = dict(title=title or ('Ride map' if len(rides) == 1 else f'{len(rides)} rides'), rides=days + rides)
+    if photos:
+        from .ride_photos import place
+        data['photos'], data['photo_note'] = place(photos, rides, Path(output))
     payload = json.dumps(data, allow_nan=False, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026')
     template = resources.files('bladetag').joinpath('ride_map.html').read_text()
     Path(output).write_text(template.replace('__RIDE_DATA__', payload))
