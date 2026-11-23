@@ -15,7 +15,7 @@ import android.util.Log
 @SuppressLint("MissingPermission")
 class HeartRateLink(private val context: Context, private val address: String?,
                     private val onDevice: (HeartRateMeta) -> Unit,
-                    private val onPacket: (Long, ByteArray) -> Unit) {
+                    private val onPacket: (Long, ByteArray, Float) -> Unit) {
     private val main = Handler(Looper.getMainLooper())
     private var selectedAddress = address
     private var active = false
@@ -129,9 +129,9 @@ class HeartRateLink(private val context: Context, private val address: String?,
             val raw = value.copyOf()
             dispatch(g) {
                 if (c.uuid == HeartRate.MEASUREMENT) {
-                    onPacket(ns, raw)
                     measurement = runCatching { HeartRate.decode(raw) }.getOrNull()
                     lastNs = ns
+                    onPacket(ns, raw, HeartRate.liveBpm(measurement, 0))
                     state = when {
                         measurement == null -> "Invalid HRM measurement"
                         measurement?.contactDetected == false -> "Check HRM contact"

@@ -15,7 +15,7 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    session.json (`activity`, `gear`), are remembered for next time, carry
    over to Standby and to **Save and start new session**, and can be changed
    afterwards with **Edit**. The field offers the names typed before for
-   that activity. The live screen's big number follows the activity:
+   that activity. The live cadence unit follows the activity:
    pushes/min, steps/min or rpm.
 1. Wake the tag by moving the skate. It shows up under **Tags** with its
    state, body location and battery. **Blink** flashes its LED so you can
@@ -41,15 +41,16 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    choice is remembered. The live speed, distance and metres-per-cycle
    numbers and speed chart are hidden when GPS recording is off; with GPS
    on, they stay visible while waiting for a speed fix.
-3. While recording, the screen is made for a quick look out of the pocket:
-   the rate as the big number (pushes/min, steps/min or rpm, by the
-   activity), then speed, distance and metres per push, step or crank turn,
-   then the session so far as two charts (rate and speed), and each tag's
-   last 10 s of gyro (tap the plot for accel). The notification shows the
+3. The recording screen shows large readouts for heart rate, current speed,
+   total distance, cadence and current elevation, depending on the sensors
+   enabled. Current elevation is hidden for skating. The notification shows
    rate, speed and distance too. See [Live push rate](#live-push-rate).
-4. During recording, the **Home / Past sessions** tab selector is hidden,
-   keeping the live view on screen. It returns when recording ends. The compact **Save and
-   start new** and **Stop** buttons sit side by side.
+4. Swipe left for recording details and right to return to the readouts.
+   Details include **Save and start new**, **Stop**, session highs, and GPS
+   ascent and descent. The elevation totals count changes of at least 5 m to
+   reduce GPS jitter. Trend charts show up to the last 15 minutes, and each
+   tag's motion plot shows the last 10 s of gyro (tap for accel). **Home /
+   Past sessions** returns when recording ends.
    Tapping either opens a confirmation: slide the left circle
    fully right without lifting. Releasing early, moving vertically,
    or waiting more than four seconds cancels the gesture. Recording continues
@@ -148,7 +149,7 @@ the computer, `make pull` overwrites it.
 | `SessionFiles.kt` | `tag-*.bin`, `gps.csv` and `session.json` writers |
 | `TagLink.kt` | Base for one tag in a recording: logs payloads verbatim, keeps live counters (gaps, measured rate) |
 | `LiveSignal.kt` | The last 30 s of a tag's motion at 50 Hz, push rate by autocorrelation, the per-second trend |
-| `LivePanel.kt` | Top of the recording screen: push rate, speed, distance, trend charts, motion plots |
+| `LivePanel.kt` | Recording details: session highs, elevation totals, trend charts and motion plots |
 | `PlotView.kt` | Small Canvas line chart used by the live panel |
 | `GattTag.kt` | The real tag over BLE: connection setup, GATT operation queue, START/STOP, reconnects |
 | `SimulatedTag.kt` | The fake tag for debug builds |
@@ -190,8 +191,7 @@ It retries failed scans/connections/subscriptions and dropped links automaticall
 with a 10 s retry delay and 30 s scan/setup/no-notification timeout. Every new
 connection subscribes again. The live panel shows bpm, or an unavailable value
 with contact/stale/reconnecting status; readings become stale after 5 s.
-While recording with HRM enabled, a **Heart rate, bpm** chart shows the session
-so far alongside the other live charts, including in recordings without tags or
+While recording with HRM enabled, a **Heart rate, bpm** chart shows the last 15 minutes alongside the other live charts, including in recordings without tags or
 GPS. It updates once a second and leaves gaps for stale, invalid, zero-bpm or
 no-contact readings. Save and start new resets the chart for the new session.
 A missing HRM never blocks or ends the tag recording. Standby connects the HRM

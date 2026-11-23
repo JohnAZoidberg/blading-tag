@@ -34,6 +34,8 @@ class PlotView(context: Context) : View(context) {
     private var xMax = 1f
     /** Range always includes zero (rates, speeds). Otherwise symmetric about zero. */
     var fromZero = true
+    /** Fit the y axis around the observed values (useful for altitude). */
+    var fitRange = false
     /** y range never smaller than this. */
     var minSpan = 1f
     var xLabel: (Float) -> String = { "" }
@@ -87,8 +89,8 @@ class PlotView(context: Context) : View(context) {
         }
 
         // y range
-        var dataMax = 0f
-        var dataMin = 0f
+        var dataMax = if (fitRange) Float.NEGATIVE_INFINITY else 0f
+        var dataMin = if (fitRange) Float.POSITIVE_INFINITY else 0f
         var any = false
         for (s in series) for (v in s.y) if (!v.isNaN()) {
             any = true
@@ -97,14 +99,17 @@ class PlotView(context: Context) : View(context) {
         }
         val need = max(minSpan, if (fromZero) dataMax else max(dataMax, -dataMin))
         if (top.isNaN() || need > top || need < 0.4f * top) top = niceCeil(need)
-        val yLo = if (fromZero) 0f else -top
-        val step = niceCeil((top - yLo) / 3)
-        fun py(v: Float) = plotBottom - (v - yLo) / (top - yLo) * (plotBottom - plotTop)
+        val fitted = fitRange && any
+        val step = niceCeil(if (fitted) max(minSpan, dataMax - dataMin) / 3
+            else (if (fromZero) top else 2 * top) / 3)
+        val yLo = if (fitted) floor(dataMin / step) * step else if (fromZero) 0f else -top
+        val yHi = if (fitted) max(yLo + 3 * step, ceil(dataMax / step) * step) else top
+        fun py(v: Float) = plotBottom - (v - yLo) / (yHi - yLo) * (plotBottom - plotTop)
         fun px(v: Float) = left + (v - xMin) / (xMax - xMin) * (right - left)
 
         textPaint.textAlign = Paint.Align.RIGHT
         var g = ceil(yLo / step) * step
-        while (g <= top + step * 1e-3f) {
+        while (g <= yHi + step * 1e-3f) {
             val y = py(g)
             c.drawLine(left, y, right, y, gridPaint)
             c.drawText(fmt(g, step), left - 4 * density, y + lineH * 0.3f, textPaint)
@@ -136,7 +141,7 @@ class PlotView(context: Context) : View(context) {
                     open = false; runLen = 0
                     return
                 }
-                val X = px(xx); val Y = py(v.coerceIn(yLo, top))
+                val X = px(xx); val Y = py(v.coerceIn(yLo, yHi))
                 if (open) path.lineTo(X, Y) else path.moveTo(X, Y)
                 open = true; runLen++; lastX = X; lastY = Y
             }

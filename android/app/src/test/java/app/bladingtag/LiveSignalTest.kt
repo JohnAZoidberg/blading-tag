@@ -149,6 +149,30 @@ class LiveSignalTest {
         assertFalse(tr.cyclesPerMin[4998] == 60f)
     }
 
+    @Test
+    fun liveWindowDropsOldRowsWithoutDroppingSessionHighs() {
+        val tr = Trend()
+        tr.observeSpeed(35f)
+        tr.observeHeartRate(180f)
+        for (i in 0..1200) tr.add(i.toFloat(), Float.NaN, 10f, 100f, i.toFloat())
+        assertEquals(300, tr.firstAtOrAfter(300f))
+        assertEquals(301, tr.firstAtOrAfter(300.5f))
+        assertEquals(1201, tr.firstAtOrAfter(1201f))
+        assertEquals(1200f, tr.lastElevationM)
+        assertEquals(35f, tr.peakSpeedKmh)
+        assertEquals(180f, tr.peakHeartRateBpm)
+    }
+
+    @Test
+    fun elevationTotalsCountClimbsAndDescentsSeparately() {
+        val totals = ElevationTotals()
+        assertTrue(totals.ascentM.isNaN())
+        listOf(-10f, -8f, -12f, Float.NaN, -4f, 2f, -6f, -7f).forEach(totals::observe)
+        assertEquals(2f, totals.peakM)
+        assertEquals(12f, totals.ascentM)
+        assertEquals(8f, totals.descentM)
+    }
+
     /**
      * Same answer as `cadence_track` in host/src/bladetag/explore.py on a
      * real recording. Skipped unless LIVE_PARITY_CSV names a file with

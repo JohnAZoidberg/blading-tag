@@ -151,7 +151,12 @@ class RecorderService : Service(), TagLink.Listener {
                 if (hrmAddress != null) getSharedPreferences("bladingtag", MODE_PRIVATE).edit()
                     .putString("last_hrm_name", device.name).apply()
             }
-        }, onPacket = { ns, raw -> current?.takeIf { !it.stopping }?.heartRateLog?.append(ns, raw) }) else null
+        }, onPacket = { ns, raw, bpm ->
+            current?.takeIf { !it.stopping }?.let {
+                it.heartRateLog?.append(ns, raw)
+                it.trend.observeHeartRate(bpm)
+            }
+        }) else null
         val rec = Recording(dir, meta, links, logs, gps, hrLog, hrLink)
         current = rec
 
@@ -294,6 +299,8 @@ class RecorderService : Service(), TagLink.Listener {
                 if (dt > 0 && loc.hasSpeed() && prev.hasSpeed()) rec.distanceM += (loc.speed + prev.speed) / 2 * dt
             }
             rec.lastFix = loc
+            if (loc.hasSpeed()) rec.trend.observeSpeed(loc.speed * 3.6f)
+            if (loc.hasAltitude()) rec.trend.elevation.observe(loc.altitude.toFloat())
             rec.gps?.append(GpsLog.Fix(
                 elapsedNs = loc.elapsedRealtimeNanos,
                 utcMs = loc.time,
@@ -337,13 +344,14 @@ class RecorderService : Service(), TagLink.Listener {
                 l.cadence?.takeIf { it.valid }?.cyclesPerMin
             }
             val fix = rec.lastFix
-            val fresh = fix != null && fix.hasSpeed() &&
+            val fresh = fix != null && fix.elapsedRealtimeNanos >= rec.startElapsedNs &&
                 SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos < 5_000_000_000L
             rec.trend.add(
                 (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1e9f,
                 if (rates.isEmpty()) Float.NaN else rates.average().toFloat(),
-                if (fresh) fix!!.speed * 3.6f else Float.NaN,
+                if (fresh && fix!!.hasSpeed()) fix.speed * 3.6f else Float.NaN,
                 rec.heartRateLink?.liveBpm() ?: Float.NaN,
+                if (fresh && fix!!.hasAltitude()) fix.altitude.toFloat() else Float.NaN,
             )
             main.postDelayed(this, LIVE_TICK_MS)
         }

@@ -183,20 +183,66 @@ class Trend {
     var speedKmh = FloatArray(1024); private set
     var heartRateBpm = FloatArray(1024); private set
 
-    fun add(tS: Float, cycles: Float, speed: Float, heartRate: Float = Float.NaN) {
+    var elevationM = FloatArray(1024); private set
+    var peakSpeedKmh = Float.NaN; private set
+    var peakHeartRateBpm = Float.NaN; private set
+    val elevation = ElevationTotals()
+
+    fun observeSpeed(speed: Float) {
+        if (speed.isFinite() && (peakSpeedKmh.isNaN() || speed > peakSpeedKmh)) peakSpeedKmh = speed
+    }
+
+    fun observeHeartRate(bpm: Float) {
+        if (bpm.isFinite() && (peakHeartRateBpm.isNaN() || bpm > peakHeartRateBpm)) peakHeartRateBpm = bpm
+    }
+
+    fun add(tS: Float, cycles: Float, speed: Float, heartRate: Float = Float.NaN, altitude: Float = Float.NaN) {
         if (size == t.size) {
             t = t.copyOf(size * 2)
             cyclesPerMin = cyclesPerMin.copyOf(size * 2)
             speedKmh = speedKmh.copyOf(size * 2)
             heartRateBpm = heartRateBpm.copyOf(size * 2)
+            elevationM = elevationM.copyOf(size * 2)
         }
         t[size] = tS
         cyclesPerMin[size] = cycles
         speedKmh[size] = speed
         heartRateBpm[size] = heartRate
+        elevationM[size] = altitude
         size++
     }
 
+    fun firstAtOrAfter(seconds: Float): Int {
+        val index = t.binarySearch(seconds, toIndex = size)
+        return if (index >= 0) index else -index - 1
+    }
+
+    val lastElevationM get() = if (size == 0) Float.NaN else elevationM[size - 1]
     val lastCyclesPerMin get() = if (size == 0) Float.NaN else cyclesPerMin[size - 1]
     val lastSpeedKmh get() = if (size == 0) Float.NaN else speedKmh[size - 1]
+}
+
+/** Accumulates elevation changes of at least 5 m to reduce GPS jitter. */
+class ElevationTotals {
+    private var reference = Float.NaN
+    var peakM = Float.NaN; private set
+    var ascentM = Float.NaN; private set
+    var descentM = Float.NaN; private set
+
+    fun observe(altitude: Float) {
+        if (!altitude.isFinite()) return
+        if (reference.isNaN()) {
+            reference = altitude
+            ascentM = 0f
+            descentM = 0f
+        }
+        if (peakM.isNaN() || altitude > peakM) peakM = altitude
+        val change = altitude - reference
+        when {
+            change >= 5f -> ascentM += change
+            change <= -5f -> descentM -= change
+            else -> return
+        }
+        reference = altitude
+    }
 }

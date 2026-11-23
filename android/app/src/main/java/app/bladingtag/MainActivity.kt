@@ -73,7 +73,9 @@ class MainActivity : Activity() {
 
     private lateinit var notice: TextView
     private lateinit var noticeButton: Button
-    private lateinit var recordingBox: LinearLayout
+    private lateinit var recordingPages: RecordingPages
+    private lateinit var appTitle: TextView
+    private lateinit var homeScroll: ScrollView
     private lateinit var recordingText: TextView
     private lateinit var livePanel: LivePanel
     private lateinit var tagsBox: LinearLayout
@@ -122,13 +124,13 @@ class MainActivity : Activity() {
         root.addView(notice, lp(dp(12)))
         root.addView(noticeButton, lp(dp(4)))
 
-        // While recording
-        recordingBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        recordingBox.addView(heading("Recording"))
-        livePanel = LivePanel(this)
-        recordingBox.addView(livePanel, lp(dp(8)))
+        val summary = LiveStats(this)
+        val details = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        recordingPages = RecordingPages(this, summary, details)
+        livePanel = LivePanel(this, summary)
         recordingText = TextView(this).apply { textSize = 15f; typeface = Typeface.MONOSPACE }
-        recordingBox.addView(recordingText, lp(dp(16)))
         val recordingActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
@@ -147,8 +149,9 @@ class MainActivity : Activity() {
         recordingAction("Stop") { RecorderService.stop(this@MainActivity) }.apply {
             (layoutParams as LinearLayout.LayoutParams).marginStart = dp(8)
         }
-        recordingBox.addView(recordingActions, lp(dp(12)))
-        root.addView(recordingBox, lp(dp(8)))
+        details.addView(recordingActions)
+        details.addView(livePanel, lp(dp(12)))
+        details.addView(recordingText, lp(dp(16)))
 
         // Standby, waiting for a tag's button
         standbyBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -290,15 +293,16 @@ class MainActivity : Activity() {
         sessionList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         sessionsBox.addView(sessionList, lp(dp(4)))
 
-        val homeScroll = ScrollView(this).apply { addView(root) }
+        homeScroll = ScrollView(this).apply { addView(root) }
         val sessionsScroll = ScrollView(this).apply { addView(sessionsBox) }
         val shell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        shell.addView(TextView(this).apply {
+        appTitle = TextView(this).apply {
             text = getString(R.string.app_name)
             textSize = 28f
             typeface = Typeface.DEFAULT_BOLD
             setPadding(dp(20), dp(16), dp(20), dp(8))
-        })
+        }
+        shell.addView(appTitle)
         navigationTabs = RadioGroup(this).apply {
             orientation = RadioGroup.HORIZONTAL
             setPadding(dp(20), 0, dp(20), 0)
@@ -329,6 +333,9 @@ class MainActivity : Activity() {
         shell.addView(sessionsScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         showingSessions = savedInstanceState?.getBoolean("showing_sessions") ?: false
         navigationTabs.check(if (showingSessions) sessionsTab.id else homeTab.id)
+        recordingPages.visibility = View.GONE
+        shell.addView(recordingPages, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        recordingPages.displayedChild = savedInstanceState?.getInt("recording_page") ?: 0
         // targetSdk 35+ draws edge to edge; keep content out of the bars.
         shell.setOnApplyWindowInsetsListener { v, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars())
@@ -432,6 +439,7 @@ class MainActivity : Activity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putInt("recording_page", recordingPages.displayedChild)
         outState.putBoolean("showing_sessions", showingSessions)
     }
 
@@ -471,7 +479,7 @@ class MainActivity : Activity() {
     private val frame = object : Runnable {
         override fun run() {
             val rec = RecorderService.current ?: return
-            livePanel.animate(rec)
+            if (recordingPages.displayedChild == 1) livePanel.animate(rec)
             ui.postDelayed(this, FRAME_MS)
         }
     }
@@ -483,6 +491,10 @@ class MainActivity : Activity() {
         val rec = RecorderService.current
         navigationTabs.visibility = if (rec != null) View.GONE else View.VISIBLE
         if (rec != null) navigationTabs.check(homeTab.id)
+        appTitle.visibility = navigationTabs.visibility
+        homeScroll.visibility = if (rec == null && !showingSessions) View.VISIBLE else View.GONE
+        recordingPages.visibility = if (rec != null) View.VISIBLE else View.GONE
+        if (rec == null) recordingPages.displayedChild = 0
         // A recording just ended, or was split: a session was saved.
         if (shownRecording != null && rec !== shownRecording) refreshSessions()
         shownRecording = rec
@@ -498,13 +510,12 @@ class MainActivity : Activity() {
         }
 
         val standby = RecorderService.standby
-        recordingBox.visibility = if (rec != null) View.VISIBLE else View.GONE
         standbyBox.visibility = if (rec == null && standby != null) View.VISIBLE else View.GONE
         tagsBox.visibility = if (rec == null && standby == null) View.VISIBLE else View.GONE
         if (rec != null) {
             stopScan()
             recordingText.text = describe(rec)
-            livePanel.update(rec)
+            livePanel.update(rec, recordingPages.displayedChild == 1)
             if (!ui.hasCallbacks(frame)) ui.post(frame)
         } else if (standby != null) {
             // The service scans for the tags; a second scan here would only compete.

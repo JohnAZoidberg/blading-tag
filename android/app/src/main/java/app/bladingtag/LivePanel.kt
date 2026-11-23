@@ -1,41 +1,19 @@
 package app.bladingtag
 
 import android.content.Context
-import android.graphics.Typeface
 import android.os.SystemClock
 import android.widget.LinearLayout
 import android.widget.TextView
 
-/**
- * The glanceable top of the recording screen, for taking the phone out of
- * the pocket for a moment: the rate as the one big number (pushes/min,
- * steps/min or rpm, by the session's activity: [RateUnit]), speed, distance
- * and distance per push/step/turn under it, the session so far as rate, speed and optional heart-rate trend charts,
- * and each tag's last seconds of motion.
- *
- * [update] runs with the activity's 500 ms refresh; [animate] redraws the
- * motion plots at frame rate while the screen is visible.
- */
-class LivePanel(context: Context) : LinearLayout(context) {
-
-    private val density = resources.displayMetrics.density
-    private fun dp(v: Int) = (v * density).toInt()
+/** Recording details, including session totals and live plots. */
+class LivePanel(context: Context, private val summary: LiveStats) : LinearLayout(context) {
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val colors = PlotView.palette(context)
-    private val semibold = Typeface.create(Typeface.DEFAULT, 600, false)
-
-    private val elapsed = TextView(context).apply { textSize = 20f; typeface = semibold; alpha = 0.7f }
-    private val rateValue = TextView(context).apply {
-        textSize = 64f; typeface = semibold; includeFontPadding = false
-    }
-    private val rateLabel = TextView(context).apply { textSize = 14f; alpha = 0.7f }
-    private val heartRate = TextView(context).apply { textSize = 22f; typeface = semibold }
-    private val speed = tile("km/h")
-    private val distance = tile("km")
-    private val perCycle = tile("m per push")
-    private val gpsStats = LinearLayout(context).apply {
-        orientation = HORIZONTAL
-        for (t in listOf(speed, distance, perCycle)) addView(t.first.parent as LinearLayout,
-            LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+    private val peaks = TextView(context).apply { textSize = 16f }
+    private val elevationTrend = PlotView(context).apply {
+        title = "Elevation, m"; minSpan = 20f; emptyText = "waiting for elevation…"
+        fitRange = true
+        xLabel = ::clock
     }
     private val rateTrend = PlotView(context).apply {
         minSpan = 20f; emptyText = "no repetitive motion yet"
@@ -57,70 +35,57 @@ class LivePanel(context: Context) : LinearLayout(context) {
 
     init {
         orientation = VERTICAL
-        addView(elapsed)
-        addView(rateValue, lp(4))
-        addView(rateLabel)
-        addView(heartRate, lp(8))
-        addView(gpsStats, lp(12))
-        addView(rateTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(16) })
-        addView(speedTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(8) })
-        addView(heartRateTrend, LayoutParams(LayoutParams.MATCH_PARENT, dp(110)).apply { topMargin = dp(8) })
-        addView(scopeBox, lp(8))
-    }
-
-    private fun lp(top: Int) = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-        .apply { topMargin = dp(top) }
-
-    /** A stat tile: (value view, label view). */
-    private fun tile(label: String): Pair<TextView, TextView> {
-        val box = LinearLayout(context).apply { orientation = VERTICAL }
-        val v = TextView(context).apply { textSize = 26f; typeface = semibold }
-        val l = TextView(context).apply { textSize = 13f; alpha = 0.7f; text = label }
-        box.addView(v); box.addView(l)
-        return v to l
-    }
-
-    fun update(rec: RecorderService.Recording) {
-        gpsStats.visibility = if (rec.gps != null) VISIBLE else GONE
-        speedTrend.visibility = if (rec.gps != null) VISIBLE else GONE
-        heartRate.visibility = if (rec.heartRateLink != null) VISIBLE else GONE
-        heartRateTrend.visibility = if (rec.heartRateLink != null) VISIBLE else GONE
-        heartRate.text = rec.heartRateLink?.display().orEmpty()
-        val hasTags = rec.links.isNotEmpty()
-        rateValue.visibility = if (hasTags) VISIBLE else GONE
-        rateLabel.visibility = if (hasTags) VISIBLE else GONE
-        rateTrend.visibility = if (hasTags) VISIBLE else GONE
-        (perCycle.first.parent as LinearLayout).visibility = if (hasTags) VISIBLE else GONE
-        val tr = rec.trend
-        val secs = (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1_000_000_000
-        elapsed.text = "%d:%02d:%02d".format(secs / 3600, secs / 60 % 60, secs % 60) +
-            if (rec.stopping) "  stopping…" else ""
-        val unit = RateUnit.of(rec.meta.activity)
-        val cycles = tr.lastCyclesPerMin
-        val kmh = tr.lastSpeedKmh
-        rateValue.text = if (cycles.isNaN()) "–" else "%.0f".format(unit.rate(cycles))
-        rateLabel.text = when {
-            !cycles.isNaN() -> unit.rate
-            rec.links.any { it.samples > 0 } -> "${unit.rate} · not moving"
-            else -> "${unit.rate} · waiting for the tag"
+        addView(peaks)
+        for (plot in listOf(heartRateTrend, speedTrend, rateTrend, elevationTrend)) {
+            addView(plot, LayoutParams(LayoutParams.MATCH_PARENT, dp(120)).apply { topMargin = dp(8) })
         }
-        speed.first.text = if (kmh.isNaN()) "–" else "%.1f".format(kmh)
-        distance.first.text = if (rec.gps == null) "–" else "%.2f".format(rec.distanceM / 1000)
-        // Below walking pace GPS speed is mostly noise, and so would this be.
-        perCycle.second.text = "m per ${unit.one}"
-        perCycle.first.text = if (cycles.isNaN() || kmh.isNaN() || kmh < MIN_PER_CYCLE_KMH) "–"
-            else "%.${if (unit.perCycle == 1) 2 else 1}f".format(unit.distancePer(kmh, cycles))
+        addView(scopeBox)
+    }
+
+    fun update(rec: RecorderService.Recording, detailsVisible: Boolean) {
+        summary.update(rec)
+        if (!detailsVisible) return
+
+        val hasGps = rec.gps != null
+        val hasHrm = rec.heartRateLink != null
+        val hasTags = rec.links.isNotEmpty()
+        val tr = rec.trend
+        peaks.text = buildList {
+            if (hasHrm) add("Highest heart rate · ${formatLiveValue(tr.peakHeartRateBpm, 0)} bpm")
+            if (hasGps) {
+                add("Highest speed · ${formatLiveValue(tr.peakSpeedKmh, 1)} km/h")
+                add("Highest elevation · ${formatLiveValue(tr.elevation.peakM, 0)} m")
+                add("Ascent · ${formatLiveValue(tr.elevation.ascentM, 0)} m")
+                add("Descent · ${formatLiveValue(tr.elevation.descentM, 0)} m")
+            }
+            if (hasGps && hasTags) {
+                val unit = RateUnit.of(rec.meta.activity)
+                val kmh = tr.lastSpeedKmh
+                val metres = if (kmh >= MIN_PER_CYCLE_KMH) unit.distancePer(kmh, tr.lastCyclesPerMin) else Float.NaN
+                add("Distance per ${unit.one} · ${formatLiveValue(metres, if (unit.perCycle == 1) 2 else 1)} m")
+            }
+        }.joinToString("\n")
+        peaks.visibility = if (peaks.text.isNotEmpty()) VISIBLE else GONE
 
         val now = (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1e9f
-        // Whole session, but at least 5 minutes wide so the start isn't stretched.
-        val xMax = maxOf(now, 300f)
-        val t = tr.t.copyOf(tr.size)
-        rateTrend.title = unit.title
-        val rates = FloatArray(tr.size) { unit.rate(tr.cyclesPerMin[it]) }
-        rateTrend.set(t, listOf(PlotView.Series(unit.rate, colors[0], rates)), 0f, xMax)
-        speedTrend.set(t, listOf(PlotView.Series("km/h", colors[1], tr.speedKmh.copyOf(tr.size))), 0f, xMax)
+        val end = maxOf(now, 1f)
+        val start = maxOf(0f, end - 15 * 60)
+        val first = tr.firstAtOrAfter(start)
+        val t = tr.t.copyOfRange(first, tr.size)
+        fun plot(view: PlotView, enabled: Boolean, label: String, color: Int, values: FloatArray, scale: Int = 1) {
+            view.visibility = if (enabled) VISIBLE else GONE
+            if (enabled) {
+                val y = FloatArray(t.size) { values[first + it] * scale }
+                view.set(t, listOf(PlotView.Series(label, color, y)), start, end)
+            }
+        }
 
-        heartRateTrend.set(t, listOf(PlotView.Series("bpm", colors[2], tr.heartRateBpm.copyOf(tr.size))), 0f, xMax)
+        val unit = RateUnit.of(rec.meta.activity)
+        rateTrend.title = unit.title
+        plot(rateTrend, hasTags, unit.rate, colors[0], tr.cyclesPerMin, unit.perCycle)
+        plot(speedTrend, hasGps, "km/h", colors[1], tr.speedKmh)
+        plot(heartRateTrend, hasHrm, "bpm", colors[2], tr.heartRateBpm)
+        plot(elevationTrend, hasGps, "m", colors[0], tr.elevationM)
 
         if (rec.links != scopeLinks) {
             scopeLinks = rec.links
@@ -136,8 +101,6 @@ class LivePanel(context: Context) : LinearLayout(context) {
                 scopeBox.addView(p, LayoutParams(LayoutParams.MATCH_PARENT, dp(120)).apply { topMargin = dp(12) })
             }
         }
-        // Repetition strength next to each tag's plot, as a hint why there's no rate.
-        for ((i, l) in rec.links.withIndex()) scopes[i].title = scopeTitle(l)
     }
 
     private fun scopeTitle(l: TagLink): String {
@@ -170,10 +133,11 @@ class LivePanel(context: Context) : LinearLayout(context) {
         const val SCOPE_S = 10f
         const val MIN_PER_CYCLE_KMH = 3f
 
-        /** Session time on the trend axis: "12 min", or "1:05 h" past an hour. */
+        /** Elapsed recording time on the trend axis. */
         fun clock(s: Float): String {
-            val m = (s / 60).toInt()
-            return if (m < 60) "$m min" else "%d:%02d h".format(m / 60, m % 60)
+            val seconds = s.toInt()
+            return if (seconds < 3600) "%d:%02d".format(seconds / 60, seconds % 60)
+                else "%d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60)
         }
     }
 }
