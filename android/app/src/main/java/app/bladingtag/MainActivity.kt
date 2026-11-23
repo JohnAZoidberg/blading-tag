@@ -34,6 +34,13 @@ import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
+import java.time.format.ResolverStyle
+import java.util.Locale
 import java.util.concurrent.Executors
 
 /**
@@ -831,7 +838,18 @@ class MainActivity : Activity() {
             sessionList.addView(TextView(this).apply { text = "None yet."; textSize = 15f })
             return
         }
+        val startFormat = DateTimeFormatter.ofPattern("EEEE, d MMM HH:mm", Locale.ENGLISH)
+            .withZone(ZoneId.systemDefault())
+        val folderFormat = DateTimeFormatter.ofPattern("uuuuMMdd-HHmmss", Locale.ROOT)
+            .withResolverStyle(ResolverStyle.STRICT)
         for (s in list) {
+            val folderLabel = s.dir.name.removePrefix("session-")
+            val start = s.json?.startUtc ?: try {
+                LocalDateTime.parse(folderLabel, folderFormat).toInstant(ZoneOffset.UTC)
+            } catch (_: DateTimeParseException) {
+                null
+            }
+            val started = start?.let { startFormat.format(it) } ?: folderLabel
             val d = s.durationS
             val why = s.json?.let { j ->
                 EndReason.label(j.endReason)?.let { r -> j.endDetail?.let { "$r: ${it.take(60)}" } ?: r }
@@ -854,7 +872,7 @@ class MainActivity : Activity() {
                 ?.let { " · $it" }.orEmpty()
             sessionList.addView(TextView(this).apply {
                 text = buildList {
-                    add("${s.dir.name.removePrefix("session-")}$fake$what")
+                    add("$started$fake$what")
                     if (stats.isNotEmpty()) add(stats.joinToString(" · "))
                     if (sensors.isNotEmpty()) add(sensors.joinToString(" · "))
                     add(listOfNotNull("Unfinished".takeIf { d == null }, why, size(s.bytes)).joinToString(" · "))

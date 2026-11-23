@@ -7,6 +7,8 @@ import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.format.DateTimeParseException
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
@@ -283,6 +285,7 @@ class SessionJson(
     /** session.json "end_reason" (see [EndReason]), null if not given. */
     val endReason: String? = null,
     val endDetail: String? = null,
+    val startUtc: Instant? = null,
 ) {
     class Tag(val address: String, val position: String, val simulated: Boolean)
 
@@ -318,6 +321,11 @@ class SessionJson(
                 gear = o.optString("gear", "").trim(),
                 endReason = o.optString("end_reason", "").ifEmpty { null },
                 endDetail = o.optString("end_detail", "").ifEmpty { null },
+                startUtc = try {
+                    Instant.parse(o.optString("start_utc", ""))
+                } catch (_: DateTimeParseException) {
+                    null
+                },
             )
         }
 
