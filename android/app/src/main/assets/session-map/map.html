@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="origin">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://tile.openstreetmap.org data:">
+    <style>
+        {{leaflet-css}}
+        html, body, #map { height: 100%; margin: 0; }
+        .leaflet-container { background: #e6e6e6; }
+    </style>
+</head>
+<body>
+<div id="map" aria-label="Street map of the recorded GPS route"></div>
+<script>{{leaflet-js}}
+</script>
+<script>
+    const points = {{route}};
+    const map = L.map('map', { maxZoom: 19 });
+    const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+    });
+    map.attributionControl.setPrefix(false);
+    L.control.scale({ imperial: false }).addTo(map);
+
+    const path = L.polyline(points, { color: '#1855c9', weight: 5 }).addTo(map);
+    function endpoint(point, color, label) {
+        L.circleMarker(point, { color: '#fff', weight: 2, radius: 7, fillColor: color, fillOpacity: 1 })
+            .bindTooltip(label).addTo(map);
+    }
+    endpoint(points[0], '#11855b', 'Start');
+    if (points.length > 1) endpoint(points[points.length - 1], '#bc4825', 'Finish');
+    map.fitBounds(path.getBounds(), { padding: [20, 20], maxZoom: 17 });
+
+    tiles.once('tileload', () => console.info('blading-map-tile-loaded'));
+    tiles.addTo(map);
+</script>
+</body>
+</html>

@@ -10,7 +10,7 @@ import android.widget.TableRow
 import android.widget.TextView
 
 /** Recording details, including session totals and live plots. */
-class LivePanel(context: Context, private val summary: LiveStats) : LinearLayout(context) {
+class LivePanel(context: Context, private val summary: LiveStats? = null) : LinearLayout(context) {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val colors = PlotView.palette(context)
     private val stats = TableLayout(context).apply {
@@ -56,19 +56,14 @@ class LivePanel(context: Context, private val summary: LiveStats) : LinearLayout
     }
 
     fun update(rec: RecorderService.Recording, detailsVisible: Boolean) {
-        summary.update(rec)
+        summary?.update(rec)
         if (!detailsVisible) return
 
         val hasGps = rec.gps != null
         val hasHrm = rec.heartRateLink != null
         val hasTags = rec.links.isNotEmpty()
         val tr = rec.trend
-        peakHeartRate.show(hasHrm, tr.peakHeartRateBpm, 0)
-        peakSpeed.show(hasGps, tr.peakSpeedKmh, 1)
-        peakElevation.show(hasGps, tr.elevation.peakM, 0)
-        ascent.show(hasGps, tr.elevation.ascentM, 0)
-        descent.show(hasGps, tr.elevation.descentM, 0)
-        stats.visibility = if (hasGps || hasHrm) VISIBLE else GONE
+        showTotals(tr, hasGps, hasHrm)
 
         val unit = RateUnit.of(rec.meta.activity)
         val kmh = tr.lastSpeedKmh
@@ -111,6 +106,64 @@ class LivePanel(context: Context, private val summary: LiveStats) : LinearLayout
         }
     }
 
+    private fun showTotals(tr: Trend, hasGps: Boolean, hasHrm: Boolean) {
+        peakHeartRate.show(hasHrm, tr.peakHeartRateBpm, 0)
+        peakSpeed.show(hasGps, tr.peakSpeedKmh, 1)
+        peakElevation.show(hasGps, tr.elevation.peakM, 0)
+        ascent.show(hasGps, tr.elevation.ascentM, 0)
+        descent.show(hasGps, tr.elevation.descentM, 0)
+        stats.visibility = if (hasGps || hasHrm) VISIBLE else GONE
+
+    }
+
+    internal fun showRecorded(data: RecordedSession, distanceM: Double?) {
+        val hasGps = data.gps.t.isNotEmpty()
+        val hasHrm = data.heartRate.t.isNotEmpty()
+        showTotals(data.totals, hasGps, hasHrm)
+        val duration = stat("Duration", "").apply { showText(clock(data.duration), true) }
+        stats.removeView(duration)
+        stats.addView(duration, 0)
+        val distance = stat("Distance", "km")
+        distance.show(distanceM != null, ((distanceM ?: 0.0) / 1000).toFloat(), 2)
+        stats.visibility = VISIBLE
+        distancePerCycle.label.text = "Average distance per ${data.unit.one}"
+        distancePerCycle.show(data.distancePerCycle.isFinite(), data.distancePerCycle,
+            if (data.unit.perCycle == 1) 2 else 1)
+
+        fun draw(view: PlotView, trace: RecordedSession.Trace, label: String, color: Int = 0, channel: Int = 0) {
+            view.visibility = if (trace.t.isEmpty()) GONE else VISIBLE
+            view.zoomable = true
+            view.emptyText = "No recorded data"
+            view.set(trace.t, listOf(PlotView.Series(label, colors[color], trace.channels[channel])), 0f, data.end)
+        }
+        draw(heartRateTrend, data.heartRate, "bpm", 2)
+        draw(speedTrend, data.gps, "km/h", 1)
+        rateTrend.title = data.unit.title
+        draw(rateTrend, data.cadence, data.unit.rate)
+        draw(elevationTrend, data.gps, "m", channel = 1)
+
+        for ((name, trace) in data.motion) {
+            if (trace.t.isEmpty()) continue
+            val plot = PlotView(context).apply {
+                fromZero = false
+                xLabel = ::clock
+            }
+            var accel = false
+            fun updateAxes() {
+                plot.title = if (accel) "$name accel g" else "$name gyro °/s"
+                plot.minSpan = if (accel) 2f else 100f
+                val base = if (accel) 0 else 3
+                plot.zoomable = true
+                plot.set(trace.t, listOf("x", "y", "z").mapIndexed { i, axis ->
+                    PlotView.Series(axis, colors[i], trace.channels[base + i])
+                }, 0f, data.end)
+            }
+            updateAxes()
+            plot.setOnClickListener { accel = !accel; updateAxes() }
+            scopeBox.addView(plot, LayoutParams(LayoutParams.MATCH_PARENT, dp(120)).apply { topMargin = dp(12) })
+        }
+    }
+
     private fun stat(caption: String, unit: String) = StatRow(caption, unit).also { stats.addView(it) }
 
     private inner class StatRow(caption: String, unit: String) : TableRow(this@LivePanel.context) {
@@ -138,11 +191,12 @@ class LivePanel(context: Context, private val summary: LiveStats) : LinearLayout
         }
 
         fun show(enabled: Boolean, number: Float, decimals: Int) {
+            showText(if (enabled) formatLiveValue(number, decimals) else "", enabled)
+        }
+
+        fun showText(formatted: String, enabled: Boolean) {
             visibility = if (enabled) VISIBLE else GONE
-            if (enabled) {
-                val formatted = formatLiveValue(number, decimals)
-                if (value.text != formatted) value.text = formatted
-            }
+            if (enabled && value.text != formatted) value.text = formatted
         }
     }
 

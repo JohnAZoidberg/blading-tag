@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
@@ -21,6 +22,7 @@ import android.os.ParcelUuid
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
+import android.view.Window
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.widget.Button
@@ -28,6 +30,8 @@ import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -921,14 +925,99 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            fun b(label: String, action: () -> Unit) = buttons.addView(Button(this).apply {
-                text = label; isAllCaps = false
-                setOnClickListener { action() }
-            })
-            if (s.json != null) b("Edit") { edit(s, s.json) }
-            b("Share") { export(s) }
-            b("Delete") { confirmDelete(s) }
+            fun action(icon: Int, label: String, onClick: () -> Unit) {
+                buttons.addView(sessionAction(icon, label, onClick), LinearLayout.LayoutParams(0, dp(48), 1f))
+            }
+            action(R.drawable.ic_session_view, "View") { viewSession(s, started) }
+            if (s.json != null) action(R.drawable.ic_session_edit, "Edit") { edit(s, s.json) }
+            action(R.drawable.ic_session_share, "Share") { export(s) }
+            action(R.drawable.ic_session_delete, "Delete") { confirmDelete(s) }
             sessionList.addView(buttons)
+        }
+    }
+
+    private fun sessionAction(icon: Int, label: String, onClick: () -> Unit) = ImageButton(this).apply {
+        val style = context.obtainStyledAttributes(intArrayOf(android.R.attr.selectableItemBackground))
+        background = style.getDrawable(0)
+        style.recycle()
+        setImageResource(icon)
+        scaleType = android.widget.ImageView.ScaleType.CENTER
+        contentDescription = label
+        tooltipText = label
+        setOnClickListener { onClick() }
+    }
+
+    private fun viewSession(session: Sessions.Summary, title: String) {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+        }
+        val header = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(this@MainActivity).apply {
+                text = title
+                textSize = 18f
+                isAccessibilityHeading = true
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            val close = sessionAction(R.drawable.ic_session_close, "Close") { dialog.dismiss() }
+            addView(close, LinearLayout.LayoutParams(dp(48), dp(48)))
+        }
+        root.addView(header)
+        val body = FrameLayout(this)
+        root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
+        val status = TextView(this).apply { text = "Loading recording…" }
+        body.addView(status)
+        dialog.setContentView(root)
+        dialog.show()
+        dialog.window?.setLayout(-1, -1)
+
+        io.execute {
+            val result = runCatching { RecordedSession(session) }
+            ui.post {
+                if (!dialog.isShowing || isFinishing || isDestroyed) return@post
+                val data = result.getOrElse {
+                    status.text = "Could not read this recording."
+                    return@post
+                }
+                val details = ScrollView(this).apply {
+                    isFillViewport = true
+                    addView(LivePanel(this@MainActivity).apply { showRecorded(data, session.distanceM) })
+                }
+                body.removeAllViews()
+                body.addView(details, FrameLayout.LayoutParams(-1, -1))
+                if (data.route.isNotEmpty()) {
+                    val map = SessionStreetMap(this, data.route).apply { visibility = View.GONE }
+                    body.addView(map, FrameLayout.LayoutParams(-1, -1))
+                    dialog.setOnDismissListener { map.close() }
+                    fun tab(label: String) = RadioButton(this).apply {
+                        id = View.generateViewId()
+                        text = label
+                        textSize = 16f
+                        gravity = Gravity.CENTER
+                        setButtonDrawable(android.R.color.transparent)
+                    }
+                    val stats = tab("Stats")
+                    val route = tab("Map")
+                    val tabs = RadioGroup(this).apply {
+                        orientation = RadioGroup.HORIZONTAL
+                        addView(stats, RadioGroup.LayoutParams(0, dp(48), 1f))
+                        addView(route, RadioGroup.LayoutParams(0, dp(48), 1f))
+                        stats.setTypeface(null, Typeface.BOLD)
+                        check(stats.id)
+                        setOnCheckedChangeListener { _, checked ->
+                            val showStats = checked == stats.id
+                            details.visibility = if (showStats) View.VISIBLE else View.GONE
+                            map.visibility = if (showStats) View.GONE else View.VISIBLE
+                            if (!showStats) map.load()
+                            stats.setTypeface(null, if (showStats) Typeface.BOLD else Typeface.NORMAL)
+                            route.setTypeface(null, if (showStats) Typeface.NORMAL else Typeface.BOLD)
+                        }
+                    }
+                    root.addView(tabs, 1)
+                }
+            }
         }
     }
 

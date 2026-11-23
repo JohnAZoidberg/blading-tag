@@ -45,9 +45,13 @@ starts recording on the tag *and* the phone (with GPS). To stop both, hold
 the button for two seconds until it flashes red, then release. The tag blinks blue a few seconds after the press once the phone
 has joined; if it shows yellow blips instead, the phone hasn't. See
 [android/README.md](android/README.md#using-it).
-5. **Look at the results:** share the session from the app (or copy it over
-   adb with `make -C android pull`) and run the analysis in `host/` on a
-   laptop. The app doesn't show results itself yet.
+5. **Look at the results:** open **Past sessions** and tap **View**. Scroll through
+   the stats, pinch a graph to zoom, and drag a zoomed graph to move through
+   time. Sessions with GPS fixes also have a **Map** tab for the recorded route.
+   The street map uses OpenStreetMap tiles when available. The route remains
+   visible as a grid when the street map is unavailable.
+   For analysis on a laptop, share the session or copy it over adb with
+   `make -C android pull`, then use the tools in `host/`.
 
 For a cycling recording with GPS and an HRM, run
 `bladetag cycling-report SESSION -o sessions/cycling.html` in the host

@@ -6,6 +6,9 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -41,6 +44,59 @@ class PlotView(context: Context) : View(context) {
     var xLabel: (Float) -> String = { "" }
     var emptyText = "waiting…"
 
+    var zoomable = false
+    private var fullMin = 0f
+    private var fullMax = 1f
+    private val scale = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            val left = textPaint.measureText("0000")
+            val fraction = ((detector.focusX - left) / (width - left).coerceAtLeast(1f)).coerceIn(0f, 1f)
+            val span = xMax - xMin
+            val next = (span / detector.scaleFactor).coerceIn(minOf(1f, fullMax - fullMin), fullMax - fullMin)
+            viewport(xMin + fraction * (span - next), next)
+            return true
+        }
+    }).apply { isQuickScaleEnabled = false }
+    private var panning = false
+    private val drag = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: MotionEvent) = true
+        override fun onSingleTapUp(e: MotionEvent) = performClick()
+        override fun onScroll(first: MotionEvent?, current: MotionEvent, dx: Float, dy: Float): Boolean {
+            if (scale.isInProgress || current.pointerCount > 1) return true
+            if (!panning && kotlin.math.abs(dx) <= kotlin.math.abs(dy)) return false
+            if (xMax - xMin >= fullMax - fullMin) return false
+            panning = true
+            parent.requestDisallowInterceptTouchEvent(true)
+            viewport(xMin + dx * (xMax - xMin) / width.coerceAtLeast(1), xMax - xMin)
+            return true
+        }
+    })
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!zoomable) return super.onTouchEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) panning = false
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) parent.requestDisallowInterceptTouchEvent(true)
+        scale.onTouchEvent(event)
+        drag.onTouchEvent(event)
+        return true
+    }
+
+    private fun viewport(start: Float, span: Float) {
+        xMin = start.coerceIn(fullMin, maxOf(fullMin, fullMax - span))
+        xMax = minOf(fullMax, xMin + span)
+        invalidate()
+    }
+
+    private fun boundary(value: Float, includeEqual: Boolean): Int {
+        var lo = 0
+        var hi = x.size
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (x[mid] < value || includeEqual && x[mid] == value) lo = mid + 1 else hi = mid
+        }
+        return lo
+    }
+
     private var top = Float.NaN
 
     private val dark = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -63,8 +119,13 @@ class PlotView(context: Context) : View(context) {
     fun set(x: FloatArray, series: List<Series>, xMin: Float, xMax: Float) {
         this.x = x
         this.series = series
-        this.xMin = xMin
-        this.xMax = if (xMax > xMin) xMax else xMin + 1
+        val end = if (xMax > xMin) xMax else xMin + 1
+        if (!zoomable || xMin != fullMin || end != fullMax || this.xMax <= this.xMin) {
+            this.xMin = xMin
+            this.xMax = end
+        }
+        fullMin = xMin
+        fullMax = end
         invalidate()
     }
 
@@ -88,11 +149,15 @@ class PlotView(context: Context) : View(context) {
             tx += textPaint.measureText(s.label) + 12 * density
         }
 
+        val first = if (zoomable) boundary(xMin, false) else 0
+        val last = if (zoomable) boundary(xMax, true) else x.size
         // y range
         var dataMax = if (fitRange) Float.NEGATIVE_INFINITY else 0f
         var dataMin = if (fitRange) Float.POSITIVE_INFINITY else 0f
         var any = false
-        for (s in series) for (v in s.y) if (!v.isNaN()) {
+        for (s in series) for (i in first until minOf(last, s.y.size)) {
+            val v = s.y[i]
+            if (!v.isFinite()) continue
             any = true
             if (v > dataMax) dataMax = v
             if (v < dataMin) dataMin = v
@@ -145,12 +210,12 @@ class PlotView(context: Context) : View(context) {
                 if (open) path.lineTo(X, Y) else path.moveTo(X, Y)
                 open = true; runLen++; lastX = X; lastY = Y
             }
-            val n = minOf(x.size, s.y.size)
-            if (n <= cols) {
-                for (i in 0 until n) point(x[i], s.y[i])
+            val n = minOf(last, s.y.size)
+            if (n - first <= cols) {
+                for (i in first until n) point(x[i], s.y[i])
             } else {
                 // Mean per pixel column; a column with no number breaks the line.
-                var i = 0
+                var i = first
                 for (col in 0 until cols) {
                     val xEnd = xMin + (col + 1f) / cols * (xMax - xMin)
                     var sum = 0.0; var cnt = 0; var xs = 0.0; var m = 0
