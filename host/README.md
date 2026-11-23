@@ -408,7 +408,8 @@ elevation profile with heart rate or speed overlaid, then the detected climbs
 and speed and heart rate by grade band. Hover the map or the profile to see
 the same point in both. Drag across the profile, or click a climb, to select
 a stretch; the map zooms to it and the totals below the profile cover only
-that stretch. Click the route or the profile to mark a point. Marks are
+that stretch. The Climbs checkbox hides the climb markers on the map and the profile
+(remembered in the browser). Click the route or the profile to mark a point. Marks are
 lettered A, B, C… on the map and the profile and listed under the profile,
 where you can name them, remove them, see the distance, time and climbing
 from the previous mark, and select the stretch between two marks. They are
