@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
 import android.widget.LinearLayout
+import android.widget.TextClock
 import android.widget.TextView
 
 /** Glanceable values for the sensors enabled in this recording. */
@@ -24,6 +25,11 @@ class LiveStats(context: Context) : LinearLayout(context) {
         addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
             addView(elapsed, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+            addView(TextClock(context).apply {
+                textSize = 14f
+            }, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = inset
+            })
             addView(TextView(context).apply {
                 text = "Swipe left for details"
                 textSize = 14f

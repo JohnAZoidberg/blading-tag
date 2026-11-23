@@ -43,7 +43,8 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    on, they stay visible while waiting for a speed fix.
 3. The recording screen hides Android’s system bars and fills the display.
    Swipe from a screen edge to reveal the bars temporarily. The main page
-   sizes its readouts to the available space for heart rate, current speed,
+   shows the local time alongside the elapsed timer and sizes its readouts
+   to the available space for heart rate, current speed,
    total distance, cadence and current elevation, depending on the sensors
    enabled. Current elevation is hidden for skating. The notification shows
    rate, speed and distance too. See [Live push rate](#live-push-rate).
