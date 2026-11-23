@@ -186,7 +186,13 @@ map.c.addEventListener('pointerup',e=>{const t=tap;tap=null;up(e);
  if(!t||Math.hypot(e.offsetX-t[0],e.offsetY-t[1])>5)return;const i=nearestOnMap(e.offsetX,e.offsetY,e.pointerType==='touch'?22:14);if(i<0)return;
  clearTimeout(tapTimer);tapTimer=setTimeout(()=>addMark(i),250)});   // wait: a double click zooms instead
 map.c.addEventListener('pointercancel',e=>{tap=null;up(e)});map.c.addEventListener('pointerleave',()=>{if(!ptrs.size)setHover(-1)});
-map.c.addEventListener('wheel',e=>{e.preventDefault();zoomAt(-Math.sign(e.deltaY)*.5,e.offsetX,e.offsetY)},{passive:false});
+map.c.addEventListener('wheel',e=>{
+ e.preventDefault();
+ const mode=e.deltaMode;
+ const pixels=e.deltaY*(mode===1?16:mode===2?map.H:1);
+ const step=Math.max(-.5,Math.min(.5,-pixels/240));
+ if(step)zoomAt(step,e.offsetX,e.offsetY);
+},{passive:false});
 map.c.addEventListener('dblclick',e=>{clearTimeout(tapTimer);zoomAt(1,e.offsetX,e.offsetY)});
 $('#zin').onclick=()=>zoomAt(1,map.W/2,map.H/2);$('#zout').onclick=()=>zoomAt(-1,map.W/2,map.H/2);
 $('#fit').onclick=()=>sel?fit(sel[0],sel[1]):fit();
