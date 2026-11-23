@@ -1,15 +1,28 @@
 package app.bladingtag
 
 import android.content.Context
+import android.graphics.Typeface
 import android.os.SystemClock
+import android.view.Gravity
 import android.widget.LinearLayout
+import android.widget.TableLayout
+import android.widget.TableRow
 import android.widget.TextView
 
 /** Recording details, including session totals and live plots. */
 class LivePanel(context: Context, private val summary: LiveStats) : LinearLayout(context) {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val colors = PlotView.palette(context)
-    private val peaks = TextView(context).apply { textSize = 16f }
+    private val stats = TableLayout(context).apply {
+        setColumnStretchable(0, true)
+        setColumnShrinkable(0, true)
+    }
+    private val peakHeartRate = stat("Highest heart rate", "bpm")
+    private val peakSpeed = stat("Highest speed", "km/h")
+    private val peakElevation = stat("Highest elevation", "m")
+    private val ascent = stat("Ascent", "m")
+    private val descent = stat("Descent", "m")
+    private val distancePerCycle = stat("", "m")
     private val elevationTrend = PlotView(context).apply {
         title = "Elevation, m"; minSpan = 20f; emptyText = "waiting for elevation…"
         fitRange = true
@@ -35,7 +48,7 @@ class LivePanel(context: Context, private val summary: LiveStats) : LinearLayout
 
     init {
         orientation = VERTICAL
-        addView(peaks)
+        addView(stats)
         for (plot in listOf(heartRateTrend, speedTrend, rateTrend, elevationTrend)) {
             addView(plot, LayoutParams(LayoutParams.MATCH_PARENT, dp(120)).apply { topMargin = dp(8) })
         }
@@ -50,22 +63,18 @@ class LivePanel(context: Context, private val summary: LiveStats) : LinearLayout
         val hasHrm = rec.heartRateLink != null
         val hasTags = rec.links.isNotEmpty()
         val tr = rec.trend
-        peaks.text = buildList {
-            if (hasHrm) add("Highest heart rate · ${formatLiveValue(tr.peakHeartRateBpm, 0)} bpm")
-            if (hasGps) {
-                add("Highest speed · ${formatLiveValue(tr.peakSpeedKmh, 1)} km/h")
-                add("Highest elevation · ${formatLiveValue(tr.elevation.peakM, 0)} m")
-                add("Ascent · ${formatLiveValue(tr.elevation.ascentM, 0)} m")
-                add("Descent · ${formatLiveValue(tr.elevation.descentM, 0)} m")
-            }
-            if (hasGps && hasTags) {
-                val unit = RateUnit.of(rec.meta.activity)
-                val kmh = tr.lastSpeedKmh
-                val metres = if (kmh >= MIN_PER_CYCLE_KMH) unit.distancePer(kmh, tr.lastCyclesPerMin) else Float.NaN
-                add("Distance per ${unit.one} · ${formatLiveValue(metres, if (unit.perCycle == 1) 2 else 1)} m")
-            }
-        }.joinToString("\n")
-        peaks.visibility = if (peaks.text.isNotEmpty()) VISIBLE else GONE
+        peakHeartRate.show(hasHrm, tr.peakHeartRateBpm, 0)
+        peakSpeed.show(hasGps, tr.peakSpeedKmh, 1)
+        peakElevation.show(hasGps, tr.elevation.peakM, 0)
+        ascent.show(hasGps, tr.elevation.ascentM, 0)
+        descent.show(hasGps, tr.elevation.descentM, 0)
+        stats.visibility = if (hasGps || hasHrm) VISIBLE else GONE
+
+        val unit = RateUnit.of(rec.meta.activity)
+        val kmh = tr.lastSpeedKmh
+        val metres = if (kmh >= MIN_PER_CYCLE_KMH) unit.distancePer(kmh, tr.lastCyclesPerMin) else Float.NaN
+        distancePerCycle.label.text = "Distance per ${unit.one}"
+        distancePerCycle.show(hasGps && hasTags, metres, if (unit.perCycle == 1) 2 else 1)
 
         val now = (SystemClock.elapsedRealtimeNanos() - rec.startElapsedNs) / 1e9f
         val end = maxOf(now, 1f)
@@ -80,7 +89,6 @@ class LivePanel(context: Context, private val summary: LiveStats) : LinearLayout
             }
         }
 
-        val unit = RateUnit.of(rec.meta.activity)
         rateTrend.title = unit.title
         plot(rateTrend, hasTags, unit.rate, colors[0], tr.cyclesPerMin, unit.perCycle)
         plot(speedTrend, hasGps, "km/h", colors[1], tr.speedKmh)
@@ -99,6 +107,41 @@ class LivePanel(context: Context, private val summary: LiveStats) : LinearLayout
                 }
                 scopes.add(p)
                 scopeBox.addView(p, LayoutParams(LayoutParams.MATCH_PARENT, dp(120)).apply { topMargin = dp(12) })
+            }
+        }
+    }
+
+    private fun stat(caption: String, unit: String) = StatRow(caption, unit).also { stats.addView(it) }
+
+    private inner class StatRow(caption: String, unit: String) : TableRow(this@LivePanel.context) {
+        val label = cell(caption).apply { setPaddingRelative(0, 0, dp(12), 0) }
+        private val value = cell("").apply {
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+            fontFeatureSettings = "tnum"
+        }
+
+        init {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+            addView(label)
+            addView(value)
+            addView(cell(unit).apply {
+                alpha = 0.75f
+                setPaddingRelative(dp(8), 0, 0, 0)
+            })
+        }
+
+        private fun cell(content: String) = TextView(context).apply {
+            text = content
+            textSize = 16f
+        }
+
+        fun show(enabled: Boolean, number: Float, decimals: Int) {
+            visibility = if (enabled) VISIBLE else GONE
+            if (enabled) {
+                val formatted = formatLiveValue(number, decimals)
+                if (value.text != formatted) value.text = formatted
             }
         }
     }
