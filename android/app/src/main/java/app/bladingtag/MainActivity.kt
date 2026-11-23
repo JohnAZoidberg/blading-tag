@@ -862,7 +862,7 @@ class MainActivity : Activity() {
                 if (it.simulated) "simulated" else Protocol.positionLabel(it.position).lowercase()
             }?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()
             val sensors = buildList {
-                if (s.gpsFixes > 0) add("🌐 GPS (${s.gpsFixes} fixes)")
+                if (s.gpsFixes > 0) add("🌐 GPS")
                 if (s.hasHeartRate) add("❤️ HRM")
                 val tags = s.tagFiles.size
                 if (tags > 0) add("🦶 $tags ${if (tags == 1) "tag" else "tags"}$feet")
