@@ -836,17 +836,29 @@ class MainActivity : Activity() {
             val why = s.json?.let { j ->
                 EndReason.label(j.endReason)?.let { r -> j.endDetail?.let { "$r: ${it.take(60)}" } ?: r }
             }
-            val dur = (if (d == null) "unfinished" else "%d:%02d:%02d".format(d / 3600, d / 60 % 60, d % 60)) +
-                why?.let { " · $it" }.orEmpty()
-            val feet = s.json?.tags?.joinToString(" + ") {
+            val stats = buildList {
+                if (d != null) add("Duration %d:%02d:%02d".format(d / 3600, d / 60 % 60, d % 60))
+                s.distanceM?.let { add("Distance %.2f km".format(it / 1000)) }
+            }
+            val feet = s.json?.tags?.filter { TagLog.fileName(it.address) in s.tagFiles }?.joinToString(" + ") {
                 if (it.simulated) "simulated" else Protocol.positionLabel(it.position).lowercase()
-            }?.let { " · $it" }.orEmpty()
+            }?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()
+            val sensors = buildList {
+                if (s.gpsFixes > 0) add("🌐 GPS (${s.gpsFixes} fixes)")
+                if (s.hasHeartRate) add("❤️ HRM")
+                val tags = s.tagFiles.size
+                if (tags > 0) add("🦶 $tags ${if (tags == 1) "tag" else "tags"}$feet")
+            }
             val fake = if (s.json?.simulated == true) " · SIMULATED" else ""
             val what = s.json?.let { labelText(it.activity, it.gear) }?.takeIf { it.isNotEmpty() }
                 ?.let { " · $it" }.orEmpty()
             sessionList.addView(TextView(this).apply {
-                text = "${s.dir.name.removePrefix("session-")}$fake$what\n$dur · ${s.tags} tag$feet · " +
-                    "${s.gpsFixes} GPS · ${size(s.bytes)}"
+                text = buildList {
+                    add("${s.dir.name.removePrefix("session-")}$fake$what")
+                    if (stats.isNotEmpty()) add(stats.joinToString(" · "))
+                    if (sensors.isNotEmpty()) add(sensors.joinToString(" · "))
+                    add(listOfNotNull("Unfinished".takeIf { d == null }, why, size(s.bytes)).joinToString(" · "))
+                }.joinToString("\n")
                 textSize = 14f
                 setPadding(0, dp(10), 0, 0)
             })

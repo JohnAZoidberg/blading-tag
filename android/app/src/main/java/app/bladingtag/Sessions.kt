@@ -25,7 +25,7 @@ object Sessions {
 
     /** [json] is null if session.json is missing or unreadable (then it can't be edited). */
     class Summary(val dir: File, val json: SessionJson?, val durationS: Long?, val bytes: Long,
-                  val tags: Int, val gpsFixes: Int)
+                  val tagFiles: Set<String>, val gpsFixes: Int, val distanceM: Double?, val hasHeartRate: Boolean)
 
     fun list(c: Context): List<Summary> =
         (RecorderService.sessionsDir(c).listFiles { f -> f.isDirectory && f.name.startsWith("session-") }
@@ -89,15 +89,21 @@ object Sessions {
         val json = SessionJson.read(dir)
         val start = json?.startElapsedNs
         val end = json?.endElapsedNs
-        val gps = File(dir, "gps.csv").takeIf { it.exists() }
-            ?.useLines { l -> l.count() - 1 }?.coerceAtLeast(0) ?: 0
+        val (gpsFixes, distanceM) = File(dir, "gps.csv").takeIf { it.isFile }
+            ?.let { summarizeGps(it) } ?: (0 to null)
+        val hasHeartRate = File(dir, "heartrate.csv").takeIf { it.isFile }
+            ?.useLines { lines -> lines.drop(1).any { it.isNotBlank() } } ?: false
         return Summary(
             dir = dir,
             json = json,
             durationS = if (start != null && end != null) (end - start) / 1_000_000_000 else null,
             bytes = files.sumOf { it.length() },
-            tags = files.count { it.name.startsWith("tag-") },
-            gpsFixes = gps,
+            tagFiles = files.filter {
+                it.name.startsWith("tag-") && it.extension == "bin" && it.isFile && it.length() >= TagLog.HEADER
+            }.map { it.name }.toSet(),
+            gpsFixes = gpsFixes,
+            distanceM = distanceM,
+            hasHeartRate = hasHeartRate,
         )
     }
 

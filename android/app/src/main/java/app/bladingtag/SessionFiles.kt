@@ -88,6 +88,31 @@ class GpsLog(val file: File) {
     @Synchronized fun close() { if (!closed) { closed = true; out.close() } }
 }
 
+/** Reconstructs live GPS distance from consecutive fixes with speed samples. */
+internal fun summarizeGps(file: File): Pair<Int, Double?> = file.useLines { lines ->
+    var fixes = 0
+    var distanceM: Double? = null
+    var previousNs: Long? = null
+    var previousSpeed: Float? = null
+    for (line in lines.drop(1)) {
+        val fields = line.split(',', limit = 7)
+        val elapsedNs = fields.first().toLongOrNull()
+        val speed = fields.getOrNull(5)?.toFloatOrNull()?.takeIf { it.isFinite() && it >= 0 }
+        if (elapsedNs != null) {
+            fixes++
+            val lastNs = previousNs
+            val lastSpeed = previousSpeed
+            if (lastNs != null && elapsedNs > lastNs && lastSpeed != null && speed != null) {
+                val dt = (elapsedNs - lastNs) / 1e9
+                distanceM = (distanceM ?: 0.0) + (lastSpeed + speed) / 2 * dt
+            }
+        }
+        previousNs = elapsedNs
+        previousSpeed = speed
+    }
+    fixes to distanceM
+}
+
 /** What session.json says about one tag. Fields are filled in as the tag reports them. */
 class TagMeta(val address: String) {
     var position = "unknown"

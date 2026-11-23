@@ -72,7 +72,9 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    (in the app or the notification) ends it. Arm it while the app is open:
    Android only lets a foreground service use GPS from the background if it
    was started from the foreground.
-7. Under **Sessions**, each session shows its activity and gear. **Edit**
+7. Under **Past sessions**, each session shows its activity and gear, plus
+   duration and GPS distance when available. A globe, heart and foot mark
+   recorded GPS, heart-rate and tag data. **Edit**
    changes a session's description, activity, gear and each tag's body
    location, **Share** zips a session into
    `Downloads/blading-tag/` and opens the share sheet, and **Delete** removes
