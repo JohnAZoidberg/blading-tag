@@ -22,6 +22,7 @@ import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.widget.Button
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
@@ -69,6 +70,7 @@ class MainActivity : Activity() {
     private val powerButtons = HashMap<String, Pair<Button, Button>>()
     private var recordingConfirmation: AlertDialog? = null
     private var scanning = false
+    private var recordingFullscreen = false
     private var shownRecording: RecorderService.Recording? = null
 
     private lateinit var notice: TextView
@@ -130,6 +132,9 @@ class MainActivity : Activity() {
         }
         recordingPages = RecordingPages(this, summary, details)
         livePanel = LivePanel(this, summary)
+        recordingPages.onPageChanged = { page ->
+            RecorderService.current?.let { livePanel.update(it, page == 1) }
+        }
         recordingText = TextView(this).apply { textSize = 15f; typeface = Typeface.MONOSPACE }
         val recordingActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -338,7 +343,7 @@ class MainActivity : Activity() {
         recordingPages.displayedChild = savedInstanceState?.getInt("recording_page") ?: 0
         // targetSdk 35+ draws edge to edge; keep content out of the bars.
         shell.setOnApplyWindowInsetsListener { v, insets ->
-            val bars = insets.getInsets(WindowInsets.Type.systemBars())
+            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
@@ -489,6 +494,7 @@ class MainActivity : Activity() {
         ui.removeCallbacks(tick)
         ui.postDelayed(tick, 500)
         val rec = RecorderService.current
+        setRecordingFullscreen(rec != null)
         navigationTabs.visibility = if (rec != null) View.GONE else View.VISIBLE
         if (rec != null) navigationTabs.check(homeTab.id)
         appTitle.visibility = navigationTabs.visibility
@@ -543,6 +549,19 @@ class MainActivity : Activity() {
                 else -> "HRM not seen nearby · wake/wear it and disconnect other readers"
             }
             renderTags()
+        }
+    }
+
+    private fun setRecordingFullscreen(fullscreen: Boolean) {
+        if (recordingFullscreen == fullscreen) return
+        val controller = window.insetsController ?: return
+        recordingFullscreen = fullscreen
+        if (fullscreen) {
+            controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsets.Type.systemBars())
+        } else {
+            controller.show(WindowInsets.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_DEFAULT
         }
     }
 

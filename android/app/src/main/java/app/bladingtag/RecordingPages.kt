@@ -10,8 +10,9 @@ import android.widget.ScrollView
 import android.widget.ViewFlipper
 import kotlin.math.abs
 
-/** Two independently scrolling recording pages with horizontal swipe navigation. */
+/** A full-height summary and scrollable details with horizontal swipe navigation. */
 class RecordingPages(context: Context, summary: View, details: View) : ViewFlipper(context) {
+    var onPageChanged: (Int) -> Unit = {}
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private var startX = 0f
     private var startY = 0f
@@ -21,12 +22,11 @@ class RecordingPages(context: Context, summary: View, details: View) : ViewFlipp
 
     init {
         val padding = (20 * resources.displayMetrics.density).toInt()
-        for (page in listOf(summary, details)) {
-            addView(ScrollView(context).apply {
-                setPadding(padding, padding, padding, padding)
-                addView(page)
-            })
-        }
+        addView(summary)
+        addView(ScrollView(context).apply {
+            setPadding(padding, padding, padding, padding)
+            addView(details)
+        })
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
     }
 
@@ -52,12 +52,18 @@ class RecordingPages(context: Context, summary: View, details: View) : ViewFlipp
             }
             MotionEvent.ACTION_UP -> if (gesture == Direction.HORIZONTAL) {
                 val dx = event.x - startX
-                if (abs(dx) > 3 * slop) displayedChild = if (dx < 0) 1 else 0
+                if (abs(dx) > 3 * slop) showPage(if (dx < 0) 1 else 0)
                 return true
             }
         }
         if (gesture != Direction.HORIZONTAL) super.dispatchTouchEvent(event)
         return true
+    }
+
+    private fun showPage(page: Int) {
+        if (displayedChild == page) return
+        onPageChanged(page)
+        displayedChild = page
     }
 
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
@@ -69,8 +75,8 @@ class RecordingPages(context: Context, summary: View, details: View) : ViewFlipp
 
     override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
         when {
-            action == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD && displayedChild == 0 -> displayedChild = 1
-            action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD && displayedChild == 1 -> displayedChild = 0
+            action == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD && displayedChild == 0 -> showPage(1)
+            action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD && displayedChild == 1 -> showPage(0)
             else -> return super.performAccessibilityAction(action, arguments)
         }
         return true

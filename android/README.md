@@ -41,7 +41,9 @@ Plain Android SDK, no AndroidX or other dependencies, minSdk 33 (Android 13).
    choice is remembered. The live speed, distance and metres-per-cycle
    numbers and speed chart are hidden when GPS recording is off; with GPS
    on, they stay visible while waiting for a speed fix.
-3. The recording screen shows large readouts for heart rate, current speed,
+3. The recording screen hides Android’s system bars and fills the display.
+   Swipe from a screen edge to reveal the bars temporarily. The main page
+   sizes its readouts to the available space for heart rate, current speed,
    total distance, cadence and current elevation, depending on the sensors
    enabled. Current elevation is hidden for skating. The notification shows
    rate, speed and distance too. See [Live push rate](#live-push-rate).
